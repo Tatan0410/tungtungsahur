@@ -1,0 +1,140 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Usuario {
+  id        String   @id @default(cuid())
+  correo    String   @unique
+  password  String
+  rol       String
+  nombre    String
+  documento String   @unique
+  activo    Boolean  @default(true)
+  creadoEn  DateTime @default(now())
+
+  estudiante Estudiante?
+  docente    Docente?
+
+  @@map("usuarios")
+}
+
+model Estudiante {
+  id         String @id @default(cuid())
+  usuarioId  String @unique
+  documento  String @unique
+  codigo     String @unique
+  sede       String
+  jornada    String
+  grado      Int
+  curso      String
+  mesa       Int?
+
+  usuario        Usuario              @relation(fields: [usuarioId], references: [id])
+  calificaciones Calificacion[]
+  consultas      ConsultaEstudiante[]
+  informes       Informe[]
+
+  @@map("estudiantes")
+}
+
+model Docente {
+  id        String @id @default(cuid())
+  usuarioId String @unique
+
+  usuario        Usuario          @relation(fields: [usuarioId], references: [id])
+  asignaciones   DocenteMateria[]
+  calificaciones Calificacion[]
+
+  @@map("docentes")
+}
+
+model Materia {
+  id     String @id @default(cuid())
+  nombre String
+  grado  Int
+
+  asignaciones   DocenteMateria[]
+  calificaciones Calificacion[]
+
+  @@map("materias")
+}
+
+model DocenteMateria {
+  id        String @id @default(cuid())
+  docenteId String
+  materiaId String
+  curso     String
+
+  docente Docente @relation(fields: [docenteId], references: [id])
+  materia Materia @relation(fields: [materiaId], references: [id])
+
+  @@unique([docenteId, materiaId, curso])
+  @@map("docente_materias")
+}
+
+model NotaItem {
+  id             String   @id @default(cuid())
+  calificacionId String
+  tipo           String
+  valor          Float
+  descripcion    String?
+  creadoEn       DateTime @default(now())
+
+  calificacion Calificacion @relation(fields: [calificacionId], references: [id], onDelete: Cascade)
+
+  @@map("notas_items")
+}
+
+model Calificacion {
+  id           String   @id @default(cuid())
+  estudianteId String
+  materiaId    String
+  docenteId    String
+  periodo      Int
+  anio         Int
+
+  definitiva Float?
+
+  creadoEn      DateTime  @default(now())
+  actualizadoEn DateTime  @updatedAt
+
+  estudiante Estudiante @relation(fields: [estudianteId], references: [id])
+  materia    Materia    @relation(fields: [materiaId], references: [id])
+  docente    Docente    @relation(fields: [docenteId], references: [id])
+  notasItems NotaItem[]
+
+  @@unique([estudianteId, materiaId, periodo, anio])
+  @@map("calificaciones")
+}
+
+model ConsultaEstudiante {
+  id           String @id @default(cuid())
+  estudianteId String
+  periodo      Int
+  anio         Int
+  cantidad     Int    @default(0)
+
+  estudiante Estudiante @relation(fields: [estudianteId], references: [id])
+
+  @@unique([estudianteId, periodo, anio])
+  @@map("consultas_estudiantes")
+}
+
+model Informe {
+  id           String   @id @default(cuid())
+  estudianteId String
+  periodo      Int
+  anio         Int
+  rutaPdf      String
+  generadoEn   DateTime @default(now())
+  disponible   Boolean  @default(false)
+
+  estudiante Estudiante @relation(fields: [estudianteId], references: [id])
+
+  @@unique([estudianteId, periodo, anio])
+  @@map("informes")
+}
