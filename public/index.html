@@ -611,11 +611,7 @@ function renderGrid() {
         const evalItem = cat.items && cat.items.length > 0 ? cat.items[0] : null
         const val = (evalItem && evalItem.valor !== null && evalItem.valor !== undefined) ? evalItem.valor : ''
         html += '<td class="cell-eval" data-cal-id="' + (calId || '') + '">'
-        if (calId) {
           html += '<input type="number" step="0.1" min="1" max="5" class="excel-input cell-input" value="' + val + '" placeholder="" onchange="marcarCambio(' + i + ',\'' + tipo + '\',\'\',this.value)">'
-        } else {
-          html += '<span style="color:#ccc;font-size:11px;">--</span>'
-        }
         html += '</td>'
       } else {
         for (const col of colArray) {
@@ -623,12 +619,10 @@ function renderGrid() {
           const raw = item ? item.valor : ''
           const val = (raw !== null && raw !== undefined) ? raw : ''
           html += '<td class="cell-' + tipo.toLowerCase() + '" data-cal-id="' + (calId || '') + '" data-titulo="' + (col.titulo || '') + '">'
-          if (calId && col.titulo) {
+          if (col.titulo) {
             html += '<input type="number" step="0.1" min="1" max="5" class="excel-input cell-input" value="' + val + '" placeholder="" onchange="marcarCambio(' + i + ',\'' + tipo + '\',\'' + col.titulo.replace(/'/g, "\\'") + '\',this.value)">'
-          } else if (!col.titulo) {
-            html += '<span style="color:#ccc;font-size:11px;">Sin notas</span>'
           } else {
-            html += '<span style="color:#ccc;font-size:11px;">--</span>'
+            html += '<span style="color:#ccc;font-size:11px;">Sin notas</span>'
           }
           html += '</td>'
         }
