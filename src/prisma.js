@@ -22,9 +22,16 @@ const prisma = {
       }
     },
   },
+  sortKeyApellidos(nombre) {
+    const parts = nombre.trim().split(/\s+/)
+    const n = parts.length
+    if (n >= 3) return parts.slice(-2).join(' ') + ' ' + parts.slice(0, -2).join(' ')
+    if (n === 2) return parts[1] + ' ' + parts[0]
+    return nombre
+  },
   estudiante: {
     findMany: async ({ where, include, orderBy }) => {
-      const rows = db.prepare('SELECT e.*, u.nombre FROM estudiantes e JOIN usuarios u ON u.id = e.usuarioId WHERE e.curso = ? ORDER BY u.nombre ASC').all(where.curso)
+      const rows = db.prepare('SELECT e.*, u.nombre FROM estudiantes e JOIN usuarios u ON u.id = e.usuarioId WHERE e.curso = ?').all(where.curso)
       return rows.map(row => {
         const est = { id: row.id, usuarioId: row.usuarioId, documento: row.documento, codigo: row.codigo, sede: row.sede, jornada: row.jornada, grado: row.grado, curso: row.curso, mesa: row.mesa }
         if (include?.usuario) est.usuario = { nombre: row.nombre }
@@ -44,6 +51,10 @@ const prisma = {
           })
         }
         return est
+      }).sort((a, b) => {
+        const keyA = prisma.sortKeyApellidos(a.usuario?.nombre || a.nombre || '')
+        const keyB = prisma.sortKeyApellidos(b.usuario?.nombre || b.nombre || '')
+        return keyA.localeCompare(keyB, 'es')
       })
     },
   },
