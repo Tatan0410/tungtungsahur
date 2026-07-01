@@ -760,9 +760,8 @@ router.post('/guardar-grid', async (req, res) => {
     const calIdsActualizados = new Set()
 
     for (const item of items) {
-      const { estudianteId, materiaId, periodo, anio, tipo, titulo, valor } = item
-      if (!estudianteId || !materiaId || !tipo || valor === undefined || valor === null) continue
-      if (valor < 1 || valor > 5) continue
+      const { estudianteId, materiaId, periodo, anio, tipo, titulo, valor, _delete } = item
+      if (!estudianteId || !materiaId || !tipo) continue
 
       const p = parseInt(periodo) || 1
       const a = parseInt(anio) || new Date().getFullYear()
@@ -773,23 +772,44 @@ router.post('/guardar-grid', async (req, res) => {
         create: { estudianteId, materiaId, docenteId: req.usuario.docenteId, periodo: p, anio: a },
       })
 
-      if (tipo === 'EVALUACION') {
-        const existente = await prisma.notaItem.findFirst({
-          where: { calificacionId: cal.id, tipo: 'EVALUACION' }
-        })
-        if (existente) {
-          await prisma.notaItem.update({ where: { id: existente.id }, data: { valor: parseFloat(valor) } })
-        } else {
-          await prisma.notaItem.create({ data: { calificacionId: cal.id, tipo: 'EVALUACION', valor: parseFloat(valor), descripcion: null } })
+      if (_delete) {
+        if (tipo === 'EVALUACION') {
+          const existente = await prisma.notaItem.findFirst({
+            where: { calificacionId: cal.id, tipo: 'EVALUACION' }
+          })
+          if (existente) {
+            await prisma.notaItem.delete({ where: { id: existente.id } })
+          }
+        } else if (titulo && titulo.trim()) {
+          const existente = await prisma.notaItem.findFirst({
+            where: { calificacionId: cal.id, tipo, descripcion: titulo.trim() }
+          })
+          if (existente) {
+            await prisma.notaItem.delete({ where: { id: existente.id } })
+          }
         }
-      } else if (titulo && titulo.trim()) {
-        const existente = await prisma.notaItem.findFirst({
-          where: { calificacionId: cal.id, tipo, descripcion: titulo.trim() }
-        })
-        if (existente) {
-          await prisma.notaItem.update({ where: { id: existente.id }, data: { valor: parseFloat(valor) } })
-        } else {
-          await prisma.notaItem.create({ data: { calificacionId: cal.id, tipo, valor: parseFloat(valor), descripcion: titulo.trim() } })
+      } else {
+        if (valor === undefined || valor === null) continue
+        if (valor < 1 || valor > 5) continue
+
+        if (tipo === 'EVALUACION') {
+          const existente = await prisma.notaItem.findFirst({
+            where: { calificacionId: cal.id, tipo: 'EVALUACION' }
+          })
+          if (existente) {
+            await prisma.notaItem.update({ where: { id: existente.id }, data: { valor: parseFloat(valor) } })
+          } else {
+            await prisma.notaItem.create({ data: { calificacionId: cal.id, tipo: 'EVALUACION', valor: parseFloat(valor), descripcion: null } })
+          }
+        } else if (titulo && titulo.trim()) {
+          const existente = await prisma.notaItem.findFirst({
+            where: { calificacionId: cal.id, tipo, descripcion: titulo.trim() }
+          })
+          if (existente) {
+            await prisma.notaItem.update({ where: { id: existente.id }, data: { valor: parseFloat(valor) } })
+          } else {
+            await prisma.notaItem.create({ data: { calificacionId: cal.id, tipo, valor: parseFloat(valor), descripcion: titulo.trim() } })
+          }
         }
       }
 
