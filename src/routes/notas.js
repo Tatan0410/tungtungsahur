@@ -28,7 +28,24 @@ function verificarToken(req, res, next) {
 
 router.use(verificarToken)
 
-const PESOS_PERIODOS = { 1: 0.20, 2: 0.30, 3: 0.20, 4: 0.30 }
+function obtenerPesosPeriodos(anio, sede) {
+  try {
+    const rows = prisma._db.prepare('SELECT periodo, peso FROM periodos_config WHERE anio = ? AND sede = ?').all(anio, sede)
+    if (rows.length > 0) {
+      const pesos = {}
+      for (const r of rows) pesos[r.periodo] = r.peso
+      return pesos
+    }
+  } catch {}
+  return { 1: 0.20, 2: 0.30, 3: 0.20, 4: 0.30 }
+}
+
+function periodoAbierto(anio, sede, periodo) {
+  try {
+    const row = prisma._db.prepare('SELECT abierto FROM periodos_config WHERE anio = ? AND sede = ? AND periodo = ?').get(anio, sede, periodo)
+    return row ? !!row.abierto : true
+  } catch { return true }
+}
 
 function calcularDefinitiva(items) {
   if (!items || items.length === 0) return null
@@ -96,15 +113,6 @@ router.get('/mis-notas', async (req, res) => {
       })
     }
 
-    if (consulta.cantidad >= 3) {
-      return res.status(429).json({
-        error: 'Has agotado tus 3 consultas para este período.',
-        consultasUsadas: consulta.cantidad,
-        consultasMaximas: 3,
-        proximoPeriodo: `Período ${periodo + 1} · ${anio}`
-      })
-    }
-
     await prisma.consultaEstudiante.update({
       where: {
         estudianteId_periodo_anio: { estudianteId, periodo, anio }
@@ -135,7 +143,6 @@ router.get('/mis-notas', async (req, res) => {
       periodo,
       anio,
       consultasUsadas:   consulta.cantidad + 1,
-      consultasRestantes: 3 - (consulta.cantidad + 1),
       promedio,
       calificaciones: calificaciones.map(c => {
         const grupos = agruparItems(c.notasItems)
@@ -212,37 +219,46 @@ router.get('/grupo', async (req, res) => {
       }
     })
 
-    res.json(estudiantes.map(est => {
-      const cal = est.calificaciones[0]
-      const grupos = cal ? agruparItems(cal.notasItems) : { ACTITUDINAL: [], RESPONSABILIDAD: [], ACTIVIDAD: [], EVALUACION: [] }
+    let periodInfo = null
+    if (estudiantes.length > 0) {
+      const sede = estudiantes[0].sede
+      periodInfo = prisma._db.prepare('SELECT nombre, fecha_inicio, fecha_fin, abierto FROM periodos_config WHERE anio = ? AND sede = ? AND periodo = ?').get(parseInt(anio), sede, parseInt(periodo))
+    }
 
-      return {
-        estudianteId:    est.id,
-        nombre:          est.usuario.nombre,
-        documento:       est.documento,
-        calificacionId:  cal?.id || null,
-        definitiva:      cal?.definitiva || null,
-        estado:          calcularEstado(cal?.definitiva),
-        grupos: {
-          actitudinal: {
-            items:    grupos.ACTITUDINAL,
-            promedio: promediarGrupo(grupos.ACTITUDINAL),
+    res.json({
+      estudiantes: estudiantes.map(est => {
+        const cal = est.calificaciones[0]
+        const grupos = cal ? agruparItems(cal.notasItems) : { ACTITUDINAL: [], RESPONSABILIDAD: [], ACTIVIDAD: [], EVALUACION: [] }
+
+        return {
+          estudianteId:    est.id,
+          nombre:          est.usuario.nombre,
+          documento:       est.documento,
+          calificacionId:  cal?.id || null,
+          definitiva:      cal?.definitiva || null,
+          estado:          calcularEstado(cal?.definitiva),
+          grupos: {
+            actitudinal: {
+              items:    grupos.ACTITUDINAL,
+              promedio: promediarGrupo(grupos.ACTITUDINAL),
+            },
+            responsabilidad: {
+              items:    grupos.RESPONSABILIDAD,
+              promedio: promediarGrupo(grupos.RESPONSABILIDAD),
+            },
+            actividades: {
+              items:    grupos.ACTIVIDAD,
+              promedio: promediarGrupo(grupos.ACTIVIDAD),
+            },
+            evaluacion: {
+              items:    grupos.EVALUACION,
+              promedio: promediarGrupo(grupos.EVALUACION),
+            },
           },
-          responsabilidad: {
-            items:    grupos.RESPONSABILIDAD,
-            promedio: promediarGrupo(grupos.RESPONSABILIDAD),
-          },
-          actividades: {
-            items:    grupos.ACTIVIDAD,
-            promedio: promediarGrupo(grupos.ACTIVIDAD),
-          },
-          evaluacion: {
-            items:    grupos.EVALUACION,
-            promedio: promediarGrupo(grupos.EVALUACION),
-          },
-        },
-      }
-    }))
+        }
+      }),
+      periodo: periodInfo,
+    })
 
   } catch (error) {
     console.error('Error al obtener grupo:', error)
@@ -410,6 +426,12 @@ router.put('/guardar', async (req, res) => {
       return res.status(400).json({ error: 'estudianteId, materiaId, periodo y anio son requeridos' })
     }
 
+    const est = prisma._db.prepare('SELECT sede FROM estudiantes WHERE id = ?').get(estudianteId)
+    const sede = est?.sede || 'PPAL - TRIUNFO'
+    if (!periodoAbierto(parseInt(anio), sede, parseInt(periodo))) {
+      return res.status(403).json({ error: 'Este período está cerrado para esta sede' })
+    }
+
     let calificacion = await prisma.calificacion.findUnique({
       where: {
         estudianteId_materiaId_periodo_anio: {
@@ -482,6 +504,10 @@ router.get('/anual', async (req, res) => {
       orderBy: { periodo: 'asc' }
     })
 
+    const estudiante = prisma._db.prepare('SELECT sede FROM estudiantes WHERE id = ?').get(estudianteId)
+    const sede = estudiante?.sede || 'PPAL - TRIUNFO'
+    const pesos = obtenerPesosPeriodos(anio, sede)
+
     const periodos = {}
     for (let p = 1; p <= 4; p++) {
       const cal = calificaciones.find(c => c.periodo === p)
@@ -491,19 +517,18 @@ router.get('/anual', async (req, res) => {
     }
 
     let anual = null
-    if (calificaciones.length >= 4) {
-      let suma = 0
-      let pesosSum = 0
-      for (let p = 1; p <= 4; p++) {
-        const cal = calificaciones.find(c => c.periodo === p)
-        if (cal?.definitiva !== null && cal?.definitiva !== undefined) {
-          suma += cal.definitiva * PESOS_PERIODOS[p]
-          pesosSum += PESOS_PERIODOS[p]
-        }
+    let suma = 0
+    let pesosSum = 0
+    for (let p = 1; p <= 4; p++) {
+      const cal = calificaciones.find(c => c.periodo === p)
+      if (cal?.definitiva !== null && cal?.definitiva !== undefined) {
+        const peso = pesos[p] || 0.25
+        suma += cal.definitiva * peso
+        pesosSum += peso
       }
-      if (pesosSum > 0) {
-        anual = parseFloat((suma / pesosSum).toFixed(2))
-      }
+    }
+    if (pesosSum > 0) {
+      anual = parseFloat((suma / pesosSum).toFixed(2))
     }
 
     res.json({
@@ -758,6 +783,7 @@ router.post('/guardar-grid', async (req, res) => {
     }
 
     const calIdsActualizados = new Set()
+    const advertencias = new Set()
 
     for (const item of items) {
       const { estudianteId, materiaId, periodo, anio, tipo, titulo, valor, _delete } = item
@@ -765,6 +791,23 @@ router.post('/guardar-grid', async (req, res) => {
 
       const p = parseInt(periodo) || 1
       const a = parseInt(anio) || new Date().getFullYear()
+
+      const est = prisma._db.prepare('SELECT sede FROM estudiantes WHERE id = ?').get(estudianteId)
+      const sede = est?.sede || 'PPAL - TRIUNFO'
+
+      // Periodo cerrado manualmente → saltar
+      if (!periodoAbierto(a, sede, p)) {
+        continue
+      }
+
+      // Fecha límite pasada pero período aún abierto → advertir
+      const cfg = prisma._db.prepare('SELECT fecha_fin FROM periodos_config WHERE anio = ? AND sede = ? AND periodo = ?').get(a, sede, p)
+      if (cfg?.fecha_fin) {
+        const fechaFin = new Date(cfg.fecha_fin)
+        if (fechaFin < new Date()) {
+          advertencias.add(`Ya pasó la fecha límite del corte (${cfg.fecha_fin}), pero el período sigue abierto.`)
+        }
+      }
 
       const cal = await prisma.calificacion.upsert({
         where: { estudianteId_materiaId_periodo_anio: { estudianteId, materiaId, periodo: p, anio: a } },
@@ -824,10 +867,163 @@ router.post('/guardar-grid', async (req, res) => {
       }
     }
 
-    res.json({ mensaje: `Guardados ${items.length} cambios`, actualizados: calIdsActualizados.size })
+    const respuesta = { mensaje: `Guardados ${items.length} cambios`, actualizados: calIdsActualizados.size }
+    if (advertencias.size > 0) {
+      respuesta.advertencia = [...advertencias].join(' ')
+    }
+    res.json(respuesta)
   } catch (error) {
     console.error('Error en guardar-grid:', error)
     res.status(500).json({ error: 'Error interno del servidor' })
+  }
+})
+
+// ─── OBSERVACIONES ───
+
+router.get('/observaciones', async (req, res) => {
+  try {
+    const estudianteId = req.query.estudianteId
+    const docenteId = req.query.docenteId
+    const where = []
+    const params = []
+    if (estudianteId) { where.push('o.estudianteId = ?'); params.push(estudianteId) }
+    if (docenteId) { where.push('o.docenteId = ?'); params.push(docenteId) }
+    if (where.length === 0) return res.status(400).json({ error: 'Se requiere al menos estudianteId o docenteId' })
+    const rows = prisma._db.prepare(`
+      SELECT o.*, m.nombre as materiaNombre, u.nombre as docenteNombre
+      FROM observaciones o
+      LEFT JOIN materias m ON m.id = o.materiaId
+      LEFT JOIN docentes d ON d.id = o.docenteId
+      LEFT JOIN usuarios u ON u.id = d.usuarioId
+      WHERE ${where.join(' AND ')}
+      ORDER BY o.fecha DESC, o.creadoEn DESC
+    `).all(...params)
+    res.json(rows)
+  } catch (error) {
+    console.error('Error GET /observaciones:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+router.post('/observaciones', async (req, res) => {
+  try {
+    if (req.usuario.rol !== 'DOCENTE' && req.usuario.rol !== 'ADMIN') {
+      return res.status(403).json({ error: 'Solo docentes y administradores' })
+    }
+    const { estudianteId, materiaId, texto, tipo, fecha } = req.body
+    if (!estudianteId || !materiaId || !texto) {
+      return res.status(400).json({ error: 'estudianteId, materiaId y texto requeridos' })
+    }
+
+    const estudiante = prisma._db.prepare('SELECT curso FROM estudiantes WHERE id = ?').get(estudianteId)
+    if (!estudiante) return res.status(404).json({ error: 'Estudiante no encontrado' })
+
+    if (req.usuario.rol !== 'ADMIN') {
+      const asignacion = prisma._db.prepare(
+        'SELECT id FROM docente_materias WHERE docenteId = ? AND materiaId = ? AND curso = ?'
+      ).get(req.usuario.docenteId, materiaId, estudiante.curso)
+      if (!asignacion) {
+        return res.status(403).json({ error: 'No tienes asignada esta materia en el curso del estudiante' })
+      }
+    }
+
+    const id = require('crypto').randomUUID()
+    const hoy = new Date().toISOString().split('T')[0]
+    const obsFecha = fecha || hoy
+    prisma._db.prepare(
+      'INSERT INTO observaciones (id, estudianteId, docenteId, materiaId, texto, tipo, fecha) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).run(id, estudianteId, req.usuario.docenteId, materiaId, texto, tipo || 'GENERAL', obsFecha)
+    res.status(201).json({ mensaje: 'Observación creada', id })
+  } catch (error) {
+    console.error('Error POST /observaciones:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+router.put('/observaciones/:id', async (req, res) => {
+  try {
+    if (req.usuario.rol !== 'DOCENTE' && req.usuario.rol !== 'ADMIN') {
+      return res.status(403).json({ error: 'Solo docentes y administradores' })
+    }
+    const obs = prisma._db.prepare('SELECT * FROM observaciones WHERE id = ?').get(req.params.id)
+    if (!obs) return res.status(404).json({ error: 'Observación no encontrada' })
+    if (req.usuario.rol !== 'ADMIN' && obs.docenteId !== req.usuario.docenteId) {
+      return res.status(403).json({ error: 'No puedes editar esta observación' })
+    }
+
+    const { texto, fecha, materiaId } = req.body
+    if (!texto && !fecha && !materiaId) {
+      return res.status(400).json({ error: 'Nada que actualizar (envía texto, fecha o materiaId)' })
+    }
+
+    if (materiaId && req.usuario.rol !== 'ADMIN') {
+      const estudiante = prisma._db.prepare('SELECT curso FROM estudiantes WHERE id = ?').get(obs.estudianteId)
+      if (estudiante) {
+        const asignacion = prisma._db.prepare(
+          'SELECT id FROM docente_materias WHERE docenteId = ? AND materiaId = ? AND curso = ?'
+        ).get(req.usuario.docenteId, materiaId, estudiante.curso)
+        if (!asignacion) {
+          return res.status(403).json({ error: 'No tienes asignada esa materia en el curso del estudiante' })
+        }
+      }
+    }
+
+    const updates = []
+    const params = []
+    if (texto !== undefined) { updates.push('texto = ?'); params.push(texto) }
+    if (fecha !== undefined) { updates.push('fecha = ?'); params.push(fecha) }
+    if (materiaId !== undefined) { updates.push('materiaId = ?'); params.push(materiaId) }
+    params.push(req.params.id)
+    prisma._db.prepare(`UPDATE observaciones SET ${updates.join(', ')} WHERE id = ?`).run(...params)
+
+    const updated = prisma._db.prepare(`
+      SELECT o.*, m.nombre as materiaNombre, u.nombre as docenteNombre
+      FROM observaciones o
+      LEFT JOIN materias m ON m.id = o.materiaId
+      LEFT JOIN docentes d ON d.id = o.docenteId
+      LEFT JOIN usuarios u ON u.id = d.usuarioId
+      WHERE o.id = ?
+    `).get(req.params.id)
+    res.json(updated)
+  } catch (error) {
+    console.error('Error PUT /observaciones:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+router.get('/mis-observaciones', async (req, res) => {
+  try {
+    if (req.usuario.rol !== 'ESTUDIANTE') {
+      return res.status(403).json({ error: 'Solo para estudiantes' })
+    }
+    const rows = prisma._db.prepare(`
+      SELECT o.id, o.texto, o.tipo, o.fecha, o.creadoEn, m.nombre as materiaNombre, u.nombre as docenteNombre
+      FROM observaciones o
+      LEFT JOIN materias m ON m.id = o.materiaId
+      LEFT JOIN docentes d ON d.id = o.docenteId
+      LEFT JOIN usuarios u ON u.id = d.usuarioId
+      WHERE o.estudianteId = ?
+      ORDER BY o.fecha DESC, o.creadoEn DESC
+    `).all(req.usuario.estudianteId)
+    res.json(rows)
+  } catch (error) {
+    console.error('Error GET /mis-observaciones:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+router.delete('/observaciones/:id', async (req, res) => {
+  try {
+    const obs = prisma._db.prepare('SELECT * FROM observaciones WHERE id = ?').get(req.params.id)
+    if (!obs) return res.status(404).json({ error: 'Observación no encontrada' })
+    if (req.usuario.rol !== 'ADMIN' && obs.docenteId !== req.usuario.docenteId) {
+      return res.status(403).json({ error: 'No puedes eliminar esta observación' })
+    }
+    prisma._db.prepare('DELETE FROM observaciones WHERE id = ?').run(req.params.id)
+    res.json({ mensaje: 'Observación eliminada' })
+  } catch (error) {
+    console.error('Error DELETE /observaciones:', error)
+    res.status(500).json({ error: 'Error interno' })
   }
 })
 

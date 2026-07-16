@@ -8,6 +8,7 @@ db.pragma('journal_mode = WAL')
 function uuid() { return require('crypto').randomUUID() }
 
 const prisma = {
+  _db: db,
   usuario: {
     findUnique: async ({ where }) => {
       const key = Object.keys(where)[0]

@@ -1,4 +1,5 @@
 node_modules/
+notas_backup.json
 prisma/dev.db-shm
 prisma/dev.db-wal
 prisma/dev.db

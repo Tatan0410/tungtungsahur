@@ -5,12 +5,40 @@ const prisma  = require('../prisma')
 
 const router = express.Router()
 
+const MAX_INTENTOS = 5
+const TIEMPO_BLOQUEO_MS = 15 * 60 * 1000
+
+function registrarIntentoFallido(documento) {
+  const existente = prisma._db.prepare('SELECT * FROM intentos_login WHERE documento = ?').get(documento)
+  if (existente) {
+    const nuevos = existente.intentos + 1
+    if (nuevos >= MAX_INTENTOS) {
+      const bloqueadoHasta = new Date(Date.now() + TIEMPO_BLOQUEO_MS).toISOString()
+      prisma._db.prepare('UPDATE intentos_login SET intentos = ?, bloqueadoHasta = ? WHERE documento = ?').run(nuevos, bloqueadoHasta, documento)
+    } else {
+      prisma._db.prepare('UPDATE intentos_login SET intentos = ? WHERE documento = ?').run(nuevos, documento)
+    }
+  } else {
+    prisma._db.prepare('INSERT INTO intentos_login (documento, intentos, bloqueadoHasta) VALUES (?, 1, NULL)').run(documento)
+  }
+}
+
 router.post('/login', async (req, res) => {
   try {
     const { documento, password } = req.body
 
     if (!documento || !password) {
       return res.status(400).json({ error: 'Documento y contraseña son requeridos' })
+    }
+
+    // ─── RATE LIMITING ───
+    const intento = prisma._db.prepare('SELECT * FROM intentos_login WHERE documento = ?').get(documento)
+    if (intento && intento.bloqueadoHasta) {
+      const hasta = new Date(intento.bloqueadoHasta)
+      if (hasta > new Date()) {
+        const minsRest = Math.ceil((hasta - new Date()) / 60000)
+        return res.status(429).json({ error: `Demasiados intentos. Intenta de nuevo en ${minsRest} minuto(s).` })
+      }
     }
 
     const usuario = await prisma.usuario.findUnique({
@@ -22,6 +50,7 @@ router.post('/login', async (req, res) => {
     })
 
     if (!usuario) {
+      registrarIntentoFallido(documento)
       return res.status(401).json({ error: 'Documento o contraseña incorrectos' })
     }
 
@@ -29,23 +58,16 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Tu cuenta está desactivada. Contacta al administrador.' })
     }
 
-  const passwordCorrecta = await bcrypt.compare(password, usuario.password)
-  if (!passwordCorrecta) {
-    return res.status(401).json({ error: 'Documento o contraseña incorrectos' })
-  }
-
-  if (usuario.rol === 'ESTUDIANTE' && usuario.estudiante) {
-    const periodo = parseInt(req.body.periodo) || parseInt(req.query.periodo) || 2
-    const anio = parseInt(req.body.anio) || parseInt(req.query.anio) || new Date().getFullYear()
-    const consulta = await prisma.consultaEstudiante.findUnique({
-      where: { estudianteId_periodo_anio: { estudianteId: usuario.estudiante.id, periodo, anio } }
-    })
-    if (consulta && consulta.cantidad >= 3) {
-      return res.status(429).json({ error: 'Has gastado tus consultas por este periodo' })
+    const passwordCorrecta = await bcrypt.compare(password, usuario.password)
+    if (!passwordCorrecta) {
+      registrarIntentoFallido(documento)
+      return res.status(401).json({ error: 'Documento o contraseña incorrectos' })
     }
-  }
 
-  const payload = {
+    // Login exitoso → resetear contador
+    prisma._db.prepare('DELETE FROM intentos_login WHERE documento = ?').run(documento)
+
+    const payload = {
       id:     usuario.id,
       correo: usuario.correo,
       rol:    usuario.rol,
@@ -64,6 +86,7 @@ router.post('/login', async (req, res) => {
         correo: usuario.correo,
         documento: usuario.documento,
         rol:    usuario.rol,
+        docenteId: usuario.docente?.id || null,
         ...(usuario.estudiante && {
           grado:  usuario.estudiante.grado,
           curso:  usuario.estudiante.curso,

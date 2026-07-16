@@ -11,35 +11,8 @@ const cmd = args[0];
 function error(msg) { console.log('❌ ' + msg); process.exit(1) }
 function ok(msg) { console.log('✅ ' + msg) }
 
-// ---- LISTAR ----
-if (cmd === 'listar') {
-  const rows = db.prepare(`
-    SELECT u.nombre, u.documento, u.activo, dm.curso, m.nombre as materia
-    FROM usuarios u
-    JOIN docentes d ON d.usuarioId = u.id
-    LEFT JOIN docente_materias dm ON dm.docenteId = d.id
-    LEFT JOIN materias m ON m.id = dm.materiaId
-    WHERE u.rol = 'DOCENTE'
-    ORDER BY u.nombre
-  `).all();
-
-  const docs = [...new Set(rows.map(r => r.documento))];
-  docs.forEach(doc => {
-    const items = rows.filter(r => r.documento === doc);
-    const r = items[0];
-    console.log('');
-    console.log('  ' + r.nombre + '  |  Doc: ' + r.documento + (r.activo ? '' : '  🔴 INACTIVO'));
-    if (items[0].curso) {
-      items.forEach(i => console.log('    → ' + i.curso + '  |  ' + i.materia));
-    } else {
-      console.log('    (sin cursos asignados)');
-    }
-  });
-  if (docs.length === 0) console.log('  No hay profesores registrados.');
-}
-
 // ---- CREAR PROFESOR ----
-else if (cmd === 'crear-profesor') {
+if (cmd === 'crear-profesor') {
   const [doc, nombre, password] = args.slice(1);
   if (!doc || !nombre) error('Uso: node admin.js crear-profesor DOCUMENTO "NOMBRE" [CONTRASEÑA]');
 
@@ -131,6 +104,51 @@ else if (cmd === 'quitar') {
   ok('Asignación eliminada');
 }
 
+// ---- CREAR ADMIN ----
+else if (cmd === 'crear-admin') {
+  const [doc, nombre, password] = args.slice(1);
+  if (!doc || !nombre || !password) error('Uso: node admin.js crear-admin DOCUMENTO "NOMBRE" PASSWORD');
+  const existente = db.prepare('SELECT id FROM usuarios WHERE documento = ?').get(doc);
+  if (existente) error('Ya existe un usuario con documento ' + doc);
+  const hash = bcrypt.hashSync(password, 10);
+  const id = uuid();
+  db.prepare('INSERT INTO usuarios (id, correo, password, rol, nombre, documento, activo) VALUES (?, ?, ?, ?, ?, ?, 1)').run(id, doc + '@admin.edu.co', hash, 'ADMIN', nombre, doc);
+  ok('Administrador creado: ' + nombre + ' (Doc: ' + doc + ')');
+  console.log('   Contraseña: ' + password);
+}
+
+// ---- ACTUALIZAR LISTAR para incluir ADMIN ----
+else if (cmd === 'listar') {
+  const rows = db.prepare(`
+    SELECT u.nombre, u.documento, u.rol, u.activo, dm.curso, m.nombre as materia
+    FROM usuarios u
+    LEFT JOIN docentes d ON d.usuarioId = u.id
+    LEFT JOIN docente_materias dm ON dm.docenteId = d.id
+    LEFT JOIN materias m ON m.id = dm.materiaId
+    WHERE u.rol IN ('DOCENTE', 'ADMIN')
+    ORDER BY u.nombre
+  `).all();
+
+  const docs = [...new Set(rows.map(r => r.documento))];
+  docs.forEach(doc => {
+    const items = rows.filter(r => r.documento === doc);
+    const r = items[0];
+    const rolTag = r.rol === 'ADMIN' ? ' [ADMIN]' : '';
+    console.log('');
+    console.log('  ' + r.nombre + rolTag + '  |  Doc: ' + r.documento + (r.activo ? '' : '  🔴 INACTIVO'));
+    if (r.rol !== 'ADMIN') {
+      if (items[0].curso) {
+        items.forEach(i => console.log('    → ' + i.curso + '  |  ' + i.materia));
+      } else {
+        console.log('    (sin cursos asignados)');
+      }
+    } else {
+      console.log('    (administrador del sistema)');
+    }
+  });
+  if (docs.length === 0) console.log('  No hay profesores o administradores registrados.');
+}
+
 // ---- ELIMINAR PROFESOR ----
 else if (cmd === 'eliminar-profesor') {
   const doc = args[1];
@@ -154,9 +172,10 @@ else {
   📋 ADMIN - Sistema Sagrado Corazón
   ====================================
 
-  PROFESORES:
-    node admin.js listar                                            → ver todos los profesores
-    node admin.js crear-profesor DOC "NOMBRE" [CONTRASEÑA]          → crear profesor (pass opcional)
+  PROFESORES Y ADMINISTRADORES:
+    node admin.js listar                                            → ver docentes y admins
+    node admin.js crear-profesor DOC "NOMBRE" [PASS]                → crear profesor (pass opcional)
+    node admin.js crear-admin DOC "NOMBRE" PASSWORD                 → crear administrador
     node admin.js cambiar-pass DOC NUEVA_PASS                       → cambiar contraseña
     node admin.js activar DOC                                       → activar profesor
     node admin.js desactivar DOC                                    → desactivar profesor
@@ -173,6 +192,7 @@ else {
   EJEMPLOS:
     node admin.js crear-profesor 12345678 "María Pérez"
     node admin.js crear-profesor 87654321 "Carlos Ruiz" clave123
+    node admin.js crear-admin 99999999 "Director" ClaveAdmin2025
     node admin.js crear-materia "Matemáticas" 3
     node admin.js asignar 12345678 301 Matemáticas
     node admin.js cambiar-pass 12345678 nuevaClave2025

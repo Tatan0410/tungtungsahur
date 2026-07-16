@@ -37,10 +37,12 @@ app.use(express.static(path.join(__dirname, '../public')))
 const authRoutes     = require('./routes/auth')
 const notasRoutes    = require('./routes/notas')
 const docenteRoutes  = require('./routes/docente')
+const adminRoutes    = require('./routes/admin')
 
 app.use('/api/auth',     authRoutes)      // Login y logout
 app.use('/api/notas',    notasRoutes)     // Ver y subir calificaciones
 app.use('/api/docente',  docenteRoutes)   // Cursos y materias del docente
+app.use('/api/admin',    adminRoutes)     // Panel de administración
 
 // ─────────────────────────────────────────────────────
 // RUTA DE PRUEBA — para verificar que el servidor vive
@@ -53,6 +55,25 @@ app.get('/api/ping', (req, res) => {
     mensaje: 'Servidor Sagrado Corazón funcionando ✅',
     hora: new Date().toLocaleString('es-CO')
   })
+})
+
+// Configuración pública de períodos (sin auth)
+app.get('/api/config/periodos', (req, res) => {
+  try {
+    const db = require('./prisma')._db
+    const anio = parseInt(req.query.anio) || new Date().getFullYear()
+    const sede = req.query.sede
+    let rows
+    if (sede) {
+      rows = db.prepare('SELECT * FROM periodos_config WHERE sede = ? AND anio = ? ORDER BY periodo').all(sede, anio)
+    } else {
+      rows = db.prepare('SELECT * FROM periodos_config WHERE anio = ? ORDER BY sede, periodo').all(anio)
+    }
+    res.json(rows)
+  } catch (error) {
+    console.error('Error GET /config/periodos:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
 })
 
 // ─────────────────────────────────────────────────────
