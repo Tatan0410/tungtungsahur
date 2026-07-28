@@ -434,38 +434,13 @@ body::before {
     <button class="btn-sm primary" onclick="agregarColumna('RESPONSABILIDAD')">➕ Agregar nota en Responsabilidad</button>
     <button class="btn-sm primary" onclick="agregarColumna('ACTIVIDAD')">➕ Agregar nota en Actividades</button>
     <span style="flex:1;"></span>
-    <button class="btn-sm primary" onclick="mostrarSeccionObservaciones()" style="font-weight:600;">📝 Observaciones</button>
-  </div>
+    </div>
   <div id="periodo-info" style="display:none;font-size:12px;padding:8px 12px;border-radius:var(--r-md);margin-bottom:10px;"></div>
   <div id="teacher-loading" style="color:var(--ink-400);font-size:13px;padding:24px;text-align:center;background:var(--paper);border:1px dashed var(--line);border-radius:var(--r-md);">Selecciona un curso y materia para empezar</div>
 <div id="teacher-content" style="display:none;">
 
 </div>
 
-<!-- Sección dedicada de observaciones para el docente -->
-<div id="teacher-obs-section" style="display:none;">
-  <div style="background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px;margin-bottom:16px;">
-    <div style="font-size:15px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);margin-bottom:12px;">📝 Agregar observación</div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;">
-      <div><div class="lbl">Curso</div><select class="sel" id="teach-obs-curso" style="min-width:120px;" onchange="teachObsCargarEstudiantes()"><option value="">Seleccionar</option></select></div>
-      <div><div class="lbl">Materia</div><select class="sel" id="teach-obs-materia" style="min-width:160px;"><option value="">Seleccionar</option></select></div>
-      <div><div class="lbl">Estudiante</div><select class="sel" id="teach-obs-estudiante" style="min-width:200px;"><option value="">Seleccionar</option></select></div>
-      <div><div class="lbl">Fecha del evento</div><input class="inp" id="teach-obs-fecha" type="date" style="width:160px;"></div>
-    </div>
-    <div style="margin-top:10px;">
-      <textarea id="teach-obs-texto" style="width:100%;border:1px solid var(--line);border-radius:var(--r-md);padding:10px;font-size:13px;resize:vertical;min-height:60px;font-family:inherit;" placeholder="Describe el acontecimiento..."></textarea>
-    </div>
-    <div style="display:flex;gap:8px;justify-content:end;margin-top:8px;">
-      <button class="btn-sm" id="teach-obs-cancel-btn" onclick="teachObsCancelarEdicion()" style="font-weight:600;display:none;">Cancelar</button>
-      <button class="btn-sm success" id="teach-obs-guardar-btn" onclick="teachObsGuardar()" style="font-weight:600;">💾 Guardar observación</button>
-    </div>
-    <div class="error-msg" id="teach-obs-error" style="display:none;"></div>
-  </div>
-  <div>
-    <div style="font-size:15px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);margin-bottom:12px;">Mis observaciones recientes</div>
-    <div id="teach-obs-lista"><div style="color:var(--ink-400);font-size:13px;padding:16px;text-align:center;">Selecciona un curso y estudiante para ver observaciones</div></div>
-  </div>
-</div>
   <div class="scroll-container">
     <button id="scroll-left" class="scroll-btn">❮</button>
     <div class="t-wrap"><table class="grades-table"><thead>
@@ -532,6 +507,7 @@ body::before {
           <th style="padding:8px 10px;text-align:left;border-bottom:1px solid var(--line);">Materia</th>
           <th style="padding:8px 10px;text-align:left;border-bottom:1px solid var(--line);">Docente</th>
           <th style="padding:8px 10px;text-align:left;border-bottom:1px solid var(--line);">Observación</th>
+          <th style="padding:8px 10px;text-align:left;border-bottom:1px solid var(--line);">Registrado</th>
           <th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);">Acción</th>
         </tr></thead>
         <tbody id="admin-obs-tbody"></tbody>
@@ -583,18 +559,27 @@ body::before {
 
 <!-- Modal observaciones -->
 <div id="modal-observaciones" style="display:none;position:fixed;inset:0;z-index:100;background:rgba(0,0,0,0.4);align-items:center;justify-content:center;" onclick="if(event.target===this)cerrarModalObservaciones()">
-  <div style="background:#fff;border-radius:var(--r-lg);padding:24px;max-width:480px;width:90%;max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-      <div style="font-size:16px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);" id="modal-obs-titulo">Observaciones</div>
-      <button onclick="cerrarModalObservaciones()" style="border:none;background:none;font-size:20px;cursor:pointer;color:var(--ink-400);">✕</button>
+  <div style="background:#fff;border-radius:var(--r-lg);padding:0;max-width:500px;width:92%;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.3);overflow:hidden;">
+    <div style="padding:16px 20px;border-bottom:1px solid var(--line);flex-shrink:0;">
+      <div style="display:flex;justify-content:space-between;align-items:start;">
+        <div>
+          <div style="font-size:15px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);" id="modal-obs-titulo">Observaciones</div>
+          <div style="font-size:11px;color:var(--ink-400);margin-top:2px;" id="modal-obs-sub"></div>
+        </div>
+        <button onclick="cerrarModalObservaciones()" style="border:none;background:none;font-size:20px;cursor:pointer;color:var(--ink-400);line-height:1;padding:0;">✕</button>
+      </div>
     </div>
-    <div id="modal-obs-lista" style="margin-bottom:16px;">
-      <div style="color:var(--ink-400);font-size:13px;text-align:center;padding:16px;">Cargando...</div>
+    <div style="padding:16px 20px;background:var(--cream-50);border-bottom:1px solid var(--line);flex-shrink:0;">
+      <textarea id="modal-obs-texto" style="width:100%;border:1px solid var(--line);border-radius:6px;padding:8px 10px;font-size:13px;resize:none;min-height:55px;font-family:inherit;box-sizing:border-box;" placeholder="Escribe una observación..."></textarea>
+      <div style="display:flex;gap:8px;justify-content:space-between;align-items:center;margin-top:6px;">
+        <span style="font-size:11px;color:var(--ink-400);" id="modal-obs-fecha-info">📅 Se registrará con la fecha de hoy</span>
+        <button class="btn-sm success" onclick="adminCrearObservacion()" style="font-weight:600;font-size:12px;">💾 Guardar</button>
+      </div>
     </div>
-    <div style="border-top:1px solid var(--line);padding-top:12px;">
-      <textarea id="modal-obs-texto" style="width:100%;border:1px solid var(--line);border-radius:var(--r-md);padding:10px;font-size:13px;resize:vertical;min-height:60px;font-family:inherit;" placeholder="Escribe una observación..."></textarea>
-      <div style="display:flex;gap:8px;justify-content:end;margin-top:8px;">
-        <button class="btn-sm success" onclick="adminCrearObservacion()" style="font-weight:600;">Agregar</button>
+    <div style="flex:1;overflow-y:auto;padding:16px 20px;">
+      <div style="font-size:12px;font-weight:700;color:var(--ink-700);font-family:var(--font-d);margin-bottom:10px;">Observaciones registradas</div>
+      <div id="modal-obs-lista">
+        <div style="color:var(--ink-400);font-size:13px;text-align:center;padding:16px;">Cargando...</div>
       </div>
     </div>
   </div>
@@ -1213,183 +1198,6 @@ async function guardarGrid() {
   }
 }
 
-// ─── SECCIÓN DE OBSERVACIONES (DOCENTE) ───
-function mostrarSeccionObservaciones() {
-  document.getElementById('teacher-content').style.display = 'none'
-  document.getElementById('teacher-obs-section').style.display = 'block'
-  const cursos = document.getElementById('teach-obs-curso')
-  if (cursos.options.length <= 1) {
-    const orig = document.getElementById('sel-curso')
-    cursos.innerHTML = orig.innerHTML
-    // Pre-fill materias based on first course
-    teachObsCargarMaterias()
-  }
-  document.getElementById('teach-obs-fecha').value = new Date().toISOString().split('T')[0]
-  // Load all teacher's observations
-  cargarMisObservacionesDocente()
-}
-
-function teachObsCargarMaterias() {
-  const curso = document.getElementById('teach-obs-curso').value
-  const matSel = document.getElementById('teach-obs-materia')
-  matSel.innerHTML = '<option value="">Seleccionar</option>'
-  if (!curso || !window._teacherMaterias) return
-  const materias = window._teacherMaterias.filter(m => m.curso === curso)
-  for (const m of materias) {
-    const opt = document.createElement('option')
-    opt.value = m.materiaId
-    opt.textContent = m.materiaNombre
-    matSel.appendChild(opt)
-  }
-}
-
-function teachObsCargarEstudiantes() {
-  const curso = document.getElementById('teach-obs-curso').value
-  const estSel = document.getElementById('teach-obs-estudiante')
-  estSel.innerHTML = '<option value="">Seleccionar</option>'
-  if (!curso) return
-  fetch(API + '/api/notas/grupo?curso=' + encodeURIComponent(curso) + '&materiaId=' + (document.getElementById('teach-obs-materia').value || 'none') + '&periodo=1&anio=' + new Date().getFullYear(), {
-    headers: { 'Authorization': 'Bearer ' + currentToken }
-  })
-  .then(r => r.json())
-  .then(data => {
-    const estudiantes = data.estudiantes || data
-    for (const e of estudiantes) {
-      const opt = document.createElement('option')
-      opt.value = e.estudianteId
-      opt.textContent = e.nombre
-      estSel.appendChild(opt)
-    }
-  })
-  .catch(() => {})
-}
-
-async function teachObsGuardar() {
-  const estudianteId = document.getElementById('teach-obs-estudiante').value
-  const materiaId = document.getElementById('teach-obs-materia').value
-  const texto = document.getElementById('teach-obs-texto').value.trim()
-  const fecha = document.getElementById('teach-obs-fecha').value
-  const err = document.getElementById('teach-obs-error')
-  if (!estudianteId || !materiaId || !texto) {
-    err.textContent = 'Completa todos los campos: estudiante, materia y descripción'
-    err.style.display = 'block'
-    return
-  }
-  err.style.display = 'none'
-  try {
-    const method = currentEditObsId ? 'PUT' : 'POST'
-    const url = currentEditObsId ? API + '/api/notas/observaciones/' + currentEditObsId : API + '/api/notas/observaciones'
-    const res = await fetch(url, {
-      method: method,
-      headers: { 'Authorization': 'Bearer ' + currentToken, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ estudianteId, materiaId, texto, fecha: fecha || undefined })
-    })
-    const data = await res.json()
-    if (res.ok) {
-      document.getElementById('teach-obs-texto').value = ''
-      currentEditObsId = null
-      document.getElementById('teach-obs-guardar-btn').textContent = '💾 Guardar observación'
-      document.getElementById('teach-obs-cancel-btn').style.display = 'none'
-      mostrarToast('ok', 'Observación guardada')
-      cargarMisObservacionesDocente()
-    } else {
-      err.textContent = data.error || 'Error al guardar'
-      err.style.display = 'block'
-    }
-  } catch (e) {
-    err.textContent = 'Error de conexión'
-    err.style.display = 'block'
-  }
-}
-
-function teachObsEditar(id, texto, fecha, materiaId, estudianteId) {
-  currentEditObsId = id
-  document.getElementById('teach-obs-estudiante').value = estudianteId
-  document.getElementById('teach-obs-materia').value = materiaId
-  document.getElementById('teach-obs-texto').value = texto
-  if (fecha) document.getElementById('teach-obs-fecha').value = fecha
-  document.getElementById('teach-obs-guardar-btn').textContent = '💾 Actualizar observación'
-  document.getElementById('teach-obs-cancel-btn').style.display = 'inline-block'
-  document.getElementById('teach-obs-error').style.display = 'none'
-  document.getElementById('teach-obs-estudiante').scrollIntoView({ behavior: 'smooth', block: 'center' })
-}
-
-function teachObsCancelarEdicion() {
-  currentEditObsId = null
-  document.getElementById('teach-obs-texto').value = ''
-  document.getElementById('teach-obs-guardar-btn').textContent = '💾 Guardar observación'
-  document.getElementById('teach-obs-cancel-btn').style.display = 'none'
-}
-
-async function teachObsEliminar(id) {
-  if (!confirm('¿Eliminar esta observación?')) return
-  try {
-    const res = await fetch(API + '/api/notas/observaciones/' + id, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + currentToken } })
-    if (res.ok) {
-      mostrarToast('ok', 'Observación eliminada')
-      cargarMisObservacionesDocente()
-    } else {
-      const data = await res.json()
-      mostrarToast('error', data.error || 'Error')
-    }
-  } catch (e) {
-    mostrarToast('error', 'Error de conexión')
-  }
-}
-
-async function cargarMisObservacionesDocente() {
-  const lista = document.getElementById('teach-obs-lista')
-  lista.innerHTML = '<div style="color:var(--ink-400);font-size:13px;text-align:center;padding:16px;">Cargando...</div>'
-  try {
-    const res = await fetch(API + '/api/docente/mis-cursos', {
-      headers: { 'Authorization': 'Bearer ' + currentToken }
-    })
-    if (!res.ok) { lista.innerHTML = ''; return }
-    const cursos = await res.json()
-    const cursosArr = cursos.cursos || []
-    window._teacherMaterias = []
-    for (const c of cursosArr) {
-      for (const m of c.materias) {
-        window._teacherMaterias.push({ curso: c.curso, materiaId: m.materiaId, materiaNombre: m.materiaNombre })
-      }
-    }
-    // Populate curso select if needed
-    const cursoSel = document.getElementById('teach-obs-curso')
-    if (cursoSel.options.length <= 1) {
-      const orig = document.getElementById('sel-curso')
-      cursoSel.innerHTML = orig.innerHTML
-    }
-
-    // Fetch observations by this teacher
-    const obsRes = await fetch(API + '/api/notas/observaciones?docenteId=' + encodeURIComponent(currentUser.docenteId || ''), {
-      headers: { 'Authorization': 'Bearer ' + currentToken }
-    })
-    if (!obsRes.ok) { lista.innerHTML = '<div style="color:var(--ink-400);font-size:13px;text-align:center;padding:16px;">Sin observaciones</div>'; return }
-    const misObs = await obsRes.json()
-    if (!misObs.length) {
-      lista.innerHTML = '<div style="color:var(--ink-400);font-size:13px;text-align:center;padding:16px;">No has creado observaciones aún</div>'
-      return
-    }
-    lista.innerHTML = misObs.slice(0, 20).map(o => {
-      const d = new Date((o.fecha || o.creadoEn) + 'Z')
-      const fecha = d.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })
-      const matLabel = o.materiaNombre ? ' <span style="background:var(--cream-100);padding:1px 6px;border-radius:8px;font-size:10px;">' + o.materiaNombre + '</span>' : ''
-      return '<div style="background:var(--cream-50);border:1px solid var(--line);border-radius:var(--r-md);padding:10px 12px;margin-bottom:8px;">' +
-        '<div style="display:flex;justify-content:space-between;align-items:start;font-size:11px;color:var(--ink-500);margin-bottom:4px;">' +
-        '<span>' + fecha + matLabel + '</span>' +
-        '<span>' +
-        '<button onclick="teachObsEditar(\'' + o.id + '\',\'' + o.texto.replace(/'/g, "\\'") + '\',\'' + (o.fecha || '') + '\',\'' + o.materiaId + '\',\'' + o.estudianteId + '\')" style="border:none;background:none;cursor:pointer;font-size:12px;padding:0 4px;" title="Editar">✏️</button>' +
-        '<button onclick="teachObsEliminar(\'' + o.id + '\')" style="border:none;background:none;cursor:pointer;color:#A32D2D;font-size:12px;padding:0 2px;" title="Eliminar">🗑️</button>' +
-        '</span>' +
-        '</div>' +
-        '<div style="font-size:13px;color:var(--ink-900);white-space:pre-wrap;">' + o.texto + '</div>' +
-        '</div>'
-    }).join('') + (misObs.length > 20 ? '<div style="text-align:center;font-size:12px;color:var(--ink-400);padding:8px;">Mostrando 20 de ' + misObs.length + '</div>' : '')
-  } catch (e) {
-    lista.innerHTML = '<div style="color:#A32D2D;text-align:center;padding:16px;">Error al cargar</div>'
-  }
-}
-
 // Load and render student grades
 async function cargarNotasEstudiante() {
   try {
@@ -1437,13 +1245,14 @@ async function cargarObservacionesEstudiante() {
       return
     }
     container.innerHTML = data.map(o => {
-      const date = new Date(o.creadoEn + 'Z')
-      const fecha = date.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+      const creado = new Date(o.creadoEn + 'Z')
+      const fechaHora = creado.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' }) + ' · ' + creado.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })
+      const eventoInfo = (o.fecha && o.fecha !== creado.toISOString().split('T')[0]) ? ' -- 📅 Evento: ' + new Date(o.fecha + 'T00:00:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' }) : ''
       return '<div style="background:var(--cream-50);border:1px solid var(--line);border-radius:var(--r-md);padding:10px 12px;margin-bottom:8px;">' +
-        '<div style="font-size:11px;color:var(--ink-500);margin-bottom:4px;">' +
-        (o.docenteNombre || 'Coordinación') + ' · ' + fecha +
-        ' <span style="background:var(--paper);padding:1px 6px;border-radius:8px;font-size:10px;">' + (o.materiaNombre || 'General') + '</span>' +
+        '<div style="font-size:11px;color:var(--ink-500);margin-bottom:5px;display:flex;justify-content:space-between;align-items:start;">' +
+        '<span>' + (o.docenteNombre || 'Coordinación') + ' · ' + fechaHora + '<span style="background:var(--paper);padding:1px 6px;border-radius:8px;font-size:10px;margin-left:4px;">' + (o.materiaNombre || 'General') + '</span></span>' +
         '</div>' +
+        (eventoInfo ? '<div style="font-size:10px;color:var(--burgundy-600);margin-bottom:4px;">' + eventoInfo + '</div>' : '') +
         '<div style="font-size:13px;color:var(--ink-900);white-space:pre-wrap;line-height:1.5;">' + o.texto + '</div>' +
         '</div>'
     }).join('')
@@ -1912,23 +1721,26 @@ async function cargarAdminObservaciones(pagina) {
 
   try {
     const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + currentToken } })
-    if (!res.ok) { document.getElementById('admin-obs-tbody').innerHTML = '<tr><td colspan="7" style="padding:24px;text-align:center;color:#A32D2D;">Error al cargar</td></tr>'; return }
+    if (!res.ok) { document.getElementById('admin-obs-tbody').innerHTML = '<tr><td colspan="8" style="padding:24px;text-align:center;color:#A32D2D;">Error al cargar</td></tr>'; return }
     const data = await res.json()
     const rows = data.observaciones || []
     const tb = document.getElementById('admin-obs-tbody')
     if (!rows.length) {
-      tb.innerHTML = '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--ink-400);">Sin resultados</td></tr>'
+      tb.innerHTML = '<tr><td colspan="8" style="padding:24px;text-align:center;color:var(--ink-400);">Sin resultados</td></tr>'
     } else {
       tb.innerHTML = rows.map(o => {
         const d = new Date((o.fecha || o.creadoEn) + 'T00:00:00')
         const fecha = d.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })
-        return '<tr>' +
+        const creadoDate = new Date(o.creadoEn + 'Z')
+          const creadoEn = creadoDate.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' }) + ' ' + creadoDate.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })
+          return '<tr>' +
           '<td style="padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap;">' + fecha + '</td>' +
           '<td style="padding:8px 10px;border-bottom:1px solid var(--line);">' + (o.estudianteNombre || '') + '</td>' +
           '<td style="padding:8px 10px;border-bottom:1px solid var(--line);">' + (o.curso || '') + '</td>' +
           '<td style="padding:8px 10px;border-bottom:1px solid var(--line);">' + (o.materiaNombre || '') + '</td>' +
           '<td style="padding:8px 10px;border-bottom:1px solid var(--line);">' + (o.docenteNombre || 'Coordinación') + '</td>' +
           '<td style="padding:8px 10px;border-bottom:1px solid var(--line);font-size:12px;max-width:300px;white-space:pre-wrap;">' + (o.texto || '') + '</td>' +
+          '<td style="padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap;font-size:11px;color:var(--ink-500);">' + creadoEn + '</td>' +
           '<td style="padding:8px 10px;border-bottom:1px solid var(--line);text-align:center;"><button class="btn-sm" onclick="adminEliminarObservacion(\'' + o.id + '\')" style="font-size:11px;color:#A32D2D;">🗑️</button></td>' +
           '</tr>'
       }).join('')
@@ -1945,7 +1757,7 @@ async function cargarAdminObservaciones(pagina) {
       pagEl.innerHTML = ''
     }
   } catch (e) {
-    document.getElementById('admin-obs-tbody').innerHTML = '<tr><td colspan="7" style="padding:24px;text-align:center;color:#A32D2D;">Error de conexión</td></tr>'
+    document.getElementById('admin-obs-tbody').innerHTML = '<tr><td colspan="8" style="padding:24px;text-align:center;color:#A32D2D;">Error de conexión</td></tr>'
   }
 }
 
@@ -1956,8 +1768,20 @@ let currentEditObsId = null
 function mostrarObservaciones(estudianteId, nombre, materiaId) {
   currentObsEstudianteId = estudianteId
   currentObsMateriaId = materiaId || ''
-  document.getElementById('modal-obs-titulo').textContent = 'Observaciones: ' + nombre
+  currentEditObsId = null
+  document.getElementById('modal-obs-titulo').textContent = '📝 ' + nombre
+  // Show materia name in subtitle
+  let materiaNombre = ''
+  const matSel = document.getElementById('sel-materia')
+  if (matSel && matSel.selectedOptions[0]) {
+    materiaNombre = matSel.selectedOptions[0].textContent.split(' (')[0]
+  }
+  document.getElementById('modal-obs-sub').textContent = materiaNombre ? 'Materia: ' + materiaNombre : ''
   document.getElementById('modal-obs-texto').value = ''
+  // Show today's date
+  const hoy = new Date()
+  const fechaHoy = hoy.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })
+  document.getElementById('modal-obs-fecha-info').textContent = '📅 Fecha de registro: ' + fechaHoy
   document.getElementById('modal-obs-lista').innerHTML = '<div style="color:var(--ink-400);font-size:13px;text-align:center;padding:16px;">Cargando...</div>'
   document.getElementById('modal-observaciones').style.display = 'flex'
   cargarObservaciones(estudianteId)
@@ -1979,18 +1803,18 @@ async function cargarObservaciones(estudianteId) {
       return
     }
     lista.innerHTML = data.map(o => {
-      const date = new Date(o.creadoEn + 'Z')
-      const fecha = date.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+      const creado = new Date(o.creadoEn + 'Z')
+      const fechaCreado = creado.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' }) + ' · ' + creado.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })
       const materiaLabel = o.materiaNombre ? ' <span style="background:var(--cream-100);padding:1px 6px;border-radius:8px;font-size:10px;">' + o.materiaNombre + '</span>' : ''
       return '<div style="background:#f9f8f6;border:1px solid var(--line);border-radius:var(--r-md);padding:10px 12px;margin-bottom:8px;" id="obs-card-' + o.id + '">' +
         '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:4px;">' +
-        '<span style="font-size:11px;color:var(--ink-500);">' + (o.docenteNombre || o.docenteId || 'Coordinación') + ' · ' + fecha + materiaLabel + '</span>' +
+        '<span style="font-size:11px;color:var(--ink-500);">' + (o.docenteNombre || o.docenteId || 'Coordinación') + ' · ' + fechaCreado + materiaLabel + '</span>' +
         '<span>' +
         '<button onclick="modalObsEditar(\'' + o.id + '\',\'' + o.texto.replace(/'/g, "\\'") + '\')" style="border:none;background:none;cursor:pointer;font-size:13px;padding:0 4px;" title="Editar">✏️</button>' +
         '<button onclick="eliminarObservacion(\'' + o.id + '\')" style="border:none;background:none;cursor:pointer;color:#A32D2D;font-size:14px;padding:0;line-height:1;" title="Eliminar">✕</button>' +
         '</span>' +
         '</div>' +
-        '<div id="obs-text-' + o.id + '" style="font-size:13px;color:var(--ink-900);white-space:pre-wrap;">' + o.texto + '</div>' +
+        '<div id="obs-text-' + o.id + '" style="font-size:13px;color:var(--ink-900);white-space:pre-wrap;line-height:1.5;">' + o.texto + '</div>' +
         '</div>'
     }).join('')
   } catch (e) {
