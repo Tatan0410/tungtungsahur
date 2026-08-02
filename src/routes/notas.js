@@ -1027,4 +1027,61 @@ router.delete('/observaciones/:id', async (req, res) => {
   }
 })
 
+// ─── DIRECTOR: OBSERVACIONES DE SU CURSO ───
+
+router.get('/observaciones-curso', async (req, res) => {
+  try {
+    if (req.usuario.rol !== 'DOCENTE') {
+      return res.status(403).json({ error: 'Solo docentes' })
+    }
+    const { curso } = req.query
+    if (!curso) {
+      return res.status(400).json({ error: 'curso es requerido' })
+    }
+
+    // Verify this teacher is director of the course
+    const director = prisma._db.prepare(
+      'SELECT * FROM directores_grupo WHERE docenteId = ? AND curso = ?'
+    ).get(req.usuario.docenteId, curso)
+    if (!director) {
+      return res.status(403).json({ error: 'No eres director de este curso' })
+    }
+
+    const rows = prisma._db.prepare(`
+      SELECT o.*, m.nombre as materiaNombre, u.nombre as docenteNombre,
+             e.curso as estudianteCurso, u2.nombre as estudianteNombre
+      FROM observaciones o
+      JOIN estudiantes e ON e.id = o.estudianteId
+      JOIN usuarios u2 ON u2.id = e.usuarioId
+      LEFT JOIN materias m ON m.id = o.materiaId
+      LEFT JOIN docentes d ON d.id = o.docenteId
+      LEFT JOIN usuarios u ON u.id = d.usuarioId
+      WHERE e.curso = ?
+      ORDER BY o.fecha DESC, o.creadoEn DESC
+    `).all(curso)
+
+    res.json(rows)
+  } catch (error) {
+    console.error('Error GET /observaciones-curso:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// ─── DIRECTOR: CHECK IF TEACHER IS DIRECTOR ───
+
+router.get('/soy-director', async (req, res) => {
+  try {
+    if (req.usuario.rol !== 'DOCENTE') {
+      return res.status(403).json({ error: 'Solo docentes' })
+    }
+    const rows = prisma._db.prepare(
+      'SELECT curso FROM directores_grupo WHERE docenteId = ?'
+    ).all(req.usuario.docenteId)
+    res.json({ cursos: rows.map(r => r.curso) })
+  } catch (error) {
+    console.error('Error GET /soy-director:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
 module.exports = router

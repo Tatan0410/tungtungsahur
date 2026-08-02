@@ -415,6 +415,7 @@ body::before {
     <select class="sel" id="sel-curso"><option value="">Seleccionar curso</option></select>
     <select class="sel" id="sel-materia"><option value="">Seleccionar materia</option></select>
     <button class="btn-sm success" id="btn-save-all" style="margin-left: auto; font-weight: 600; padding: 8px 14px;" onclick="guardarGrid()">💾 Guardar todos los cambios</button>
+    <button class="btn-sm" id="btn-director-obs" style="display:none;font-weight:600;" onclick="mostrarObservacionesCursoDirector()">👁️ Observaciones de mi curso</button>
     <span class="saved-toast" id="toast">✓ Guardado correctamente</span>
   </div>
   <div class="period-tabs" id="period-tabs">
@@ -475,6 +476,8 @@ body::before {
     <button class="btn-sm primary" onclick="cargarAdminProfesores()" style="font-weight:600;">👤 Profesores</button>
     <button class="btn-sm primary" onclick="cargarAdminAsignaciones()" style="font-weight:600;">📋 Asignaciones</button>
     <button class="btn-sm primary" onclick="cargarAdminPeriodos()" style="font-weight:600;">📅 Períodos</button>
+    <button class="btn-sm primary" onclick="cargarAdminEstudiantes()" style="font-weight:600;">👥 Estudiantes</button>
+    <button class="btn-sm primary" onclick="cargarAdminDirectores()" style="font-weight:600;">🎓 Directores</button>
     <button class="btn-sm primary" onclick="cargarAdminObservaciones()" style="font-weight:600;">👁️ Obs</button>
   </div>
 
@@ -556,6 +559,67 @@ body::before {
     </div>
   </div>
 </div>
+
+  <div id="admin-estudiantes-section" style="display:none;">
+    <div style="font-size:15px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);margin-bottom:12px;">👥 Estudiantes</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:16px;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px;">
+      <div><div class="lbl">Sede</div><select class="sel" id="admin-est-sede"><option value="">Todas</option></select></div>
+      <div><div class="lbl">Curso</div><input class="inp" id="admin-est-curso" placeholder="Ej: 301" style="width:80px;"></div>
+      <div><div class="lbl">Grado</div><select class="sel" id="admin-est-grado"><option value="">Todos</option></select></div>
+      <div><button class="btn-sm primary" onclick="cargarAdminEstudiantes()" style="font-weight:600;">Filtrar</button></div>
+    </div>
+    <div style="overflow-x:auto;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:600px;">
+        <thead><tr style="background:var(--cream-100);">
+          <th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);">Nombre</th>
+          <th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);">Documento</th>
+          <th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);">Curso</th>
+          <th style="padding:10px 12px;text-align:center;border-bottom:1px solid var(--line);">Grado</th>
+          <th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);">Sede</th>
+          <th style="padding:10px 12px;text-align:center;border-bottom:1px solid var(--line);">Jornada</th>
+          <th style="padding:10px 12px;text-align:center;border-bottom:1px solid var(--line);">Acción</th>
+        </tr></thead>
+        <tbody id="admin-tb-estudiantes"></tbody>
+      </table>
+    </div>
+    <div id="admin-est-pagination" style="display:flex;gap:8px;justify-content:center;margin-top:12px;"></div>
+  </div>
+
+  <!-- Modal cambiar curso de estudiante -->
+  <div id="modal-cambiar-curso" style="display:none;position:fixed;inset:0;z-index:100;background:rgba(0,0,0,0.4);align-items:center;justify-content:center;" onclick="if(event.target===this)cerrarModalCambiarCurso()">
+    <div style="background:#fff;border-radius:var(--r-lg);padding:24px;max-width:420px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+      <div style="font-size:16px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);margin-bottom:4px;" id="modal-curso-titulo">Cambiar curso</div>
+      <div style="font-size:12px;color:var(--ink-500);margin-bottom:16px;" id="modal-curso-info"></div>
+      <div class="inp-g"><div class="lbl">Curso destino</div><select class="sel" id="modal-curso-select" style="width:100%;"></select></div>
+      <div style="display:flex;gap:8px;justify-content:end;margin-top:16px;">
+        <button class="btn-sm" onclick="cerrarModalCambiarCurso()">Cancelar</button>
+        <button class="btn-sm success" onclick="adminGuardarCambioCurso()" style="font-weight:600;">Confirmar cambio</button>
+      </div>
+      <div style="margin-top:12px;padding:8px 10px;background:#FFF8E1;border-radius:6px;font-size:11px;color:#7A6A00;">
+        ⚠️ Las notas ya registradas en el curso actual se conservarán como historial.
+      </div>
+      <div class="error-msg" id="modal-curso-error" style="display:none;margin-top:8px;"></div>
+    </div>
+  </div>
+
+  <div id="admin-directores-section" style="display:none;">
+    <div style="font-size:15px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);margin-bottom:12px;">🎓 Directores de grupo</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:16px;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px;">
+      <div><div class="lbl">Profesor</div><select class="sel" id="admin-dir-profesor" style="min-width:200px;"><option value="">Seleccionar</option></select></div>
+      <div><div class="lbl">Curso</div><input class="inp" id="admin-dir-curso" placeholder="Ej: 301" style="width:80px;"></div>
+      <div><button class="btn-sm success" onclick="adminAsignarDirector()" style="font-weight:600;">Asignar director</button></div>
+    </div>
+    <div style="overflow-x:auto;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:500px;">
+        <thead><tr style="background:var(--cream-100);">
+          <th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);">Docente</th>
+          <th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);">Curso</th>
+          <th style="padding:10px 12px;text-align:center;border-bottom:1px solid var(--line);">Acción</th>
+        </tr></thead>
+        <tbody id="admin-tb-directores"></tbody>
+      </table>
+    </div>
+  </div>
 
 <!-- Modal observaciones -->
 <div id="modal-observaciones" style="display:none;position:fixed;inset:0;z-index:100;background:rgba(0,0,0,0.4);align-items:center;justify-content:center;" onclick="if(event.target===this)cerrarModalObservaciones()">
@@ -809,6 +873,21 @@ async function cargarAsignaciones() {
       if (currentUser && currentUser.rol === 'ESTUDIANTE') {
         cargarNotasEstudiante();
       }
+      // Check if teacher is a director
+      try {
+        const dirRes = await fetch(API + '/api/notas/soy-director', { headers: { 'Authorization': 'Bearer ' + currentToken } })
+        if (dirRes.ok) {
+          const dirData = await dirRes.json()
+          const dirBtn = document.getElementById('btn-director-obs')
+          if (dirData.cursos && dirData.cursos.length > 0) {
+            dirBtn.style.display = 'inline-block'
+            dirBtn.textContent = '👁️ Observaciones de ' + dirData.cursos.join(', ')
+            window._directorCursos = dirData.cursos
+          } else {
+            dirBtn.style.display = 'none'
+          }
+        }
+      } catch (e) {}
 
         }
       }
@@ -1680,6 +1759,257 @@ async function adminEliminarObservacion(id) {
   }
 }
 
+// ─── ADMIN: ESTUDIANTES ───
+let currentEstPage = 1
+
+async function cargarAdminEstudiantes() {
+  document.getElementById('admin-profesores-section').style.display = 'none'
+  document.getElementById('admin-asignaciones-section').style.display = 'none'
+  document.getElementById('admin-periodos-section').style.display = 'none'
+  document.getElementById('admin-obs-section').style.display = 'none'
+  document.getElementById('admin-estudiantes-section').style.display = 'block'
+
+  // Populate sede filter
+  try {
+    const sedesRes = await fetch(API + '/api/admin/sedes', { headers: { 'Authorization': 'Bearer ' + currentToken } })
+    if (sedesRes.ok) {
+      const sedes = await sedesRes.json()
+      const selSede = document.getElementById('admin-est-sede')
+      selSede.innerHTML = '<option value="">Todas</option>' + sedes.map(s => '<option value="' + s + '">' + s + '</option>').join('')
+    }
+  } catch (e) {}
+
+  // Populate grado filter
+  const selGrado = document.getElementById('admin-est-grado')
+  selGrado.innerHTML = '<option value="">Todos</option>' + Array.from({length: 9}, (_, i) => i + 3).map(g => '<option value="' + g + '">' + g + '°</option>').join('')
+
+  currentEstPage = 1
+  await cargarTablaEstudiantes()
+}
+
+async function cargarTablaEstudiantes() {
+  const tb = document.getElementById('admin-tb-estudiantes')
+  const pagEl = document.getElementById('admin-est-pagination')
+  tb.innerHTML = '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--ink-400);">Cargando...</td></tr>'
+
+  const sede = document.getElementById('admin-est-sede').value
+  const curso = document.getElementById('admin-est-curso').value.trim()
+  const grado = document.getElementById('admin-est-grado').value
+  let url = API + '/api/admin/estudiantes?pagina=' + currentEstPage
+  if (sede) url += '&sede=' + encodeURIComponent(sede)
+  if (curso) url += '&curso=' + encodeURIComponent(curso)
+  if (grado) url += '&grado=' + encodeURIComponent(grado)
+
+  try {
+    const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + currentToken } })
+    if (!res.ok) { tb.innerHTML = '<tr><td colspan="7" style="padding:24px;text-align:center;color:#A32D2D;">Error al cargar</td></tr>'; return }
+    const data = await res.json()
+    const rows = data.estudiantes || []
+
+    if (!rows.length) {
+      tb.innerHTML = '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--ink-400);">Sin resultados</td></tr>'
+    } else {
+      tb.innerHTML = rows.map(e => {
+        const jornadaBadge = e.jornada === 'MAÑANA'
+          ? '<span style="background:#EAF3DE;color:#3B6D11;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">🌅 Mañana</span>'
+          : e.jornada === 'TARDE'
+          ? '<span style="background:#FFF3E0;color:#E65100;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">🌇 Tarde</span>'
+          : '<span style="background:#F3E5F5;color:#6A1B9A;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">' + (e.jornada || '—') + '</span>'
+        return '<tr>' +
+          '<td style="padding:8px 10px;border-bottom:1px solid var(--line);font-weight:600;">' + e.nombre + '</td>' +
+          '<td style="padding:8px 10px;border-bottom:1px solid var(--line);">' + e.documento + '</td>' +
+          '<td style="padding:8px 10px;border-bottom:1px solid var(--line);">' + e.curso + '</td>' +
+          '<td style="padding:8px 10px;border-bottom:1px solid var(--line);text-align:center;">' + e.grado + '°</td>' +
+          '<td style="padding:8px 10px;border-bottom:1px solid var(--line);">' + e.sede + '</td>' +
+          '<td style="padding:8px 10px;border-bottom:1px solid var(--line);text-align:center;">' + jornadaBadge + '</td>' +
+          '<td style="padding:8px 10px;border-bottom:1px solid var(--line);text-align:center;"><button class="btn-sm" onclick="adminMostrarModalCambioCurso(\'' + e.id + '\',\'' + e.nombre.replace(/'/g, "\\'") + '\',\'' + e.curso + '\')" style="font-size:11px;">📄 Cambiar curso</button></td>' +
+          '</tr>'
+      }).join('')
+    }
+
+    // Pagination
+    if (data.paginas > 1) {
+      let pagHtml = ''
+      for (let i = 1; i <= data.paginas; i++) {
+        pagHtml += '<button class="btn-sm ' + (i === data.pagina ? 'primary' : '') + '" onclick="changeEstPage(' + i + ')" style="font-size:11px;">' + i + '</button> '
+      }
+      pagEl.innerHTML = pagHtml
+    } else {
+      pagEl.innerHTML = ''
+    }
+  } catch (e) {
+    tb.innerHTML = '<tr><td colspan="7" style="padding:24px;text-align:center;color:#A32D2D;">Error de conexión</td></tr>'
+  }
+}
+
+function changeEstPage(p) {
+  currentEstPage = p
+  cargarTablaEstudiantes()
+}
+
+let currentCambioCursoId = null
+
+function adminMostrarModalCambioCurso(id, nombre, cursoActual) {
+  currentCambioCursoId = id
+  document.getElementById('modal-curso-titulo').textContent = 'Cambiar curso: ' + nombre
+  document.getElementById('modal-curso-info').textContent = 'Curso actual: ' + cursoActual
+  document.getElementById('modal-curso-error').style.display = 'none'
+  document.getElementById('modal-curso-select').innerHTML = '<option value="">Cargando cursos...</option>'
+  document.getElementById('modal-cambiar-curso').style.display = 'flex'
+
+  // Load cursos disponibles
+  fetch(API + '/api/admin/cursos-disponibles', { headers: { 'Authorization': 'Bearer ' + currentToken } })
+    .then(r => r.json())
+    .then(data => {
+      const select = document.getElementById('modal-curso-select')
+      const mañana = data.cursos.filter(c => c.jornada === 'MAÑANA')
+      const tarde = data.cursos.filter(c => c.jornada === 'TARDE')
+      const otros = data.cursos.filter(c => c.jornada !== 'MAÑANA' && c.jornada !== 'TARDE')
+      let html = ''
+      if (mañana.length) {
+        html += '<optgroup label="🌅 Mañana">'
+        html += mañana.map(c => '<option value="' + c.curso + '" data-grado="' + c.grado + '">' + c.curso + ' (grado ' + c.grado + '°) — ' + c.sede + '</option>').join('')
+        html += '</optgroup>'
+      }
+      if (tarde.length) {
+        html += '<optgroup label="🌇 Tarde">'
+        html += tarde.map(c => '<option value="' + c.curso + '" data-grado="' + c.grado + '">' + c.curso + ' (grado ' + c.grado + '°) — ' + c.sede + '</option>').join('')
+        html += '</optgroup>'
+      }
+      if (otros.length) {
+        html += '<optgroup label="❓ Otra">'
+        html += otros.map(c => '<option value="' + c.curso + '" data-grado="' + c.grado + '">' + c.curso + ' (grado ' + c.grado + '°) — ' + c.sede + '</option>').join('')
+        html += '</optgroup>'
+      }
+      select.innerHTML = html
+    })
+    .catch(() => {
+      document.getElementById('modal-curso-select').innerHTML = '<option value="">Error al cargar</option>'
+    })
+}
+
+function cerrarModalCambiarCurso() {
+  document.getElementById('modal-cambiar-curso').style.display = 'none'
+  currentCambioCursoId = null
+}
+
+async function adminGuardarCambioCurso() {
+  const cursoSelect = document.getElementById('modal-curso-select')
+  const selectedOption = cursoSelect.selectedOptions[0]
+  const curso = selectedOption ? selectedOption.value : ''
+  const grado = selectedOption ? selectedOption.dataset.grado : ''
+  const err = document.getElementById('modal-curso-error')
+
+  if (!curso || !grado) { err.textContent = 'Selecciona un curso destino'; err.style.display = 'block'; return }
+  err.style.display = 'none'
+
+  try {
+    const res = await fetch(API + '/api/admin/estudiantes/' + currentCambioCursoId + '/curso', {
+      method: 'PUT',
+      headers: { 'Authorization': 'Bearer ' + currentToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ curso, grado: parseInt(grado) })
+    })
+    const data = await res.json()
+    if (res.ok) {
+      cerrarModalCambiarCurso()
+      mostrarToast('ok', data.mensaje)
+      cargarTablaEstudiantes()
+    } else {
+      err.textContent = data.error || 'Error al mover estudiante'
+      err.style.display = 'block'
+    }
+  } catch (e) {
+    err.textContent = 'Error de conexión'
+    err.style.display = 'block'
+  }
+}
+
+// ─── ADMIN: DIRECTORES DE GRUPO ───
+async function cargarAdminDirectores() {
+  document.getElementById('admin-profesores-section').style.display = 'none'
+  document.getElementById('admin-asignaciones-section').style.display = 'none'
+  document.getElementById('admin-periodos-section').style.display = 'none'
+  document.getElementById('admin-obs-section').style.display = 'none'
+  document.getElementById('admin-estudiantes-section').style.display = 'none'
+  document.getElementById('admin-directores-section').style.display = 'block'
+
+  // Load profesores for the select
+  try {
+    const res = await fetch(API + '/api/admin/profesores', { headers: { 'Authorization': 'Bearer ' + currentToken } })
+    if (res.ok) {
+      const profes = await res.json()
+      const sel = document.getElementById('admin-dir-profesor')
+      sel.innerHTML = '<option value="">Seleccionar</option>' + profes.map(p => '<option value="' + p.docenteId + '">' + p.nombre + ' (' + p.documento + ')</option>').join('')
+    }
+  } catch (e) {}
+
+  await cargarTablaDirectores()
+}
+
+async function cargarTablaDirectores() {
+  const tb = document.getElementById('admin-tb-directores')
+  tb.innerHTML = '<tr><td colspan="3" style="padding:24px;text-align:center;color:var(--ink-400);">Cargando...</td></tr>'
+  try {
+    const res = await fetch(API + '/api/admin/directores', { headers: { 'Authorization': 'Bearer ' + currentToken } })
+    if (!res.ok) { tb.innerHTML = '<tr><td colspan="3" style="padding:24px;text-align:center;color:#A32D2D;">Error al cargar</td></tr>'; return }
+    const data = await res.json()
+    const rows = data.directores || []
+    if (!rows.length) {
+      tb.innerHTML = '<tr><td colspan="3" style="padding:24px;text-align:center;color:var(--ink-400);">Sin directores asignados</td></tr>'
+    } else {
+      tb.innerHTML = rows.map(d =>
+        '<tr>' +
+        '<td style="padding:8px 10px;border-bottom:1px solid var(--line);">' + (d.docenteNombre || 'Desconocido') + '</td>' +
+        '<td style="padding:8px 10px;border-bottom:1px solid var(--line);">' + d.curso + '</td>' +
+        '<td style="padding:8px 10px;border-bottom:1px solid var(--line);text-align:center;"><button class="btn-sm" onclick="adminEliminarDirector(\'' + d.id + '\')" style="font-size:11px;color:#A32D2D;">🗑️</button></td>' +
+        '</tr>'
+      ).join('')
+    }
+  } catch (e) {
+    tb.innerHTML = '<tr><td colspan="3" style="padding:24px;text-align:center;color:#A32D2D;">Error de conexión</td></tr>'
+  }
+}
+
+async function adminAsignarDirector() {
+  const docenteId = document.getElementById('admin-dir-profesor').value
+  const curso = document.getElementById('admin-dir-curso').value.trim()
+  if (!docenteId || !curso) { mostrarToast('error', 'Selecciona profesor y curso'); return }
+  try {
+    const res = await fetch(API + '/api/admin/directores', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + currentToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ docenteId, curso })
+    })
+    const data = await res.json()
+    if (res.ok) {
+      mostrarToast('ok', data.mensaje)
+      document.getElementById('admin-dir-profesor').value = ''
+      document.getElementById('admin-dir-curso').value = ''
+      cargarTablaDirectores()
+    } else {
+      mostrarToast('error', data.error || 'Error al asignar')
+    }
+  } catch (e) {
+    mostrarToast('error', 'Error de conexión')
+  }
+}
+
+async function adminEliminarDirector(id) {
+  if (!confirm('¿Eliminar este director de grupo?')) return
+  try {
+    const res = await fetch(API + '/api/admin/directores/' + id, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + currentToken } })
+    if (res.ok) {
+      mostrarToast('ok', 'Director eliminado')
+      cargarTablaDirectores()
+    } else {
+      const data = await res.json()
+      mostrarToast('error', data.error || 'Error')
+    }
+  } catch (e) {
+    mostrarToast('error', 'Error de conexión')
+  }
+}
+
 // ─── ADMIN: OBSERVACIONES GLOBALES ───
 async function cargarAdminObservaciones(pagina) {
   document.getElementById('admin-profesores-section').style.display = 'none'
@@ -1785,6 +2115,47 @@ function mostrarObservaciones(estudianteId, nombre, materiaId) {
   document.getElementById('modal-obs-lista').innerHTML = '<div style="color:var(--ink-400);font-size:13px;text-align:center;padding:16px;">Cargando...</div>'
   document.getElementById('modal-observaciones').style.display = 'flex'
   cargarObservaciones(estudianteId)
+}
+
+function mostrarObservacionesCursoDirector() {
+  if (!window._directorCursos || !window._directorCursos.length) return
+  const curso = window._directorCursos[0]
+  currentObsEstudianteId = null
+  currentObsMateriaId = ''
+  currentEditObsId = null
+  document.getElementById('modal-obs-titulo').textContent = '📝 Observaciones — Curso ' + curso
+  document.getElementById('modal-obs-sub').textContent = 'Director de grupo'
+  document.getElementById('modal-obs-texto').value = ''
+  document.getElementById('modal-obs-fecha-info').textContent = '📅 Vista de observaciones del curso'
+  document.getElementById('modal-obs-lista').innerHTML = '<div style="color:var(--ink-400);font-size:13px;text-align:center;padding:16px;">Cargando...</div>'
+  document.getElementById('modal-observaciones').style.display = 'flex'
+  cargarObservacionesCursoDirector(curso)
+}
+
+async function cargarObservacionesCursoDirector(curso) {
+  try {
+    const res = await fetch(API + '/api/notas/observaciones-curso?curso=' + encodeURIComponent(curso), { headers: { 'Authorization': 'Bearer ' + currentToken } })
+    if (!res.ok) { document.getElementById('modal-obs-lista').innerHTML = '<div style="color:#A32D2D;text-align:center;padding:16px;">Error al cargar</div>'; return }
+    const data = await res.json()
+    const lista = document.getElementById('modal-obs-lista')
+    if (!data.length) {
+      lista.innerHTML = '<div style="color:var(--ink-400);font-size:13px;text-align:center;padding:16px;">Sin observaciones para este curso</div>'
+      return
+    }
+    lista.innerHTML = data.map(o => {
+      const creado = new Date(o.creadoEn + 'Z')
+      const fechaCreado = creado.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' }) + ' · ' + creado.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })
+      const materiaLabel = o.materiaNombre ? ' <span style="background:var(--cream-100);padding:1px 6px;border-radius:8px;font-size:10px;">' + o.materiaNombre + '</span>' : ''
+      return '<div style="background:#f9f8f6;border:1px solid var(--line);border-radius:var(--r-md);padding:10px 12px;margin-bottom:8px;">' +
+        '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:4px;">' +
+        '<span style="font-size:11px;color:var(--ink-500);">' + (o.docenteNombre || 'Coordinación') + ' · ' + fechaCreado + materiaLabel + '</span>' +
+        '</div>' +
+        '<div style="font-size:13px;color:var(--ink-900);white-space:pre-wrap;line-height:1.5;">' + o.texto + '</div>' +
+        '</div>'
+    }).join('')
+  } catch (e) {
+    document.getElementById('modal-obs-lista').innerHTML = '<div style="color:#A32D2D;text-align:center;padding:16px;">Error de conexión</div>'
+  }
 }
 
 function cerrarModalObservaciones() {

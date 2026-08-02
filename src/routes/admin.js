@@ -320,4 +320,162 @@ router.get('/observaciones', async (req, res) => {
   }
 })
 
+// ─── ESTUDIANTES ───
+
+router.get('/estudiantes', async (req, res) => {
+  try {
+    const { curso, sede, grado, pagina = 1 } = req.query
+    const limite = 100
+    const offset = (parseInt(pagina) - 1) * limite
+    const where = []
+    const params = []
+    if (curso) { where.push('e.curso = ?'); params.push(curso) }
+    if (sede) { where.push('e.sede = ?'); params.push(sede) }
+    if (grado) { where.push('e.grado = ?'); params.push(parseInt(grado)) }
+    const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : ''
+
+    let total = { total: 0 }
+    try {
+      total = prisma._db.prepare(`
+        SELECT COUNT(*) as total FROM estudiantes e
+        JOIN usuarios u ON u.id = e.usuarioId
+        ${whereClause}
+      `).get(...params)
+    } catch (e) { total = { total: 0 } }
+
+    const rows = prisma._db.prepare(`
+      SELECT e.id, u.nombre, e.documento, e.curso, e.grado, e.sede, e.jornada
+      FROM estudiantes e
+      JOIN usuarios u ON u.id = e.usuarioId
+      ${whereClause}
+      ORDER BY u.nombre ASC
+      LIMIT ? OFFSET ?
+    `).all(...params, limite, offset)
+
+    res.json({ estudiantes: rows, total: total.total, pagina: parseInt(pagina), paginas: Math.ceil(total.total / limite) })
+  } catch (error) {
+    console.error('Error GET /admin/estudiantes:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+router.get('/cursos-disponibles', async (req, res) => {
+  try {
+    const { sede } = req.query
+    const where = []
+    const params = []
+    if (sede) { where.push('sede = ?'); params.push(sede) }
+    const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : ''
+
+    const rows = prisma._db.prepare(`
+      SELECT DISTINCT curso, grado, sede FROM estudiantes
+      ${whereClause}
+      ORDER BY curso ASC
+    `).all(...params)
+
+    const cursos = rows.map(r => {
+      const sufijo = r.curso.slice(-2)
+      let jornada = 'DESCONOCIDA'
+      if (sufijo === '01' || sufijo === '02') jornada = 'MAÑANA'
+      else if (sufijo === '03' || sufijo === '04') jornada = 'TARDE'
+      return { curso: r.curso, grado: r.grado, sede: r.sede, jornada }
+    })
+
+    res.json({ cursos })
+  } catch (error) {
+    console.error('Error GET /admin/cursos-disponibles:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+router.put('/estudiantes/:id/curso', async (req, res) => {
+  try {
+    const { curso, grado } = req.body
+    if (!curso || !grado) {
+      return res.status(400).json({ error: 'curso y grado son requeridos' })
+    }
+
+    const estudiante = prisma._db.prepare('SELECT * FROM estudiantes WHERE id = ?').get(req.params.id)
+    if (!estudiante) {
+      return res.status(404).json({ error: 'Estudiante no encontrado' })
+    }
+
+    const sufijo = curso.slice(-2)
+    let nuevaJornada = estudiante.jornada
+    if (sufijo === '01' || sufijo === '02') nuevaJornada = 'MAÑANA'
+    else if (sufijo === '03' || sufijo === '04') nuevaJornada = 'TARDE'
+
+    prisma._db.prepare(
+      'UPDATE estudiantes SET curso = ?, grado = ?, jornada = ? WHERE id = ?'
+    ).run(curso, parseInt(grado), nuevaJornada, req.params.id)
+
+    res.json({ mensaje: `Estudiante movido a curso ${curso} (grado ${grado}, jornada ${nuevaJornada})` })
+  } catch (error) {
+    console.error('Error PUT /admin/estudiantes/curso:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// ─── DIRECTORES DE GRUPO ───
+
+router.get('/directores', async (req, res) => {
+  try {
+    const rows = prisma._db.prepare(`
+      SELECT dg.id, dg.docenteId, dg.curso, dg.creadoEn,
+             u.nombre as docenteNombre, u.documento as docenteDocumento
+      FROM directores_grupo dg
+      JOIN docentes d ON d.id = dg.docenteId
+      JOIN usuarios u ON u.id = d.usuarioId
+      ORDER BY dg.curso ASC
+    `).all()
+    res.json({ directores: rows })
+  } catch (error) {
+    console.error('Error GET /admin/directores:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+router.post('/directores', async (req, res) => {
+  try {
+    const { docenteId, curso } = req.body
+    if (!docenteId || !curso) {
+      return res.status(400).json({ error: 'docenteId y curso son requeridos' })
+    }
+
+    const docente = prisma._db.prepare('SELECT id FROM docentes WHERE id = ?').get(docenteId)
+    if (!docente) {
+      return res.status(404).json({ error: 'Docente no encontrado' })
+    }
+
+    const existente = prisma._db.prepare('SELECT id FROM directores_grupo WHERE curso = ?').get(curso)
+    if (existente) {
+      return res.status(409).json({ error: 'Este curso ya tiene un director asignado. Elimínalo primero si quieres reasignarlo.' })
+    }
+
+    const id = require('crypto').randomUUID()
+    prisma._db.prepare(
+      'INSERT INTO directores_grupo (id, docenteId, curso) VALUES (?, ?, ?)'
+    ).run(id, docenteId, curso)
+
+    res.status(201).json({ mensaje: 'Director asignado correctamente', id })
+  } catch (error) {
+    console.error('Error POST /admin/directores:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+router.delete('/directores/:id', async (req, res) => {
+  try {
+    const existing = prisma._db.prepare('SELECT * FROM directores_grupo WHERE id = ?').get(req.params.id)
+    if (!existing) {
+      return res.status(404).json({ error: 'Asignación no encontrada' })
+    }
+    prisma._db.prepare('DELETE FROM directores_grupo WHERE id = ?').run(req.params.id)
+    res.json({ mensaje: 'Director eliminado del curso' })
+  } catch (error) {
+    console.error('Error DELETE /admin/directores:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
 module.exports = router
