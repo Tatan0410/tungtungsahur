@@ -42,9 +42,77 @@ function obtenerPesosPeriodos(anio, sede) {
 
 function periodoAbierto(anio, sede, periodo) {
   try {
-    const row = prisma._db.prepare('SELECT abierto FROM periodos_config WHERE anio = ? AND sede = ? AND periodo = ?').get(anio, sede, periodo)
-    return row ? !!row.abierto : true
+    const cfg = prisma._db.prepare(
+      'SELECT abierto, fecha_fin, reapertura_manual FROM periodos_config WHERE anio = ? AND sede = ? AND periodo = ?'
+    ).get(anio, sede, periodo)
+    if (!cfg) return true
+    if (!cfg.abierto) return false
+    if (cfg.fecha_fin) {
+      const finDate = new Date(cfg.fecha_fin + 'T23:59:59')
+      if (finDate < new Date() && !cfg.reapertura_manual) {
+        return false
+      }
+    }
+    return true
   } catch { return true }
+}
+
+function calcularReporteCorte(curso, periodo, anio) {
+  const sedeRow = prisma._db.prepare('SELECT sede FROM estudiantes WHERE curso = ? LIMIT 1').get(curso)
+  if (!sedeRow) return []
+  const sede = sedeRow.sede
+
+  const materias = prisma._db.prepare(`
+    SELECT dm.id as dmId, dm.materiaId, m.nombre as materiaNombre, d.usuarioId as docenteUsuarioId
+    FROM docente_materias dm
+    JOIN materias m ON m.id = dm.materiaId
+    LEFT JOIN docentes d ON d.id = dm.docenteId
+    WHERE dm.curso = ?
+  `).all(curso)
+
+  const estudiantes = prisma._db.prepare(`
+    SELECT e.id as estudianteId, u.nombre as estudianteNombre
+    FROM estudiantes e
+    JOIN usuarios u ON u.id = e.usuarioId
+    WHERE e.curso = ?
+  `).all(curso)
+
+  const reporte = []
+  for (const est of estudiantes) {
+    for (const mat of materias) {
+      const cal = prisma._db.prepare(
+        'SELECT definitiva FROM calificaciones WHERE estudianteId = ? AND materiaId = ? AND periodo = ? AND anio = ?'
+      ).get(est.estudianteId, mat.materiaId, periodo, anio)
+
+      if (!cal) {
+        let docenteNombre = ''
+        if (mat.docenteUsuarioId) {
+          const doc = prisma._db.prepare('SELECT nombre FROM usuarios WHERE id = ?').get(mat.docenteUsuarioId)
+          if (doc) docenteNombre = doc.nombre
+        }
+        reporte.push({
+          estudianteId: est.estudianteId,
+          estudianteNombre: est.estudianteNombre,
+          materiaId: mat.materiaId,
+          materiaNombre: mat.materiaNombre,
+          docenteNombre: docenteNombre,
+          definitiva: null,
+          estado: 'PENDIENTE'
+        })
+      } else if (cal.definitiva !== null && cal.definitiva < 3.0) {
+        reporte.push({
+          estudianteId: est.estudianteId,
+          estudianteNombre: est.estudianteNombre,
+          materiaId: mat.materiaId,
+          materiaNombre: mat.materiaNombre,
+          docenteNombre: null,
+          definitiva: cal.definitiva,
+          estado: 'RIESGO'
+        })
+      }
+    }
+  }
+  return reporte
 }
 
 function calcularDefinitiva(items) {
@@ -222,7 +290,7 @@ router.get('/grupo', async (req, res) => {
     let periodInfo = null
     if (estudiantes.length > 0) {
       const sede = estudiantes[0].sede
-      periodInfo = prisma._db.prepare('SELECT nombre, fecha_inicio, fecha_fin, abierto FROM periodos_config WHERE anio = ? AND sede = ? AND periodo = ?').get(parseInt(anio), sede, parseInt(periodo))
+      periodInfo = prisma._db.prepare('SELECT nombre, fecha_inicio, fecha_fin, abierto, reapertura_manual FROM periodos_config WHERE anio = ? AND sede = ? AND periodo = ?').get(parseInt(anio), sede, parseInt(periodo))
     }
 
     res.json({
@@ -801,11 +869,11 @@ router.post('/guardar-grid', async (req, res) => {
       }
 
       // Fecha límite pasada pero período aún abierto → advertir
-      const cfg = prisma._db.prepare('SELECT fecha_fin FROM periodos_config WHERE anio = ? AND sede = ? AND periodo = ?').get(a, sede, p)
+      const cfg = prisma._db.prepare('SELECT fecha_fin, reapertura_manual FROM periodos_config WHERE anio = ? AND sede = ? AND periodo = ?').get(a, sede, p)
       if (cfg?.fecha_fin) {
         const fechaFin = new Date(cfg.fecha_fin)
-        if (fechaFin < new Date()) {
-          advertencias.add(`Ya pasó la fecha límite del corte (${cfg.fecha_fin}), pero el período sigue abierto.`)
+        if (fechaFin < new Date() && cfg.reapertura_manual) {
+          advertencias.add('⚠️ El corte final ya pasó, pero el período fue reabierto manualmente. Guarda tus notas pronto.')
         }
       }
 
@@ -1080,6 +1148,86 @@ router.get('/soy-director', async (req, res) => {
     res.json({ cursos: rows.map(r => r.curso) })
   } catch (error) {
     console.error('Error GET /soy-director:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// ─── REPORT DE CORTE — DOCENTE (DIRECTOR) ───
+
+router.get('/reporte-corte', async (req, res) => {
+  try {
+    if (req.usuario.rol !== 'DOCENTE') {
+      return res.status(403).json({ error: 'Solo docentes' })
+    }
+    const { curso, periodo, anio } = req.query
+    if (!curso || !periodo || !anio) {
+      return res.status(400).json({ error: 'curso, periodo y anio son requeridos' })
+    }
+
+    const director = prisma._db.prepare(
+      'SELECT * FROM directores_grupo WHERE docenteId = ? AND curso = ?'
+    ).get(req.usuario.docenteId, curso)
+    if (!director) {
+      return res.status(403).json({ error: 'No eres director de este curso' })
+    }
+
+    const reporte = calcularReporteCorte(curso, parseInt(periodo), parseInt(anio))
+
+    const sedeRow = prisma._db.prepare('SELECT sede FROM estudiantes WHERE curso = ? LIMIT 1').get(curso)
+    const sede = sedeRow ? sedeRow.sede : 'PPAL - TRIUNFO'
+    const cfg = prisma._db.prepare(
+      'SELECT fecha_corte FROM periodos_config WHERE sede = ? AND periodo = ? AND anio = ?'
+    ).get(sede, parseInt(periodo), parseInt(anio))
+    const fechaCorte = cfg?.fecha_corte || null
+    const yaPaso = fechaCorte ? new Date(fechaCorte) <= new Date() : false
+
+    res.json({ reporte, fechaCorte, yaPaso })
+  } catch (error) {
+    console.error('Error GET /reporte-corte:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// ─── REPORT DE CORTE — ESTUDIANTE (PROPIO) ───
+
+router.get('/mi-reporte-corte', async (req, res) => {
+  try {
+    if (req.usuario.rol !== 'ESTUDIANTE') {
+      return res.status(403).json({ error: 'Solo estudiantes' })
+    }
+    const { periodo, anio } = req.query
+    if (!periodo || !anio) {
+      return res.status(400).json({ error: 'periodo y anio son requeridos' })
+    }
+    if (!req.usuario.estudianteId) {
+      return res.status(404).json({ error: 'Datos de estudiante no encontrados' })
+    }
+
+    const estudiante = prisma._db.prepare('SELECT curso FROM estudiantes WHERE id = ?').get(req.usuario.estudianteId)
+    if (!estudiante) {
+      return res.status(404).json({ error: 'Estudiante no encontrado' })
+    }
+    const curso = estudiante.curso
+    const reporte = calcularReporteCorte(curso, parseInt(periodo), parseInt(anio))
+      .filter(r => r.estudianteId === req.usuario.estudianteId)
+      .map(r => ({
+        materiaId: r.materiaId,
+        materiaNombre: r.materiaNombre,
+        definitiva: r.definitiva,
+        estado: r.estado
+      }))
+
+    const sedeRow = prisma._db.prepare('SELECT sede FROM estudiantes WHERE curso = ? LIMIT 1').get(curso)
+    const sede = sedeRow ? sedeRow.sede : 'PPAL - TRIUNFO'
+    const cfg = prisma._db.prepare(
+      'SELECT fecha_corte FROM periodos_config WHERE sede = ? AND periodo = ? AND anio = ?'
+    ).get(sede, parseInt(periodo), parseInt(anio))
+    const fechaCorte = cfg?.fecha_corte || null
+    const yaPaso = fechaCorte ? new Date(fechaCorte) <= new Date() : false
+
+    res.json({ reporte, fechaCorte, yaPaso })
+  } catch (error) {
+    console.error('Error GET /mi-reporte-corte:', error)
     res.status(500).json({ error: 'Error interno' })
   }
 })

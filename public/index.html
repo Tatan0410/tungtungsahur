@@ -388,6 +388,7 @@ body::before {
   <div class="notas-grid" id="notas-grid">
     <div style="color:var(--ink-400);font-size:13px;padding:20px;text-align:center;">Selecciona un período y consulta</div>
   </div>
+  <div id="stu-corte-status" style="display:none;margin-top:16px;"></div>
   <div class="sec-label" style="margin-top:24px;">Informes finales</div>
   <div class="informe-row">
     <div style="width:38px;height:38px;background:var(--rose-50);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">📄</div>
@@ -416,6 +417,7 @@ body::before {
     <select class="sel" id="sel-materia"><option value="">Seleccionar materia</option></select>
     <button class="btn-sm success" id="btn-save-all" style="margin-left: auto; font-weight: 600; padding: 8px 14px;" onclick="guardarGrid()">💾 Guardar todos los cambios</button>
     <button class="btn-sm" id="btn-director-obs" style="display:none;font-weight:600;" onclick="mostrarObservacionesCursoDirector()">👁️ Observaciones de mi curso</button>
+    <button class="btn-sm" id="btn-director-reporte" style="display:none;font-weight:600;" onclick="mostrarReporteCorte()">⚠️ Reporte de corte</button>
     <span class="saved-toast" id="toast">✓ Guardado correctamente</span>
   </div>
   <div class="period-tabs" id="period-tabs">
@@ -476,6 +478,7 @@ body::before {
     <button class="btn-sm primary" onclick="cargarAdminProfesores()" style="font-weight:600;">👤 Profesores</button>
     <button class="btn-sm primary" onclick="cargarAdminAsignaciones()" style="font-weight:600;">📋 Asignaciones</button>
     <button class="btn-sm primary" onclick="cargarAdminPeriodos()" style="font-weight:600;">📅 Períodos</button>
+    <button class="btn-sm" onclick="cargarAdminReporteCorte()" style="font-weight:600;">⚠️ Reporte de corte</button>
     <button class="btn-sm primary" onclick="cargarAdminEstudiantes()" style="font-weight:600;">👥 Estudiantes</button>
     <button class="btn-sm primary" onclick="cargarAdminDirectores()" style="font-weight:600;">🎓 Directores</button>
     <button class="btn-sm primary" onclick="cargarAdminObservaciones()" style="font-weight:600;">👁️ Obs</button>
@@ -489,6 +492,18 @@ body::before {
       <div><button class="btn-sm primary" onclick="cargarAdminPeriodos()" style="font-weight:600;">Filtrar</button></div>
     </div>
     <div id="admin-periodos-grid"></div>
+  </div>
+
+  <div id="admin-reporte-corte-section" style="display:none;">
+    <div style="font-size:15px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);margin-bottom:12px;">⚠️ Reporte de Corte</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:16px;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px;">
+      <div><div class="lbl">Sede</div><select class="sel" id="admin-reporte-sede"><option value="">Todas</option></select></div>
+      <div><div class="lbl">Curso</div><input class="inp" id="admin-reporte-curso" placeholder="Ej: 301" style="width:80px;"></div>
+      <div><div class="lbl">Período</div><select class="sel" id="admin-reporte-periodo"><option value="1">P1</option><option value="2">P2</option><option value="3">P3</option><option value="4">P4</option></select></div>
+      <div><div class="lbl">Año</div><input class="inp" id="admin-reporte-anio" value="2025" style="width:80px;"></div>
+      <div><button class="btn-sm primary" onclick="ejecutarAdminReporteCorte()" style="font-weight:600;">Generar reporte</button></div>
+    </div>
+    <div id="admin-reporte-corte-grid"></div>
   </div>
 
   <div id="admin-obs-section" style="display:none;">
@@ -649,6 +664,61 @@ body::before {
   </div>
 </div>
 
+<!-- Modal Reporte de Corte -->
+<div id="modal-reporte-corte" style="display:none;position:fixed;inset:0;z-index:100;background:rgba(0,0,0,0.4);align-items:center;justify-content:center;" onclick="if(event.target===this)cerrarModalReporteCorte()">
+  <div style="background:#fff;border-radius:var(--r-lg);padding:0;max-width:700px;width:95%;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.3);overflow:hidden;">
+    <div style="padding:16px 20px;border-bottom:1px solid var(--line);flex-shrink:0;">
+      <div style="display:flex;justify-content:space-between;align-items:start;">
+        <div>
+          <div style="font-size:15px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);" id="modal-reporte-titulo">⚠️ Reporte de Corte</div>
+          <div style="font-size:11px;color:var(--ink-400);margin-top:2px;" id="modal-reporte-sub"></div>
+        </div>
+        <button onclick="cerrarModalReporteCorte()" style="border:none;background:none;font-size:20px;cursor:pointer;color:var(--ink-400);line-height:1;padding:0;">✕</button>
+      </div>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:16px 20px;">
+      <div id="modal-reporte-lista">
+        <div style="color:var(--ink-400);font-size:13px;text-align:center;padding:16px;">Cargando...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Editar Fechas del Período -->
+<div id="modal-fechas" style="display:none;position:fixed;inset:0;z-index:100;background:rgba(0,0,0,0.4);align-items:center;justify-content:center;" onclick="if(event.target===this)cerrarModalFechas()">
+  <div style="background:#fff;border-radius:var(--r-lg);padding:24px;max-width:420px;width:92%;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+    <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:18px;">
+      <div>
+        <div style="font-size:15px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);" id="modal-fechas-titulo">Editar fechas</div>
+        <div style="font-size:11px;color:var(--ink-400);margin-top:2px;">El peso y el nombre ya no son editables</div>
+      </div>
+      <button onclick="cerrarModalFechas()" style="border:none;background:none;font-size:20px;cursor:pointer;color:var(--ink-400);line-height:1;padding:0;">✕</button>
+    </div>
+
+    <div style="margin-bottom:14px;">
+      <label class="lbl">Fecha de inicio del período</label>
+      <input type="date" class="inp" id="modal-fecha-inicio" style="width:100%;">
+    </div>
+
+    <div style="margin-bottom:14px;">
+      <label class="lbl">Fecha de corte preventivo</label>
+      <input type="date" class="inp" id="modal-fecha-corte" style="width:100%;">
+      <div style="font-size:11px;color:var(--ink-500);margin-top:4px;">Muestra a los estudiantes que van mal hasta ese momento. No bloquea nada.</div>
+    </div>
+
+    <div style="margin-bottom:18px;">
+      <label class="lbl">Fecha de corte final</label>
+      <input type="date" class="inp" id="modal-fecha-fin" style="width:100%;">
+      <div style="font-size:11px;color:#A32D2D;margin-top:4px;">Después de esta fecha, los profesores ya no podrán subir notas, salvo que el admin reabra manualmente el período.</div>
+    </div>
+
+    <div style="display:flex;gap:8px;justify-content:end;">
+      <button class="btn-sm" onclick="cerrarModalFechas()">Cancelar</button>
+      <button class="btn-sm primary" onclick="guardarFechasPeriodo()" style="font-weight:600;">💾 Guardar fechas</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal cambiar contraseña -->
 <div id="modal-pass" style="display:none;position:fixed;inset:0;z-index:100;background:rgba(0,0,0,0.4);align-items:center;justify-content:center;" onclick="if(event.target===this)cerrarModalPass()">
   <div style="background:#fff;border-radius:var(--r-lg);padding:24px;max-width:360px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
@@ -696,6 +766,7 @@ let currentToken = null
 let currentRole = 'est'
 let currentUser = null
 let currentPeriodo = 1
+let currentPeriodoReporte = 1
 let selectedCurso = ''
 let selectedMateria = ''
 let studentsData = []
@@ -782,6 +853,7 @@ function showStudentPortal(user) {
   }
   // Load student grades for the selected period
   cargarNotasEstudiante();
+  cargarEstadoCorte();
   cargarObservacionesEstudiante();
   showScreen('student');
 
@@ -872,6 +944,7 @@ async function cargarAsignaciones() {
       cargarGrupo();
       if (currentUser && currentUser.rol === 'ESTUDIANTE') {
         cargarNotasEstudiante();
+        cargarEstadoCorte();
       }
       // Check if teacher is a director
       try {
@@ -883,8 +956,15 @@ async function cargarAsignaciones() {
             dirBtn.style.display = 'inline-block'
             dirBtn.textContent = '👁️ Observaciones de ' + dirData.cursos.join(', ')
             window._directorCursos = dirData.cursos
+            const reporteBtn = document.getElementById('btn-director-reporte')
+            if (reporteBtn) {
+              reporteBtn.style.display = 'inline-block'
+              reporteBtn.textContent = '⚠️ Reporte de corte'
+            }
           } else {
             dirBtn.style.display = 'none'
+            const reporteBtn = document.getElementById('btn-director-reporte')
+            if (reporteBtn) reporteBtn.style.display = 'none'
           }
         }
       } catch (e) {}
@@ -982,18 +1062,23 @@ function mostrarInfoPeriodo(periodo) {
   let html = ''
   if (fechaFin) {
     const fechaLocal = new Date(fechaFin + 'T00:00:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })
-    html += '<strong>Fecha límite:</strong> ' + fechaLocal
+    html += '<strong>Corte final:</strong> ' + fechaLocal
   }
-  if (pasada && periodo.abierto) {
-    el.style.background = '#FFF8E1'
-    el.style.border = '1px solid #FFD54F'
-    el.style.color = '#795548'
-    html = '⚠️ ' + html + ' — Ya pasó la fecha límite, pero aún puedes guardar notas. Hazlo pronto.'
-  } else if (pasada && !periodo.abierto) {
+  if (pasada && periodo.reapertura_manual) {
+    el.style.background = '#FFF3E0'
+    el.style.border = '1px solid #FFB74D'
+    el.style.color = '#E65100'
+    html = '⚠️ ' + html + ' — Período reabierto manualmente pese a que ya pasó el corte final. Guarda tus notas pronto.'
+  } else if (pasada) {
     el.style.background = '#FCEBEB'
     el.style.border = '1px solid #E57373'
     el.style.color = '#A32D2D'
-    html = '🔒 ' + html + ' — Este período está cerrado.'
+    html = '🔒 ' + html + ' — La fecha límite ya pasó. Este período está cerrado.'
+  } else if (!periodo.abierto) {
+    el.style.background = '#FCEBEB'
+    el.style.border = '1px solid #E57373'
+    el.style.color = '#A32D2D'
+    html = '🔒 Este período fue cerrado manualmente por el administrador.'
   } else {
     el.style.background = '#E8F5E9'
     el.style.border = '1px solid #A5D6A7'
@@ -1263,6 +1348,7 @@ async function guardarGrid() {
         cargarGrupo();
         if (currentUser && currentUser.rol === 'ESTUDIANTE') {
           cargarNotasEstudiante();
+          cargarEstadoCorte();
         }
       } else {
         const data = await res.json()
@@ -1311,6 +1397,40 @@ async function cargarNotasEstudiante() {
   } catch (e) {
     console.error('Error en cargarNotasEstudiante:', e);
   }
+}
+
+async function cargarEstadoCorte() {
+  try {
+    const anio = new Date().getFullYear()
+    const res = await fetch(API + '/api/notas/mi-reporte-corte?periodo=' + currentPeriodo + '&anio=' + anio, { headers: { 'Authorization': 'Bearer ' + currentToken } })
+    if (!res.ok) return
+    const data = await res.json()
+    const el = document.getElementById('stu-corte-status')
+    if (!el) return
+    const riesgo = (data.reporte || []).filter(r => r.estado === 'RIESGO')
+    const pendiente = (data.reporte || []).filter(r => r.estado === 'PENDIENTE')
+    if (!riesgo.length && !pendiente.length) {
+      el.style.display = 'none'
+      return
+    }
+    el.style.display = 'block'
+    let html = '<div style="background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);padding:12px 14px;">'
+    html += '<div style="font-size:13px;font-weight:700;color:var(--ink-900);margin-bottom:8px;">⚠️ Estado del corte de período</div>'
+    if (riesgo.length) {
+      html += '<div style="font-size:12px;font-weight:600;color:#A32D2D;margin-bottom:4px;">Materias en riesgo (definitiva &lt; 3.0):</div>'
+      for (const r of riesgo) {
+        html += '<div style="font-size:12px;padding:3px 0;display:flex;justify-content:space-between;"><span>' + r.materiaNombre + '</span><span style="background:#FCEBEB;color:#A32D2D;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;">' + (r.definitiva !== null ? r.definitiva.toFixed(2) : '—') + '</span></div>'
+      }
+    }
+    if (pendiente.length) {
+      html += '<div style="font-size:12px;font-weight:600;color:#757575;margin-top:8px;margin-bottom:4px;">Materias sin registrar:</div>'
+      for (const r of pendiente) {
+        html += '<div style="font-size:12px;padding:3px 0;"><span style="background:#F5F5F5;color:#757575;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;">' + r.materiaNombre + '</span></div>'
+      }
+    }
+    html += '</div>'
+    el.innerHTML = html
+  } catch (e) {}
 }
 
 async function cargarObservacionesEstudiante() {
@@ -1696,17 +1816,27 @@ async function cargarAdminPeriodos() {
       html += '<div style="background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);margin-bottom:16px;overflow:hidden;">'
       html += '<div style="background:var(--cream-100);padding:10px 14px;font-weight:700;font-size:14px;border-bottom:1px solid var(--line);">' + sede + '</div>'
       html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
-      html += '<thead><tr style="background:var(--cream-50);"><th style="padding:8px 10px;text-align:left;border-bottom:1px solid var(--line);">Período</th><th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);">Peso</th><th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);">Estado</th><th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);">Acción</th></tr></thead>'
+      html += '<thead><tr style="background:var(--cream-50);"><th style="padding:8px 10px;text-align:left;border-bottom:1px solid var(--line);">Período</th><th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);">Inicio</th><th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);">Corte preventivo</th><th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);">Corte final</th><th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);">Estado</th><th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);">Acciones</th></tr></thead>'
       html += '<tbody>'
       for (const c of agrupado[sede]) {
-        const estadoHtml = c.abierto
-          ? '<span style="background:#EAF3DE;color:#3B6D11;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">Abierto</span>'
-          : '<span style="background:#FCEBEB;color:#A32D2D;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">Cerrado</span>'
+        let estadoHtml = ''
+        if (c.estado === 'ABIERTO') estadoHtml = '<span style="background:#EAF3DE;color:#3B6D11;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">🟢 Abierto</span>'
+        else if (c.estado === 'CERRADO_MANUAL') estadoHtml = '<span style="background:#FCEBEB;color:#A32D2D;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">🔴 Cerrado manual</span>'
+        else estadoHtml = '<span style="background:#FFF3E0;color:#E65100;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">🟠 Cerrado automático</span>'
+        const fmtFecha = (f) => f ? new Date(f + 'T00:00:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'
+        let acciones = '<button class="btn-sm" onclick="abrirModalFechas(\'' + c.id + '\')" style="font-size:11px;margin-right:4px;">✏️ Editar fechas</button>'
+        if (c.estado === 'ABIERTO') {
+          acciones += '<button class="btn-sm" onclick="cerrarPeriodo(\'' + c.sede + '\', ' + c.periodo + ', ' + c.anio + ')" style="font-size:11px;background:#FCEBEB;color:#A32D2D;border:1px solid #E57373;">🔒 Cerrar ahora</button>'
+        } else {
+          acciones += '<button class="btn-sm" onclick="reabrirPeriodo(\'' + c.sede + '\', ' + c.periodo + ', ' + c.anio + ')" style="font-size:11px;background:#EAF3DE;color:#3B6D11;border:1px solid #A5D6A7;font-weight:600;">🔓 Reabrir</button>'
+        }
         html += '<tr>'
         html += '<td style="padding:8px 10px;border-bottom:1px solid var(--line);font-weight:600;">' + c.nombre + '</td>'
-        html += '<td style="padding:8px 10px;border-bottom:1px solid var(--line);text-align:center;">' + (c.peso * 100).toFixed(0) + '%</td>'
+        html += '<td style="padding:8px 10px;border-bottom:1px solid var(--line);text-align:center;">' + fmtFecha(c.fecha_inicio) + '</td>'
+        html += '<td style="padding:8px 10px;border-bottom:1px solid var(--line);text-align:center;">' + fmtFecha(c.fecha_corte) + '</td>'
+        html += '<td style="padding:8px 10px;border-bottom:1px solid var(--line);text-align:center;">' + fmtFecha(c.fecha_fin) + '</td>'
         html += '<td style="padding:8px 10px;border-bottom:1px solid var(--line);text-align:center;">' + estadoHtml + '</td>'
-        html += '<td style="padding:8px 10px;border-bottom:1px solid var(--line);text-align:center;"><button class="btn-sm" onclick="adminEditarPeriodo(\'' + c.id + '\')" style="font-size:11px;">Editar</button></td>'
+        html += '<td style="padding:8px 10px;border-bottom:1px solid var(--line);text-align:center;">' + acciones + '</td>'
         html += '</tr>'
       }
       html += '</tbody></table></div>'
@@ -1717,29 +1847,151 @@ async function cargarAdminPeriodos() {
   }
 }
 
-async function adminEditarPeriodo(id) {
-  const nombre = prompt('Nombre del período:')
-  if (nombre === null) return
-  const pesoStr = prompt('Peso del período (ej: 0.25 para 25%):')
-  if (pesoStr === null) return
-  const peso = parseFloat(pesoStr)
-  if (isNaN(peso) || peso <= 0) { mostrarToast('error', 'Peso inválido'); return }
-  const abierto = confirm('¿Aceptar para ABRIR este período?\nCancelar para CERRARLO.')
+window._periodoFechas = null
+
+function abrirModalFechas(id) {
+  // Busca la fila local desde el cache renderizado
+  fetch(API + '/api/admin/periodos?anio=' + document.getElementById('admin-input-anio').value + (document.getElementById('admin-sel-sede').value ? '&sede=' + encodeURIComponent(document.getElementById('admin-sel-sede').value) : ''), {
+    headers: { 'Authorization': 'Bearer ' + currentToken }
+  })
+  .then(function(r){ return r.json() })
+  .then(function(rows) {
+    const cfg = rows.find(r => r.id === id)
+    if (!cfg) { mostrarToast('error', 'No se encontró el período'); return }
+    document.getElementById('modal-fechas-titulo').textContent = 'Editar fechas — ' + cfg.sede + ' Período ' + cfg.periodo
+    document.getElementById('modal-fecha-inicio').value = cfg.fecha_inicio || ''
+    document.getElementById('modal-fecha-corte').value = cfg.fecha_corte || ''
+    document.getElementById('modal-fecha-fin').value = cfg.fecha_fin || ''
+    window._periodoFechas = cfg
+    document.getElementById('modal-fechas').style.display = 'flex'
+  })
+  .catch(function(){ mostrarToast('error', 'Error de conexión') })
+}
+
+async function guardarFechasPeriodo() {
+  const cfg = window._periodoFechas
+  if (!cfg) return
+  const fi = document.getElementById('modal-fecha-inicio').value
+  const fc = document.getElementById('modal-fecha-corte').value
+  const ff = document.getElementById('modal-fecha-fin').value
   try {
-    const res = await fetch(API + '/api/admin/periodos/' + id, {
+    const res = await fetch(API + '/api/admin/periodos/' + cfg.id, {
       method: 'PUT',
       headers: { 'Authorization': 'Bearer ' + currentToken, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nombre, peso, abierto })
+      body: JSON.stringify({ fecha_inicio: fi || null, fecha_corte: fc || null, fecha_fin: ff || null })
     })
+    const data = await res.json()
     if (res.ok) {
-      mostrarToast('ok', 'Período actualizado')
+      mostrarToast('ok', data.mensaje || 'Fechas actualizadas')
+      cerrarModalFechas()
       cargarAdminPeriodos()
     } else {
-      const data = await res.json()
       mostrarToast('error', data.error || 'Error')
     }
   } catch (e) {
     mostrarToast('error', 'Error de conexión')
+  }
+}
+
+function cerrarModalFechas() {
+  document.getElementById('modal-fechas').style.display = 'none'
+  window._periodoFechas = null
+}
+
+async function cerrarPeriodo(sede, periodo, anio) {
+  if (!confirm('¿Cerrar el período para ' + sede + ' (P' + periodo + ' / ' + anio + ')?\nLos profesores ya no podrán guardar notas.')) return
+  try {
+    const res = await fetch(API + '/api/admin/periodos/cerrar', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + currentToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sede, periodo, anio })
+    })
+    const data = await res.json()
+    if (res.ok) {
+      mostrarToast('ok', data.mensaje || 'Período cerrado')
+      cargarAdminPeriodos()
+    } else {
+      mostrarToast('error', data.error || 'Error')
+    }
+  } catch (e) {
+    mostrarToast('error', 'Error de conexión')
+  }
+}
+
+async function reabrirPeriodo(sede, periodo, anio) {
+  if (!confirm('¿Reabrir el período ' + sede + ' (P' + periodo + ' / ' + anio + ')?\nLos profesores podrán subir notas aunque haya pasado la fecha de corte final.')) return
+  try {
+    const res = await fetch(API + '/api/admin/periodos/reabrir', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + currentToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sede, periodo, anio })
+    })
+    const data = await res.json()
+    if (res.ok) {
+      mostrarToast('ok', data.mensaje || 'Período reabierto')
+      cargarAdminPeriodos()
+    } else {
+      mostrarToast('error', data.error || 'Error')
+    }
+  } catch (e) {
+    mostrarToast('error', 'Error de conexión')
+  }
+}
+
+async function cargarAdminReporteCorte() {
+  document.getElementById('admin-periodos-section').style.display = 'none'
+  document.getElementById('admin-obs-section').style.display = 'none'
+  document.getElementById('admin-asignaciones-section').style.display = 'none'
+  document.getElementById('admin-estudiantes-section').style.display = 'none'
+  document.getElementById('admin-directores-section').style.display = 'none'
+  document.getElementById('admin-reporte-corte-section').style.display = 'block'
+  try {
+    const sedesRes = await fetch(API + '/api/admin/sedes', { headers: { 'Authorization': 'Bearer ' + currentToken } })
+    const sedes = sedesRes.ok ? await sedesRes.json() : []
+    const selSede = document.getElementById('admin-reporte-sede')
+    selSede.innerHTML = '<option value="">Todas</option>' + sedes.map(s => '<option value="' + s + '">' + s + '</option>').join('')
+  } catch (e) {}
+}
+
+async function ejecutarAdminReporteCorte() {
+  const curso = document.getElementById('admin-reporte-curso').value.trim()
+  const periodo = document.getElementById('admin-reporte-periodo').value
+  const anio = document.getElementById('admin-reporte-anio').value || '2025'
+  const sede = document.getElementById('admin-reporte-sede').value
+  let url = API + '/api/admin/reporte-corte?periodo=' + periodo + '&anio=' + anio
+  if (curso) url += '&curso=' + encodeURIComponent(curso)
+  if (sede) url += '&sede=' + encodeURIComponent(sede)
+  const grid = document.getElementById('admin-reporte-corte-grid')
+  grid.innerHTML = '<div style="color:var(--ink-400);font-size:13px;text-align:center;padding:16px;">Cargando...</div>'
+  try {
+    const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + currentToken } })
+    if (!res.ok) { grid.innerHTML = '<div style="color:#A32D2D;text-align:center;padding:16px;">Error al cargar</div>'; return }
+    const data = await res.json()
+    let html = ''
+    if (data.fechaCorte) {
+      const fechaLocal = new Date(data.fechaCorte + 'T00:00:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })
+      if (data.yaPaso) {
+        html += '<div style="background:#FFF3E0;border:1px solid #FFB74D;border-radius:var(--r-md);padding:8px 12px;margin-bottom:12px;font-size:12px;color:#E65100;">Corte del ' + fechaLocal + ' ya pasó.</div>'
+      } else {
+        html += '<div style="background:#FFF8E1;border:1px solid #FFD54F;border-radius:var(--r-md);padding:8px 12px;margin-bottom:12px;font-size:12px;color:#795548;">La fecha de corte es el ' + fechaLocal + ' — este reporte muestra el estado actual.</div>'
+      }
+    }
+    if (!data.reporte || !data.reporte.length) {
+      html += '<div style="color:var(--ink-400);font-size:13px;text-align:center;padding:16px;">Sin estudiantes en riesgo ni pendientes</div>'
+    } else {
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="background:var(--cream-50);"><th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--line);">Curso</th><th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--line);">Estudiante</th><th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--line);">Materia</th><th style="padding:6px 8px;text-align:center;border-bottom:1px solid var(--line);">Estado</th><th style="padding:6px 8px;text-align:center;border-bottom:1px solid var(--line);">Nota</th></tr></thead><tbody>'
+      for (const r of data.reporte) {
+        const estadoBadge = r.estado === 'RIESGO'
+          ? '<span style="background:#FCEBEB;color:#A32D2D;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;">RIESGO</span>'
+          : '<span style="background:#F5F5F5;color:#757575;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;">PENDIENTE</span>'
+        const notaDisplay = r.definitiva !== null ? r.definitiva.toFixed(2) : '—'
+        html += '<tr><td style="padding:5px 8px;border-bottom:1px solid var(--line);">' + (r.curso || '') + '</td><td style="padding:5px 8px;border-bottom:1px solid var(--line);">' + r.estudianteNombre + '</td><td style="padding:5px 8px;border-bottom:1px solid var(--line);">' + r.materiaNombre + '</td><td style="padding:5px 8px;border-bottom:1px solid var(--line);text-align:center;">' + estadoBadge + '</td><td style="padding:5px 8px;border-bottom:1px solid var(--line);text-align:center;">' + notaDisplay + '</td></tr>'
+      }
+      html += '</tbody></table>'
+    }
+    grid.innerHTML = html
+  } catch (e) {
+    grid.innerHTML = '<div style="color:#A32D2D;text-align:center;padding:16px;">Error de conexión</div>'
   }
 }
 
@@ -2161,6 +2413,56 @@ async function cargarObservacionesCursoDirector(curso) {
 function cerrarModalObservaciones() {
   document.getElementById('modal-observaciones').style.display = 'none'
   currentObsEstudianteId = null
+}
+
+function mostrarReporteCorte() {
+  if (!window._directorCursos || !window._directorCursos.length) return
+  const curso = window._directorCursos[0]
+  currentPeriodoReporte = curso
+  document.getElementById('modal-reporte-titulo').textContent = '⚠️ Reporte de Corte — Curso ' + curso
+  document.getElementById('modal-reporte-sub').textContent = 'Director de grupo'
+  document.getElementById('modal-reporte-lista').innerHTML = '<div style="color:var(--ink-400);font-size:13px;text-align:center;padding:16px;">Cargando...</div>'
+  document.getElementById('modal-reporte-corte').style.display = 'flex'
+  cargarReporteCorte(curso)
+}
+
+async function cargarReporteCorte(curso) {
+  try {
+    const anio = new Date().getFullYear()
+    const res = await fetch(API + '/api/notas/reporte-corte?curso=' + encodeURIComponent(curso) + '&periodo=' + currentPeriodo + '&anio=' + anio, { headers: { 'Authorization': 'Bearer ' + currentToken } })
+    if (!res.ok) { document.getElementById('modal-reporte-lista').innerHTML = '<div style="color:#A32D2D;text-align:center;padding:16px;">Error al cargar</div>'; return }
+    const data = await res.json()
+    const lista = document.getElementById('modal-reporte-lista')
+    let html = ''
+    if (data.fechaCorte) {
+      const fechaLocal = new Date(data.fechaCorte + 'T00:00:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })
+      if (data.yaPaso) {
+        html += '<div style="background:#FFF3E0;border:1px solid #FFB74D;border-radius:var(--r-md);padding:8px 12px;margin-bottom:12px;font-size:12px;color:#E65100;">Corte del ' + fechaLocal + ' ya pasó — este es el reporte oficial de ese momento.</div>'
+      } else {
+        html += '<div style="background:#FFF8E1;border:1px solid #FFD54F;border-radius:var(--r-md);padding:8px 12px;margin-bottom:12px;font-size:12px;color:#795548;">La fecha de corte es el ' + fechaLocal + ' — este reporte muestra el estado actual, aún puede cambiar.</div>'
+      }
+    }
+    if (!data.reporte || !data.reporte.length) {
+      html += '<div style="color:var(--ink-400);font-size:13px;text-align:center;padding:16px;">No hay estudiantes en riesgo ni pendientes</div>'
+    } else {
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="background:var(--cream-50);"><th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--line);">Estudiante</th><th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--line);">Materia</th><th style="padding:6px 8px;text-align:center;border-bottom:1px solid var(--line);">Estado</th><th style="padding:6px 8px;text-align:center;border-bottom:1px solid var(--line);">Nota</th></tr></thead><tbody>'
+      for (const r of data.reporte) {
+        const estadoBadge = r.estado === 'RIESGO'
+          ? '<span style="background:#FCEBEB;color:#A32D2D;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;">RIESGO</span>'
+          : '<span style="background:#F5F5F5;color:#757575;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;">PENDIENTE</span>'
+        const notaDisplay = r.definitiva !== null ? r.definitiva.toFixed(2) : '—'
+        html += '<tr><td style="padding:5px 8px;border-bottom:1px solid var(--line);">' + r.estudianteNombre + '</td><td style="padding:5px 8px;border-bottom:1px solid var(--line);">' + r.materiaNombre + '</td><td style="padding:5px 8px;border-bottom:1px solid var(--line);text-align:center;">' + estadoBadge + '</td><td style="padding:5px 8px;border-bottom:1px solid var(--line);text-align:center;">' + notaDisplay + '</td></tr>'
+      }
+      html += '</tbody></table>'
+    }
+    lista.innerHTML = html
+  } catch (e) {
+    document.getElementById('modal-reporte-lista').innerHTML = '<div style="color:#A32D2D;text-align:center;padding:16px;">Error de conexión</div>'
+  }
+}
+
+function cerrarModalReporteCorte() {
+  document.getElementById('modal-reporte-corte').style.display = 'none'
 }
 
 async function cargarObservaciones(estudianteId) {

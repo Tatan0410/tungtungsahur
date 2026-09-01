@@ -5,6 +5,64 @@ const prisma  = require('../prisma')
 
 const router = express.Router()
 
+function calcularReporteCorte(curso, periodo, anio) {
+  const sedeRow = prisma._db.prepare('SELECT sede FROM estudiantes WHERE curso = ? LIMIT 1').get(curso)
+  if (!sedeRow) return []
+  const sede = sedeRow.sede
+
+  const materias = prisma._db.prepare(`
+    SELECT dm.id as dmId, dm.materiaId, m.nombre as materiaNombre, d.usuarioId as docenteUsuarioId
+    FROM docente_materias dm
+    JOIN materias m ON m.id = dm.materiaId
+    LEFT JOIN docentes d ON d.id = dm.docenteId
+    WHERE dm.curso = ?
+  `).all(curso)
+
+  const estudiantes = prisma._db.prepare(`
+    SELECT e.id as estudianteId, u.nombre as estudianteNombre
+    FROM estudiantes e
+    JOIN usuarios u ON u.id = e.usuarioId
+    WHERE e.curso = ?
+  `).all(curso)
+
+  const reporte = []
+  for (const est of estudiantes) {
+    for (const mat of materias) {
+      const cal = prisma._db.prepare(
+        'SELECT definitiva FROM calificaciones WHERE estudianteId = ? AND materiaId = ? AND periodo = ? AND anio = ?'
+      ).get(est.estudianteId, mat.materiaId, periodo, anio)
+
+      if (!cal) {
+        let docenteNombre = ''
+        if (mat.docenteUsuarioId) {
+          const doc = prisma._db.prepare('SELECT nombre FROM usuarios WHERE id = ?').get(mat.docenteUsuarioId)
+          if (doc) docenteNombre = doc.nombre
+        }
+        reporte.push({
+          estudianteId: est.estudianteId,
+          estudianteNombre: est.estudianteNombre,
+          materiaId: mat.materiaId,
+          materiaNombre: mat.materiaNombre,
+          docenteNombre: docenteNombre,
+          definitiva: null,
+          estado: 'PENDIENTE'
+        })
+      } else if (cal.definitiva !== null && cal.definitiva < 3.0) {
+        reporte.push({
+          estudianteId: est.estudianteId,
+          estudianteNombre: est.estudianteNombre,
+          materiaId: mat.materiaId,
+          materiaNombre: mat.materiaNombre,
+          docenteNombre: null,
+          definitiva: cal.definitiva,
+          estado: 'RIESGO'
+        })
+      }
+    }
+  }
+  return reporte
+}
+
 function verificarTokenAdmin(req, res, next) {
   const authHeader = req.headers.authorization
   if (!authHeader) {
@@ -243,7 +301,20 @@ router.get('/periodos', async (req, res) => {
     } else {
       rows = prisma._db.prepare('SELECT * FROM periodos_config WHERE anio = ? ORDER BY sede, periodo').all(anio)
     }
-    res.json(rows)
+    const hoy = new Date()
+    const rowsConEstado = rows.map(r => {
+      let estado = 'ABIERTO'
+      if (!r.abierto) {
+        estado = 'CERRADO_MANUAL'
+      } else if (r.fecha_fin) {
+        const finDate = new Date(r.fecha_fin + 'T23:59:59')
+        if (finDate < hoy && !r.reapertura_manual) {
+          estado = 'CERRADO_AUTOMATICO'
+        }
+      }
+      return { ...r, estado }
+    })
+    res.json(rowsConEstado)
   } catch (error) {
     console.error('Error GET /periodos:', error)
     res.status(500).json({ error: 'Error interno' })
@@ -252,22 +323,121 @@ router.get('/periodos', async (req, res) => {
 
 router.put('/periodos/:id', async (req, res) => {
   try {
-    const { nombre, peso, abierto, fecha_inicio, fecha_fin } = req.body
+    const { fecha_inicio, fecha_corte, fecha_fin } = req.body
     const existing = prisma._db.prepare('SELECT id FROM periodos_config WHERE id = ?').get(req.params.id)
     if (!existing) return res.status(404).json({ error: 'Período no encontrado' })
     const updates = []
     const params = []
-    if (nombre !== undefined) { updates.push('nombre = ?'); params.push(nombre) }
-    if (peso !== undefined) { updates.push('peso = ?'); params.push(parseFloat(peso)) }
-    if (abierto !== undefined) { updates.push('abierto = ?'); params.push(abierto ? 1 : 0) }
     if (fecha_inicio !== undefined) { updates.push('fecha_inicio = ?'); params.push(fecha_inicio || null) }
     if (fecha_fin !== undefined) { updates.push('fecha_fin = ?'); params.push(fecha_fin || null) }
+    if (fecha_corte !== undefined) { updates.push('fecha_corte = ?'); params.push(fecha_corte || null) }
     if (updates.length === 0) return res.status(400).json({ error: 'Nada que actualizar' })
     params.push(req.params.id)
     prisma._db.prepare(`UPDATE periodos_config SET ${updates.join(', ')} WHERE id = ?`).run(...params)
     res.json({ mensaje: 'Período actualizado' })
   } catch (error) {
     console.error('Error PUT /periodos:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// ─── CERRAR PERÍODO MANUALMENTE ───
+
+router.post('/periodos/cerrar', async (req, res) => {
+  try {
+    const { sede, periodo, anio } = req.body
+    if (!sede || !periodo || !anio) {
+      return res.status(400).json({ error: 'sede, periodo y anio son requeridos' })
+    }
+    const row = prisma._db.prepare(
+      'UPDATE periodos_config SET abierto = 0 WHERE sede = ? AND periodo = ? AND anio = ?'
+    ).run(sede, parseInt(periodo), parseInt(anio))
+    if (row.changes === 0) return res.status(404).json({ error: 'Período no encontrado' })
+    res.json({ mensaje: 'Período cerrado manualmente.' })
+  } catch (error) {
+    console.error('Error POST /periodos/cerrar:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// ─── REABRIR PERÍODO MANUALMENTE ───
+
+router.post('/periodos/reabrir', async (req, res) => {
+  try {
+    const { sede, periodo, anio } = req.body
+    if (!sede || !periodo || !anio) {
+      return res.status(400).json({ error: 'sede, periodo y anio son requeridos' })
+    }
+    prisma._db.prepare(
+      'UPDATE periodos_config SET abierto = 1, reapertura_manual = 1 WHERE sede = ? AND periodo = ? AND anio = ?'
+    ).run(sede, parseInt(periodo), parseInt(anio))
+    res.json({ mensaje: 'Período reabierto. Los profesores pueden volver a guardar notas aunque haya pasado la fecha de corte final.' })
+  } catch (error) {
+    console.error('Error POST /periodos/reabrir:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// ─── ADMIN: REPORT DE CORTE ───
+
+router.get('/reporte-corte', async (req, res) => {
+  try {
+    if (req.usuario.rol !== 'ADMIN') {
+      return res.status(403).json({ error: 'Solo administradores' })
+    }
+    const { curso, periodo, anio, sede } = req.query
+    if (!periodo || !anio) {
+      return res.status(400).json({ error: 'periodo y anio son requeridos' })
+    }
+
+    const p = parseInt(periodo)
+    const a = parseInt(anio)
+    const reporte = []
+
+    if (curso) {
+      const r = calcularReporteCorte(curso, p, a)
+      reporte.push(...r)
+    } else {
+      let cursosQuery = 'SELECT DISTINCT curso FROM estudiantes'
+      let params = []
+      if (sede) {
+        cursosQuery += ' WHERE sede = ?'
+        params.push(sede)
+      }
+      const cursos = prisma._db.prepare(cursosQuery).all(...params)
+      for (const c of cursos) {
+        const r = calcularReporteCorte(c.curso, p, a)
+        reporte.push(...r)
+      }
+    }
+
+    let fechaCorte = null
+    let yaPaso = false
+    if (curso) {
+      const sedeRow = prisma._db.prepare('SELECT sede FROM estudiantes WHERE curso = ? LIMIT 1').get(curso)
+      const s = sedeRow ? sedeRow.sede : 'PPAL - TRIUNFO'
+      const cfg = prisma._db.prepare(
+        'SELECT fecha_corte FROM periodos_config WHERE sede = ? AND periodo = ? AND anio = ?'
+      ).get(s, p, a)
+      fechaCorte = cfg?.fecha_corte || null
+      yaPaso = fechaCorte ? new Date(fechaCorte) <= new Date() : false
+    } else {
+      const sedes = prisma._db.prepare('SELECT DISTINCT sede FROM periodos_config WHERE anio = ? AND periodo = ?').all(a, p)
+      for (const s of sedes) {
+        const cfg = prisma._db.prepare(
+          'SELECT fecha_corte FROM periodos_config WHERE sede = ? AND periodo = ? AND anio = ?'
+        ).get(s.sede, p, a)
+        if (cfg?.fecha_corte) {
+          fechaCorte = cfg.fecha_corte
+          yaPaso = new Date(fechaCorte) <= new Date()
+          break
+        }
+      }
+    }
+
+    res.json({ reporte, fechaCorte, yaPaso })
+  } catch (error) {
+    console.error('Error GET /admin/reporte-corte:', error)
     res.status(500).json({ error: 'Error interno' })
   }
 })
