@@ -366,7 +366,7 @@ body::before {
       <div class="inp-g"><label class="lbl">Contraseña</label><input class="inp" id="password" type="password" placeholder="••••••••"/></div>
       <div class="error-msg" id="login-error"></div>
       <button class="btn-primary" id="login-btn" style="margin-top:6px;" onclick="doLogin()">Ingresar</button>
-      <div style="text-align:center;margin-top:12px;font-size:13px;" id="recuperar-link" style="display:none;">
+      <div style="text-align:center;margin-top:12px;font-size:13px;display:none;" id="recuperar-link">
         <span style="color:var(--ink-400);">¿Olvidaste tu contraseña?</span>
         <a href="javascript:void(0)" onclick="abrirRecuperarPassword()" style="color:var(--burgundy-700);font-weight:600;">Recuperar</a>
       </div>
@@ -393,7 +393,7 @@ body::before {
     <div style="color:var(--ink-400);font-size:13px;padding:20px;text-align:center;">Selecciona un período y consulta</div>
   </div>
   <div id="stu-corte-status" style="display:none;margin-top:16px;"></div>
-  <div class="sec-label" style="margin-top:24px;" id="sec-informes-titulo">Informes finales</div>
+  <div class="sec-label" style="margin-top:24px;display:none;" id="sec-informes-titulo">Informes finales</div>
   <div class="informe-row" id="informe-row-1" style="display:none;">
     <div style="width:38px;height:38px;background:var(--rose-50);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">📄</div>
     <div><div style="font-size:13px;font-weight:600;" id="stu-informe1-titulo">Informe final · Período 1</div><div style="font-size:11px;color:var(--ink-400);margin-top:2px;">PDF generado automáticamente al cerrar el período</div></div>
@@ -404,7 +404,7 @@ body::before {
     <div><div style="font-size:13px;font-weight:600;" id="stu-informe2-titulo">Informe final · Período 2</div><div style="font-size:11px;color:var(--ink-400);margin-top:2px;">Se generará al cerrar el período académico</div></div>
     <button class="dl-btn" disabled>No disponible</button>
   </div>
-  <div class="sec-label" style="margin-top:24px;">Оbservaciones</div>
+  <div class="sec-label" style="margin-top:24px;">Observaciones</div>
   <div id="stu-observaciones" style="padding:8px 0;">
     <div style="color:var(--ink-400);font-size:13px;">Cargando...</div>
   </div>
@@ -815,7 +815,20 @@ body::before {
 
     <div style="display:flex;gap:8px;justify-content:end;margin-top:10px;">
       <button class="btn-sm" onclick="cerrarModalMiCuenta()">Cancelar</button>
-      <button class="btn-sm primary" id="btn-mi-cuenta" onclick="guardarMiPerfil()" style="font-weight:600;">💾 Guardar cambios</button>
+        <button class="btn-sm primary" id="btn-mi-cuenta" onclick="guardarMiCuenta()" style="font-weight:600;">💾 Guardar cambios</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal genérico de texto / confirmación (reemplaza prompt() y confirm() nativos) -->
+<div id="modal-prompt" style="display:none;position:fixed;inset:0;z-index:120;background:rgba(0,0,0,0.4);align-items:center;justify-content:center;" onclick="if(event.target===this)cerrarModalPrompt()">
+  <div style="background:#fff;border-radius:var(--r-lg);padding:22px;max-width:430px;width:92%;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+    <div id="prompt-titulo" style="font-size:14px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);margin-bottom:12px;white-space:pre-wrap;word-break:break-word;"></div>
+    <input class="inp" id="prompt-input" style="width:100%;box-sizing:border-box;" onkeydown="if(event.key==='Enter')aceptarModalPrompt()">
+    <div class="error-msg" id="prompt-error" style="display:none;"></div>
+    <div style="display:flex;gap:8px;justify-content:end;margin-top:16px;">
+      <button class="btn-sm" onclick="cerrarModalPrompt()">Cancelar</button>
+      <button class="btn-sm primary" id="prompt-ok-btn" onclick="aceptarModalPrompt()" style="font-weight:600;">Aceptar</button>
     </div>
   </div>
 </div>
@@ -904,6 +917,52 @@ function esc(s) {
     .replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#x27;')
+}
+
+// Escapa valores que viajan como argumento de string dentro de un atributo onclick/onchange
+function escArg(s) {
+  if (s === null || s === undefined) return ''
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+}
+
+// ─── Modal genérico: pide texto o confirma una acción ───
+let _promptCb = null
+
+function cerrarModalPrompt() {
+  document.getElementById('modal-prompt').style.display = 'none'
+  _promptCb = null
+}
+
+function aceptarModalPrompt() {
+  const input = document.getElementById('prompt-input')
+  const cb = _promptCb
+  const valor = input.style.display === 'none' ? true : input.value
+  cerrarModalPrompt()
+  if (cb) cb(valor)
+}
+
+function pedirTexto(titulo, valorDefault, cb) {
+  const input = document.getElementById('prompt-input')
+  document.getElementById('prompt-titulo').textContent = titulo
+  input.style.display = ''
+  input.value = valorDefault || ''
+  document.getElementById('prompt-error').style.display = 'none'
+  _promptCb = cb
+  document.getElementById('modal-prompt').style.display = 'flex'
+  setTimeout(() => { try { input.focus(); input.select() } catch (e) {} }, 60)
+}
+
+function confirmarAccion(titulo, cb) {
+  document.getElementById('prompt-titulo').textContent = titulo
+  document.getElementById('prompt-input').style.display = 'none'
+  document.getElementById('prompt-error').style.display = 'none'
+  _promptCb = cb
+  document.getElementById('modal-prompt').style.display = 'flex'
 }
 
 function selRole(r) {
@@ -1271,7 +1330,7 @@ function renderGrid() {
     const tr = document.createElement('tr')
     tr.className = 'stu-row'
 
-    let html = '<td style="min-width:160px;font-weight:500;position:sticky;left:0;background:#fff;border-right:1px solid #e0e0e0;">' + s.nombre + '</td>'
+    let html = '<td style="min-width:160px;font-weight:500;position:sticky;left:0;background:#fff;border-right:1px solid #e0e0e0;">' + esc(s.nombre) + '</td>'
 
     for (const tipo of TIPOS) {
       const key = tipo === 'ACTIVIDAD' ? 'actividades' : tipo.toLowerCase()
@@ -1291,7 +1350,7 @@ function renderGrid() {
           const val = (raw !== null && raw !== undefined) ? raw : ''
           html += '<td class="cell-' + tipo.toLowerCase() + '" data-cal-id="' + (calId || '') + '" data-titulo="' + (col.titulo || '') + '">'
           if (col.titulo) {
-            html += '<input type="number" step="0.1" min="1" max="5" class="excel-input cell-input" value="' + val + '" placeholder="" onchange="marcarCambio(' + i + ',\'' + tipo + '\',\'' + col.titulo.replace(/'/g, "\\'") + '\',this.value)">'
+            html += '<input type="number" step="0.1" min="1" max="5" class="excel-input cell-input" value="' + val + '" placeholder="" onchange="marcarCambio(' + i + ',\'' + tipo + '\',\'' + escArg(col.titulo) + '\',this.value)">'
           } else {
             html += '<span style="color:#ccc;font-size:11px;">Sin notas</span>'
           }
@@ -1302,7 +1361,7 @@ function renderGrid() {
 
     html += '<td style="font-size:15px;font-weight:500;color:' + getColorDef(def) + ';text-align:center;">' + (def !== null ? def.toFixed(2) : '--') + '</td>'
     html += '<td style="text-align:center;">' + getStatusHtml(def) + '</td>'
-    html += '<td style="text-align:center;"><button class="btn-sm" onclick="mostrarObservaciones(\'' + s.estudianteId + '\',\'' + s.nombre.replace(/'/g, "\\'") + '\',\'' + selectedMateria + '\')" style="font-size:14px;padding:2px 6px;cursor:pointer;border:none;background:none;" title="Observaciones">📝</button></td>'
+    html += '<td style="text-align:center;"><button class="btn-sm" onclick="mostrarObservaciones(\'' + s.estudianteId + '\',\'' + escArg(s.nombre) + '\',\'' + selectedMateria + '\')" style="font-size:14px;padding:2px 6px;cursor:pointer;border:none;background:none;" title="Observaciones">📝</button></td>'
 
     tr.innerHTML = html
     tb.appendChild(tr)
@@ -1354,8 +1413,8 @@ function renderGridHeaders(colsPorTipo) {
         colHtml += '<div class="col-tab' + (isEval ? ' col-tab-eval' : '') + '">'
         colHtml += '<span class="tab-title">' + col.titulo + '</span>'
         if (!isEval) {
-          colHtml += '<span class="tab-btn tab-btn-edit" onclick="renombrarColumna(\'' + tipo + '\',\'' + col.titulo.replace(/'/g, "\\'") + '\')" title="Renombrar">✎</span>'
-          colHtml += '<span class="tab-btn tab-btn-del" onclick="eliminarColumna(\'' + tipo + '\',\'' + col.titulo.replace(/'/g, "\\'") + '\')" title="Eliminar">✕</span>'
+          colHtml += '<span class="tab-btn tab-btn-edit" onclick="renombrarColumna(\'' + tipo + '\',\'' + escArg(col.titulo) + '\')" title="Renombrar">✎</span>'
+          colHtml += '<span class="tab-btn tab-btn-del" onclick="eliminarColumna(\'' + tipo + '\',\'' + escArg(col.titulo) + '\')" title="Eliminar">✕</span>'
         }
         colHtml += '</div></th>'
       } else {
@@ -1372,46 +1431,49 @@ function renderGridHeaders(colsPorTipo) {
 }
 
 async function renombrarColumna(tipo, tituloViejo) {
-  const tituloNuevo = prompt('Nuevo título para "' + tituloViejo + '":', tituloViejo)
-  if (!tituloNuevo || !tituloNuevo.trim() || tituloNuevo.trim() === tituloViejo) return
+  pedirTexto('Nuevo título para "' + tituloViejo + '":', tituloViejo, async (tituloNuevo) => {
+    if (!tituloNuevo || !tituloNuevo.trim() || tituloNuevo.trim() === tituloViejo) return
 
-  try {
-    const res = await fetch(API + '/api/notas/columna', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + currentToken },
-      body: JSON.stringify({ curso: selectedCurso, materiaId: selectedMateria, periodo: currentPeriodo, anio: new Date().getFullYear(), tipo, tituloViejo, tituloNuevo: tituloNuevo.trim() })
-    })
-    if (res.ok) {
-      mostrarToast('ok', 'Columna renombrada')
-      cargarGrupo()
-    } else {
-      const data = await res.json()
-      mostrarToast('error', data.error || 'Error al renombrar')
+    try {
+      const res = await fetch(API + '/api/notas/columna', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + currentToken },
+        body: JSON.stringify({ curso: selectedCurso, materiaId: selectedMateria, periodo: currentPeriodo, anio: new Date().getFullYear(), tipo, tituloViejo, tituloNuevo: tituloNuevo.trim() })
+      })
+      if (res.ok) {
+        mostrarToast('ok', 'Columna renombrada')
+        cargarGrupo()
+      } else {
+        const data = await res.json()
+        mostrarToast('error', data.error || 'Error al renombrar')
+      }
+    } catch (e) {
+      mostrarToast('error', 'Error de conexión')
     }
-  } catch (e) {
-    mostrarToast('error', 'Error de conexión')
-  }
+  })
 }
 
 async function eliminarColumna(tipo, titulo) {
-  if (!confirm('¿Eliminar la columna "' + titulo + '" y todas sus notas?')) return
+  confirmarAccion('¿Eliminar la columna "' + titulo + '" y todas sus notas?', async (ok) => {
+    if (!ok) return
 
-  try {
-    const res = await fetch(API + '/api/notas/columna', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + currentToken },
-      body: JSON.stringify({ curso: selectedCurso, materiaId: selectedMateria, periodo: currentPeriodo, anio: new Date().getFullYear(), tipo, titulo })
-    })
-    if (res.ok) {
-      mostrarToast('ok', 'Columna eliminada')
-      cargarGrupo()
-    } else {
-      const data = await res.json()
-      mostrarToast('error', data.error || 'Error al eliminar')
+    try {
+      const res = await fetch(API + '/api/notas/columna', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + currentToken },
+        body: JSON.stringify({ curso: selectedCurso, materiaId: selectedMateria, periodo: currentPeriodo, anio: new Date().getFullYear(), tipo, titulo })
+      })
+      if (res.ok) {
+        mostrarToast('ok', 'Columna eliminada')
+        cargarGrupo()
+      } else {
+        const data = await res.json()
+        mostrarToast('error', data.error || 'Error al eliminar')
+      }
+    } catch (e) {
+      mostrarToast('error', 'Error de conexión')
     }
-  } catch (e) {
-    mostrarToast('error', 'Error de conexión')
-  }
+  })
 }
 
 function marcarCambio(studentIdx, tipo, titulo, valor) {
@@ -1429,7 +1491,7 @@ function marcarCambio(studentIdx, tipo, titulo, valor) {
 }
 
 async function agregarColumna(tipo) {
-  const titulo = prompt('Título de la nueva nota en ' + TIPOS_LABEL[tipo] + ':')
+  pedirTexto('Título de la nueva nota en ' + TIPOS_LABEL[tipo] + ':', '', async (titulo) => {
   if (!titulo || !titulo.trim()) return
 
   try {
@@ -1448,6 +1510,7 @@ async function agregarColumna(tipo) {
   } catch (e) {
     mostrarToast('error', 'Error de conexión')
   }
+  })
 }
 
 async function guardarGrid() {
@@ -1549,13 +1612,13 @@ async function cargarEstadoCorte() {
     if (riesgo.length) {
       html += '<div style="font-size:12px;font-weight:600;color:#A32D2D;margin-bottom:4px;">Materias en riesgo (definitiva &lt; 3.0):</div>'
       for (const r of riesgo) {
-        html += '<div style="font-size:12px;padding:3px 0;display:flex;justify-content:space-between;"><span>' + r.materiaNombre + '</span><span style="background:#FCEBEB;color:#A32D2D;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;">' + (r.definitiva !== null ? r.definitiva.toFixed(2) : '—') + '</span></div>'
+        html += '<div style="font-size:12px;padding:3px 0;display:flex;justify-content:space-between;"><span>' + esc(r.materiaNombre) + '</span><span style="background:#FCEBEB;color:#A32D2D;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;">' + (r.definitiva !== null ? r.definitiva.toFixed(2) : '—') + '</span></div>'
       }
     }
     if (pendiente.length) {
       html += '<div style="font-size:12px;font-weight:600;color:#757575;margin-top:8px;margin-bottom:4px;">Materias sin registrar:</div>'
       for (const r of pendiente) {
-        html += '<div style="font-size:12px;padding:3px 0;"><span style="background:#F5F5F5;color:#757575;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;">' + r.materiaNombre + '</span></div>'
+        html += '<div style="font-size:12px;padding:3px 0;"><span style="background:#F5F5F5;color:#757575;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;">' + esc(r.materiaNombre) + '</span></div>'
       }
     }
     html += '</div>'
@@ -1579,10 +1642,10 @@ async function cargarObservacionesEstudiante() {
       const eventoInfo = (o.fecha && o.fecha !== creado.toISOString().split('T')[0]) ? ' -- 📅 Evento: ' + new Date(o.fecha + 'T00:00:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'America/Bogota' }) : ''
       return '<div style="background:var(--cream-50);border:1px solid var(--line);border-radius:var(--r-md);padding:10px 12px;margin-bottom:8px;">' +
         '<div style="font-size:11px;color:var(--ink-500);margin-bottom:5px;display:flex;justify-content:space-between;align-items:start;">' +
-        '<span>' + (o.docenteNombre || 'Coordinación') + ' · ' + fechaHora + '<span style="background:var(--paper);padding:1px 6px;border-radius:8px;font-size:10px;margin-left:4px;">' + (o.materiaNombre || 'General') + '</span></span>' +
+        '<span>' + esc(o.docenteNombre || 'Coordinación') + ' · ' + fechaHora + '<span style="background:var(--paper);padding:1px 6px;border-radius:8px;font-size:10px;margin-left:4px;">' + esc(o.materiaNombre || 'General') + '</span></span>' +
         '</div>' +
         (eventoInfo ? '<div style="font-size:10px;color:var(--burgundy-600);margin-bottom:4px;">' + eventoInfo + '</div>' : '') +
-        '<div style="font-size:13px;color:var(--ink-900);white-space:pre-wrap;line-height:1.5;">' + o.texto + '</div>' +
+        '<div style="font-size:13px;color:var(--ink-900);white-space:pre-wrap;line-height:1.5;">' + esc(o.texto) + '</div>' +
         '</div>'
     }).join('')
   } catch (e) {
@@ -1682,18 +1745,18 @@ async function cargarAdminProfesores() {
     tb.innerHTML = data.map(p => {
       const active = p.activo
       const badge = active ? '<span style="background:#EAF3DE;color:#3B6D11;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">Activo</span>' : '<span style="background:#FCEBEB;color:#A32D2D;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">Inactivo</span>'
-      const asig = (p.asignaciones && p.asignaciones.length) ? p.asignaciones.map(a => a.curso + ' · ' + a.materia).join('<br>') : '<span style="color:var(--ink-400);font-size:11px;">Sin asignaciones</span>'
+      const asig = (p.asignaciones && p.asignaciones.length) ? p.asignaciones.map(a => esc(a.curso) + ' · ' + esc(a.materia)).join('<br>') : '<span style="color:var(--ink-400);font-size:11px;">Sin asignaciones</span>'
       const actionBtn = active
         ? '<button class="btn-sm" onclick="adminToggleActivo(\'' + p.id + '\',0)" style="font-size:11px;">Desactivar</button>'
         : '<button class="btn-sm success" onclick="adminToggleActivo(\'' + p.id + '\',1)" style="font-size:11px;">Activar</button>'
-      const passBtn = '<button class="btn-sm" onclick="adminMostrarModalPass(\'' + p.id + '\',\'' + p.nombre.replace(/'/g, "\\'") + '\')" style="font-size:11px;">🔑 Cambiar contraseña</button>'
-      const correoBtn = '<button class="btn-sm" onclick="adminMostrarModalCorreo(\'' + p.id + '\',\'' + p.nombre.replace(/'/g, "\\'") + '\',\'' + p.correo + '\')" style="font-size:11px;">📧 Correo</button>'
+      const passBtn = '<button class="btn-sm" onclick="adminMostrarModalPass(\'' + p.id + '\',\'' + escArg(p.nombre) + '\')" style="font-size:11px;">🔑 Cambiar contraseña</button>'
+      const correoBtn = '<button class="btn-sm" onclick="adminMostrarModalCorreo(\'' + p.id + '\',\'' + escArg(p.nombre) + '\',\'' + escArg(p.correo) + '\')" style="font-size:11px;">📧 Correo</button>'
       return '<tr>' +
-        '<td style="padding:10px 12px;border-bottom:1px solid var(--line);font-weight:600;">' + p.nombre + '</td>' +
-        '<td style="padding:10px 12px;border-bottom:1px solid var(--line);">' + p.documento + '</td>' +
+        '<td style="padding:10px 12px;border-bottom:1px solid var(--line);font-weight:600;">' + esc(p.nombre) + '</td>' +
+        '<td style="padding:10px 12px;border-bottom:1px solid var(--line);">' + esc(p.documento) + '</td>' +
         '<td style="padding:10px 12px;border-bottom:1px solid var(--line);font-size:12px;">' + asig + '</td>' +
         '<td style="padding:10px 12px;border-bottom:1px solid var(--line);text-align:center;">' + badge + '</td>' +
-        '<td style="padding:10px 12px;border-bottom:1px solid var(--line);text-align:center;">' + actionBtn + ' ' + passBtn + ' ' + correoBtn + ' <button class="btn-sm" onclick="adminMostrarModalDoc(\'' + p.id + '\',\'' + p.nombre.replace(/'/g, "\\'") + '\',\'' + p.documento + '\')" style="font-size:11px;">📄 Documento</button> <button class="btn-sm" onclick="adminEliminarProfesor(\'' + p.id + '\')" style="font-size:11px;color:#A32D2D;">Eliminar</button></td>' +
+        '<td style="padding:10px 12px;border-bottom:1px solid var(--line);text-align:center;">' + actionBtn + ' ' + passBtn + ' ' + correoBtn + ' <button class="btn-sm" onclick="adminMostrarModalDoc(\'' + p.id + '\',\'' + escArg(p.nombre) + '\',\'' + escArg(p.documento) + '\')" style="font-size:11px;">📄 Documento</button> <button class="btn-sm" onclick="adminEliminarProfesor(\'' + p.id + '\')" style="font-size:11px;color:#A32D2D;">Eliminar</button></td>' +
         '</tr>'
     }).join('')
   } catch (e) {
@@ -1721,9 +1784,9 @@ async function cargarAdminAsignaciones() {
     const materias = await matRes.json()
     const cursos = curRes.ok ? await curRes.json() : []
     const profSel = document.getElementById('admin-sel-profesor')
-    profSel.innerHTML = '<option value="">Seleccionar</option>' + profes.map(p => '<option value="' + p.docenteId + '">' + p.nombre + ' (' + p.documento + ')</option>').join('')
+    profSel.innerHTML = '<option value="">Seleccionar</option>' + profes.map(p => '<option value="' + p.docenteId + '">' + esc(p.nombre) + ' (' + esc(p.documento) + ')</option>').join('')
     const matSel = document.getElementById('admin-sel-materia')
-    matSel.innerHTML = '<option value="">Seleccionar</option>' + materias.map(m => '<option value="' + m.id + '">' + m.nombre + ' (' + m.grado + '°)</option>').join('')
+    matSel.innerHTML = '<option value="">Seleccionar</option>' + materias.map(m => '<option value="' + m.id + '">' + esc(m.nombre) + ' (' + m.grado + '°)</option>').join('')
     const cursoSel = document.getElementById('admin-sel-curso-asign')
     cursoSel.innerHTML = '<option value="">Todos los cursos</option>' + cursos.map(c => '<option value="' + c + '">' + c + '</option>').join('')
     cargarAsignacionesCurso()
@@ -1741,9 +1804,9 @@ async function cargarAsignacionesCurso() {
   const tb = document.getElementById('admin-tb-asignaciones')
   tb.innerHTML = asignaciones.map(a => {
     return '<tr>' +
-      '<td style="padding:10px 12px;border-bottom:1px solid var(--line);">' + a.profesor + '</td>' +
-      '<td style="padding:10px 12px;border-bottom:1px solid var(--line);">' + a.curso + '</td>' +
-      '<td style="padding:10px 12px;border-bottom:1px solid var(--line);">' + a.materia + '</td>' +
+      '<td style="padding:10px 12px;border-bottom:1px solid var(--line);">' + esc(a.profesor) + '</td>' +
+      '<td style="padding:10px 12px;border-bottom:1px solid var(--line);">' + esc(a.curso) + '</td>' +
+      '<td style="padding:10px 12px;border-bottom:1px solid var(--line);">' + esc(a.materia) + '</td>' +
       '<td style="padding:10px 12px;border-bottom:1px solid var(--line);text-align:center;"><button class="btn-sm" onclick="adminEliminarAsignacion(\'' + a.id + '\')" style="font-size:11px;color:#A32D2D;">Eliminar</button></td>' +
       '</tr>'
   }).join('')
@@ -1776,7 +1839,8 @@ async function adminCrearAsignacion() {
 }
 
 async function adminEliminarAsignacion(id) {
-  if (!confirm('¿Eliminar esta asignación?')) return
+  confirmarAccion('¿Eliminar esta asignación?', async (ok) => {
+  if (!ok) return
   try {
     const res = await fetch(API + '/api/admin/asignaciones/' + id, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + currentToken } })
     if (res.ok) {
@@ -1789,6 +1853,7 @@ async function adminEliminarAsignacion(id) {
   } catch (e) {
     mostrarToast('error', 'Error de conexión')
   }
+  })
 }
 
 async function adminToggleActivo(id, activo) {
@@ -1811,7 +1876,8 @@ async function adminToggleActivo(id, activo) {
 }
 
 async function adminEliminarProfesor(id) {
-  if (!confirm('¿Eliminar este profesor?\nSe eliminarán todas sus asignaciones.')) return
+  confirmarAccion('¿Eliminar este profesor?\nSe eliminarán todas sus asignaciones.', async (ok) => {
+  if (!ok) return
   try {
     const res = await fetch(API + '/api/admin/profesores/' + id, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + currentToken } })
     if (res.ok) {
@@ -1824,6 +1890,7 @@ async function adminEliminarProfesor(id) {
   } catch (e) {
     mostrarToast('error', 'Error de conexión')
   }
+  })
 }
 
 // Modal cambiar contraseña
@@ -1845,7 +1912,7 @@ function cerrarModalPass() {
 async function adminGuardarPass() {
   const pass = document.getElementById('modal-pass-input').value
   const err = document.getElementById('modal-pass-error')
-  if (!pass || pass.length < 4) { err.textContent = 'La contraseña debe tener al menos 4 caracteres'; err.style.display = 'block'; return }
+  if (!pass || pass.length < 6) { err.textContent = 'La contraseña debe tener al menos 6 caracteres'; err.style.display = 'block'; return }
   try {
     const res = await fetch(API + '/api/admin/profesores/' + currentPassUserId + '/password', {
       method: 'PUT',
@@ -2037,12 +2104,12 @@ async function cargarAdminPeriodos() {
         const fmtFecha = (f) => f ? new Date(f + 'T00:00:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'America/Bogota' }) : '—'
         let acciones = '<button class="btn-sm" onclick="abrirModalFechas(\'' + c.id + '\')" style="font-size:11px;margin-right:4px;">✏️ Editar fechas</button>'
         if (c.estado === 'ABIERTO') {
-          acciones += '<button class="btn-sm" onclick="cerrarPeriodo(\'' + c.sede + '\', ' + c.periodo + ', ' + c.anio + ')" style="font-size:11px;background:#FCEBEB;color:#A32D2D;border:1px solid #E57373;">🔒 Cerrar ahora</button>'
+          acciones += '<button class="btn-sm" onclick="cerrarPeriodo(\'' + escArg(c.sede) + '\', ' + c.periodo + ', ' + c.anio + ')" style="font-size:11px;background:#FCEBEB;color:#A32D2D;border:1px solid #E57373;">🔒 Cerrar ahora</button>'
         } else {
-          acciones += '<button class="btn-sm" onclick="reabrirPeriodo(\'' + c.sede + '\', ' + c.periodo + ', ' + c.anio + ')" style="font-size:11px;background:#EAF3DE;color:#3B6D11;border:1px solid #A5D6A7;font-weight:600;">🔓 Reabrir</button>'
+          acciones += '<button class="btn-sm" onclick="reabrirPeriodo(\'' + escArg(c.sede) + '\', ' + c.periodo + ', ' + c.anio + ')" style="font-size:11px;background:#EAF3DE;color:#3B6D11;border:1px solid #A5D6A7;font-weight:600;">🔓 Reabrir</button>'
         }
         html += '<tr>'
-        html += '<td style="padding:8px 10px;border-bottom:1px solid var(--line);font-weight:600;">' + c.nombre + '</td>'
+        html += '<td style="padding:8px 10px;border-bottom:1px solid var(--line);font-weight:600;">' + esc(c.nombre) + '</td>'
         html += '<td style="padding:8px 10px;border-bottom:1px solid var(--line);text-align:center;">' + fmtFecha(c.fecha_inicio) + '</td>'
         html += '<td style="padding:8px 10px;border-bottom:1px solid var(--line);text-align:center;">' + fmtFecha(c.fecha_corte) + '</td>'
         html += '<td style="padding:8px 10px;border-bottom:1px solid var(--line);text-align:center;">' + fmtFecha(c.fecha_fin) + '</td>'
@@ -2187,7 +2254,6 @@ async function verificarCambiarPassword() {
     })
     const data = await res.json()
     if (res.ok) {
-      document.getElementById('verificar-success').style.display = 'block'
       cerrarModalVerificar()
       mostrarToast('ok', '✅ Contraseña restablecida. Ya puedes iniciar sesión con la nueva clave.')
       showScreen('login')
@@ -2223,7 +2289,7 @@ async function guardarMiCuenta() {
   const nuevoCorreo = document.getElementById('mi-cuenta-correo').value.trim()
   const nuevaPassword = document.getElementById('mi-cuenta-nueva-password').value
   const err = document.getElementById('mi-cuenta-error')
-  const btn = document.getElementById('btn-mi-cuenta-guardar')
+  const btn = document.getElementById('btn-mi-cuenta')
   if (!passwordActual) { err.textContent = 'La contraseña actual es requerida'; err.style.display = 'block'; return }
   btn.disabled = true
   btn.textContent = 'Guardando...'
@@ -2257,7 +2323,8 @@ async function guardarMiCuenta() {
 }
 
 async function cerrarPeriodo(sede, periodo, anio) {
-  if (!confirm('¿Cerrar el período para ' + sede + ' (P' + periodo + ' / ' + anio + ')?\nLos profesores ya no podrán guardar notas.')) return
+  confirmarAccion('¿Cerrar el período para ' + sede + ' (P' + periodo + ' / ' + anio + ')?\nLos profesores ya no podrán guardar notas.', async (ok) => {
+  if (!ok) return
   try {
     const res = await fetch(API + '/api/admin/periodos/cerrar', {
       method: 'POST',
@@ -2274,10 +2341,12 @@ async function cerrarPeriodo(sede, periodo, anio) {
   } catch (e) {
     mostrarToast('error', 'Error de conexión')
   }
+  })
 }
 
 async function reabrirPeriodo(sede, periodo, anio) {
-  if (!confirm('¿Reabrir el período ' + sede + ' (P' + periodo + ' / ' + anio + ')?\nLos profesores podrán subir notas aunque haya pasado la fecha de corte final.')) return
+  confirmarAccion('¿Reabrir el período ' + sede + ' (P' + periodo + ' / ' + anio + ')?\nLos profesores podrán subir notas aunque haya pasado la fecha de corte final.', async (ok) => {
+  if (!ok) return
   try {
     const res = await fetch(API + '/api/admin/periodos/reabrir', {
       method: 'POST',
@@ -2294,6 +2363,7 @@ async function reabrirPeriodo(sede, periodo, anio) {
   } catch (e) {
     mostrarToast('error', 'Error de conexión')
   }
+  })
 }
 
 async function cargarAdminReporteCorte() {
@@ -2344,7 +2414,7 @@ async function ejecutarAdminReporteCorte() {
           ? '<span style="background:#FCEBEB;color:#A32D2D;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;">RIESGO</span>'
           : '<span style="background:#F5F5F5;color:#757575;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;">PENDIENTE</span>'
         const notaDisplay = r.definitiva !== null ? r.definitiva.toFixed(2) : '—'
-        html += '<tr><td style="padding:5px 8px;border-bottom:1px solid var(--line);">' + (r.curso || '') + '</td><td style="padding:5px 8px;border-bottom:1px solid var(--line);">' + r.estudianteNombre + '</td><td style="padding:5px 8px;border-bottom:1px solid var(--line);">' + r.materiaNombre + '</td><td style="padding:5px 8px;border-bottom:1px solid var(--line);text-align:center;">' + estadoBadge + '</td><td style="padding:5px 8px;border-bottom:1px solid var(--line);text-align:center;">' + notaDisplay + '</td></tr>'
+        html += '<tr><td style="padding:5px 8px;border-bottom:1px solid var(--line);">' + esc(r.curso || '') + '</td><td style="padding:5px 8px;border-bottom:1px solid var(--line);">' + esc(r.estudianteNombre) + '</td><td style="padding:5px 8px;border-bottom:1px solid var(--line);">' + esc(r.materiaNombre) + '</td><td style="padding:5px 8px;border-bottom:1px solid var(--line);text-align:center;">' + estadoBadge + '</td><td style="padding:5px 8px;border-bottom:1px solid var(--line);text-align:center;">' + notaDisplay + '</td></tr>'
       }
       html += '</tbody></table>'
     }
@@ -2355,7 +2425,8 @@ async function ejecutarAdminReporteCorte() {
 }
 
 async function adminEliminarObservacion(id) {
-  if (!confirm('¿Eliminar esta observación (admin)?')) return
+  confirmarAccion('¿Eliminar esta observación (admin)?', async (ok) => {
+  if (!ok) return
   try {
     const res = await fetch(API + '/api/notas/observaciones/' + id, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + currentToken } })
     if (res.ok) {
@@ -2368,6 +2439,7 @@ async function adminEliminarObservacion(id) {
   } catch (e) {
     mostrarToast('error', 'Error de conexión')
   }
+  })
 }
 
 // ─── ADMIN: ESTUDIANTES ───
@@ -2430,13 +2502,13 @@ async function cargarTablaEstudiantes() {
           ? '<span style="background:#FFF3E0;color:#E65100;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">🌇 Tarde</span>'
           : '<span style="background:#F3E5F5;color:#6A1B9A;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">' + (e.jornada || '—') + '</span>'
         return '<tr>' +
-          '<td style="padding:8px 10px;border-bottom:1px solid var(--line);font-weight:600;">' + e.nombre + '</td>' +
-          '<td style="padding:8px 10px;border-bottom:1px solid var(--line);">' + e.documento + '</td>' +
-          '<td style="padding:8px 10px;border-bottom:1px solid var(--line);">' + e.curso + '</td>' +
+          '<td style="padding:8px 10px;border-bottom:1px solid var(--line);font-weight:600;">' + esc(e.nombre) + '</td>' +
+          '<td style="padding:8px 10px;border-bottom:1px solid var(--line);">' + esc(e.documento) + '</td>' +
+          '<td style="padding:8px 10px;border-bottom:1px solid var(--line);">' + esc(e.curso) + '</td>' +
           '<td style="padding:8px 10px;border-bottom:1px solid var(--line);text-align:center;">' + e.grado + '°</td>' +
-          '<td style="padding:8px 10px;border-bottom:1px solid var(--line);">' + e.sede + '</td>' +
+          '<td style="padding:8px 10px;border-bottom:1px solid var(--line);">' + esc(e.sede) + '</td>' +
           '<td style="padding:8px 10px;border-bottom:1px solid var(--line);text-align:center;">' + jornadaBadge + '</td>' +
-          '<td style="padding:8px 10px;border-bottom:1px solid var(--line);text-align:center;"><button class="btn-sm" onclick="adminMostrarModalCambioCurso(\'' + e.id + '\',\'' + e.nombre.replace(/'/g, "\\'") + '\',\'' + e.curso + '\')" style="font-size:11px;">📄 Cambiar curso</button></td>' +
+          '<td style="padding:8px 10px;border-bottom:1px solid var(--line);text-align:center;"><button class="btn-sm" onclick="adminMostrarModalCambioCurso(\'' + e.id + '\',\'' + escArg(e.nombre) + '\',\'' + escArg(e.curso) + '\')" style="font-size:11px;">📄 Cambiar curso</button></td>' +
           '</tr>'
       }).join('')
     }
@@ -2482,17 +2554,17 @@ function adminMostrarModalCambioCurso(id, nombre, cursoActual) {
       let html = ''
       if (mañana.length) {
         html += '<optgroup label="🌅 Mañana">'
-        html += mañana.map(c => '<option value="' + c.curso + '" data-grado="' + c.grado + '">' + c.curso + ' (grado ' + c.grado + '°) — ' + c.sede + '</option>').join('')
+        html += mañana.map(c => '<option value="' + esc(c.curso) + '" data-grado="' + c.grado + '">' + esc(c.curso) + ' (grado ' + c.grado + '°) — ' + esc(c.sede) + '</option>').join('')
         html += '</optgroup>'
       }
       if (tarde.length) {
         html += '<optgroup label="🌇 Tarde">'
-        html += tarde.map(c => '<option value="' + c.curso + '" data-grado="' + c.grado + '">' + c.curso + ' (grado ' + c.grado + '°) — ' + c.sede + '</option>').join('')
+        html += tarde.map(c => '<option value="' + esc(c.curso) + '" data-grado="' + c.grado + '">' + esc(c.curso) + ' (grado ' + c.grado + '°) — ' + esc(c.sede) + '</option>').join('')
         html += '</optgroup>'
       }
       if (otros.length) {
         html += '<optgroup label="❓ Otra">'
-        html += otros.map(c => '<option value="' + c.curso + '" data-grado="' + c.grado + '">' + c.curso + ' (grado ' + c.grado + '°) — ' + c.sede + '</option>').join('')
+        html += otros.map(c => '<option value="' + esc(c.curso) + '" data-grado="' + c.grado + '">' + esc(c.curso) + ' (grado ' + c.grado + '°) — ' + esc(c.sede) + '</option>').join('')
         html += '</optgroup>'
       }
       select.innerHTML = html
@@ -2555,7 +2627,7 @@ async function cargarAdminDirectores() {
     if (res.ok) {
       const profes = await res.json()
       const sel = document.getElementById('admin-dir-profesor')
-      sel.innerHTML = '<option value="">Seleccionar</option>' + profes.map(p => '<option value="' + p.docenteId + '">' + p.nombre + ' (' + p.documento + ')</option>').join('')
+      sel.innerHTML = '<option value="">Seleccionar</option>' + profes.map(p => '<option value="' + p.docenteId + '">' + esc(p.nombre) + ' (' + esc(p.documento) + ')</option>').join('')
     }
   } catch (e) {}
 
@@ -2575,8 +2647,8 @@ async function cargarTablaDirectores() {
     } else {
       tb.innerHTML = rows.map(d =>
         '<tr>' +
-        '<td style="padding:8px 10px;border-bottom:1px solid var(--line);">' + (d.docenteNombre || 'Desconocido') + '</td>' +
-        '<td style="padding:8px 10px;border-bottom:1px solid var(--line);">' + d.curso + '</td>' +
+        '<td style="padding:8px 10px;border-bottom:1px solid var(--line);">' + esc(d.docenteNombre || 'Desconocido') + '</td>' +
+        '<td style="padding:8px 10px;border-bottom:1px solid var(--line);">' + esc(d.curso) + '</td>' +
         '<td style="padding:8px 10px;border-bottom:1px solid var(--line);text-align:center;"><button class="btn-sm" onclick="adminEliminarDirector(\'' + d.id + '\')" style="font-size:11px;color:#A32D2D;">🗑️</button></td>' +
         '</tr>'
       ).join('')
@@ -2611,7 +2683,8 @@ async function adminAsignarDirector() {
 }
 
 async function adminEliminarDirector(id) {
-  if (!confirm('¿Eliminar este director de grupo?')) return
+  confirmarAccion('¿Eliminar este director de grupo?', async (ok) => {
+  if (!ok) return
   try {
     const res = await fetch(API + '/api/admin/directores/' + id, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + currentToken } })
     if (res.ok) {
@@ -2624,6 +2697,7 @@ async function adminEliminarDirector(id) {
   } catch (e) {
     mostrarToast('error', 'Error de conexión')
   }
+  })
 }
 
 // ─── ADMIN: OBSERVACIONES GLOBALES ───
@@ -2652,7 +2726,7 @@ async function cargarAdminObservaciones(pagina) {
     if (matsRes.ok) {
       const mats = await matsRes.json()
       const selMat = document.getElementById('admin-obs-materia')
-      selMat.innerHTML = '<option value="">Todas</option>' + mats.map(m => '<option value="' + m.id + '">' + m.nombre + ' (' + m.grado + '°)</option>').join('')
+      selMat.innerHTML = '<option value="">Todas</option>' + mats.map(m => '<option value="' + m.id + '">' + esc(m.nombre) + ' (' + m.grado + '°)</option>').join('')
     }
   } catch (e) {}
 
@@ -2685,11 +2759,11 @@ async function cargarAdminObservaciones(pagina) {
           const creadoEn = creadoDate.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'America/Bogota' }) + ' ' + creadoDate.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' })
           return '<tr>' +
           '<td style="padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap;">' + fecha + '</td>' +
-          '<td style="padding:8px 10px;border-bottom:1px solid var(--line);">' + (o.estudianteNombre || '') + '</td>' +
-          '<td style="padding:8px 10px;border-bottom:1px solid var(--line);">' + (o.curso || '') + '</td>' +
-          '<td style="padding:8px 10px;border-bottom:1px solid var(--line);">' + (o.materiaNombre || '') + '</td>' +
-          '<td style="padding:8px 10px;border-bottom:1px solid var(--line);">' + (o.docenteNombre || 'Coordinación') + '</td>' +
-          '<td style="padding:8px 10px;border-bottom:1px solid var(--line);font-size:12px;max-width:300px;white-space:pre-wrap;">' + (o.texto || '') + '</td>' +
+          '<td style="padding:8px 10px;border-bottom:1px solid var(--line);">' + esc(o.estudianteNombre || '') + '</td>' +
+          '<td style="padding:8px 10px;border-bottom:1px solid var(--line);">' + esc(o.curso || '') + '</td>' +
+          '<td style="padding:8px 10px;border-bottom:1px solid var(--line);">' + esc(o.materiaNombre || '') + '</td>' +
+          '<td style="padding:8px 10px;border-bottom:1px solid var(--line);">' + esc(o.docenteNombre || 'Coordinación') + '</td>' +
+          '<td style="padding:8px 10px;border-bottom:1px solid var(--line);font-size:12px;max-width:300px;white-space:pre-wrap;">' + esc(o.texto || '') + '</td>' +
           '<td style="padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap;font-size:11px;color:var(--ink-500);">' + creadoEn + '</td>' +
           '<td style="padding:8px 10px;border-bottom:1px solid var(--line);text-align:center;"><button class="btn-sm" onclick="adminEliminarObservacion(\'' + o.id + '\')" style="font-size:11px;color:#A32D2D;">🗑️</button></td>' +
           '</tr>'
@@ -2765,7 +2839,7 @@ async function cargarObservacionesCursoDirector(curso) {
     lista.innerHTML = data.map(o => {
       const creado = new Date(o.creadoEn + 'Z')
       const fechaCreado = creado.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'America/Bogota' }) + ' · ' + creado.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' })
-      const materiaLabel = o.materiaNombre ? ' <span style="background:var(--cream-100);padding:1px 6px;border-radius:8px;font-size:10px;">' + o.materiaNombre + '</span>' : ''
+      const materiaLabel = o.materiaNombre ? ' <span style="background:var(--cream-100);padding:1px 6px;border-radius:8px;font-size:10px;">' + esc(o.materiaNombre) + '</span>' : ''
       return '<div style="background:#f9f8f6;border:1px solid var(--line);border-radius:var(--r-md);padding:10px 12px;margin-bottom:8px;">' +
         '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:4px;">' +
         '<span style="font-size:11px;color:var(--ink-500);">' + esc(o.docenteNombre || 'Coordinación') + ' · ' + fechaCreado + materiaLabel + '</span>' +
@@ -2819,7 +2893,7 @@ async function cargarReporteCorte(curso) {
           ? '<span style="background:#FCEBEB;color:#A32D2D;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;">RIESGO</span>'
           : '<span style="background:#F5F5F5;color:#757575;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;">PENDIENTE</span>'
         const notaDisplay = r.definitiva !== null ? r.definitiva.toFixed(2) : '—'
-        html += '<tr><td style="padding:5px 8px;border-bottom:1px solid var(--line);">' + r.estudianteNombre + '</td><td style="padding:5px 8px;border-bottom:1px solid var(--line);">' + r.materiaNombre + '</td><td style="padding:5px 8px;border-bottom:1px solid var(--line);text-align:center;">' + estadoBadge + '</td><td style="padding:5px 8px;border-bottom:1px solid var(--line);text-align:center;">' + notaDisplay + '</td></tr>'
+        html += '<tr><td style="padding:5px 8px;border-bottom:1px solid var(--line);">' + esc(r.estudianteNombre) + '</td><td style="padding:5px 8px;border-bottom:1px solid var(--line);">' + esc(r.materiaNombre) + '</td><td style="padding:5px 8px;border-bottom:1px solid var(--line);text-align:center;">' + estadoBadge + '</td><td style="padding:5px 8px;border-bottom:1px solid var(--line);text-align:center;">' + notaDisplay + '</td></tr>'
       }
       html += '</tbody></table>'
     }
@@ -2846,7 +2920,7 @@ async function cargarObservaciones(estudianteId) {
     lista.innerHTML = data.map(o => {
       const creado = new Date(o.creadoEn + 'Z')
       const fechaCreado = creado.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'America/Bogota' }) + ' · ' + creado.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' })
-      const materiaLabel = o.materiaNombre ? ' <span style="background:var(--cream-100);padding:1px 6px;border-radius:8px;font-size:10px;">' + o.materiaNombre + '</span>' : ''
+      const materiaLabel = o.materiaNombre ? ' <span style="background:var(--cream-100);padding:1px 6px;border-radius:8px;font-size:10px;">' + esc(o.materiaNombre) + '</span>' : ''
       return '<div style="background:#f9f8f6;border:1px solid var(--line);border-radius:var(--r-md);padding:10px 12px;margin-bottom:8px;" id="obs-card-' + o.id + '">' +
         '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:4px;">' +
         '<span style="font-size:11px;color:var(--ink-500);">' + esc(o.docenteNombre || o.docenteId || 'Coordinación') + ' · ' + fechaCreado + esc(materiaLabel) + '</span>' +
@@ -2887,7 +2961,8 @@ async function adminCrearObservacion() {
 }
 
 async function eliminarObservacion(id) {
-  if (!confirm('¿Eliminar esta observación?')) return
+  confirmarAccion('¿Eliminar esta observación?', async (ok) => {
+  if (!ok) return
   try {
     const res = await fetch(API + '/api/notas/observaciones/' + id, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + currentToken } })
     if (res.ok) {
@@ -2900,6 +2975,7 @@ async function eliminarObservacion(id) {
   } catch (e) {
     mostrarToast('error', 'Error de conexión')
   }
+  })
 }
 
 function modalObsEditar(id) {

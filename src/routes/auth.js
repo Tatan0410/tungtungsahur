@@ -8,6 +8,34 @@ const router = express.Router()
 const MAX_INTENTOS = 5
 const TIEMPO_BLOQUEO_MS = 15 * 60 * 1000
 
+// Rate limit en memoria por IP para /login: evita fuerza bruta que prueba
+// muchos documentos distintos desde la misma máquina.
+// Solo cuenta intentos FALLIDOS: los logins exitosos no consumen el cupo,
+// así una escuela con muchas peticiones desde la misma IP (NAT) no se bloquea.
+const loginPorIp = new Map()
+const FALLOS_IP_POR_MINUTO = 30
+
+function fallosPorIp(ip) {
+  const ahora = Date.now()
+  const reg = loginPorIp.get(ip)
+  if (!reg || ahora > reg.resetAt) return 0
+  return reg.count
+}
+
+function registrarFalloIp(ip) {
+  const ahora = Date.now()
+  let reg = loginPorIp.get(ip)
+  if (!reg || ahora > reg.resetAt) {
+    reg = { count: 0, resetAt: ahora + 60 * 1000 }
+    loginPorIp.set(ip, reg)
+  }
+  reg.count++
+  // Evita crecer sin límite si llegan IPs de muchas fuentes
+  if (loginPorIp.size > 5000) {
+    for (const [k, v] of loginPorIp) if (ahora > v.resetAt) loginPorIp.delete(k)
+  }
+}
+
 function registrarIntentoFallido(documento) {
   const existente = prisma._db.prepare('SELECT * FROM intentos_login WHERE documento = ?').get(documento)
   if (existente) {
@@ -31,6 +59,12 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'Documento y contraseña son requeridos' })
     }
 
+    // ─── RATE LIMITING POR IP (solo fallos) ───
+    const ipLogin = req.ip || req.connection.remoteAddress || 'desconocida'
+    if (fallosPorIp(ipLogin) >= FALLOS_IP_POR_MINUTO) {
+      return res.status(429).json({ error: 'Demasiados intentos fallidos desde esta IP. Espera un minuto.' })
+    }
+
     // ─── RATE LIMITING ───
     const intento = prisma._db.prepare('SELECT * FROM intentos_login WHERE documento = ?').get(documento)
     if (intento && intento.bloqueadoHasta) {
@@ -51,6 +85,7 @@ router.post('/login', async (req, res) => {
 
     if (!usuario) {
       registrarIntentoFallido(documento)
+      registrarFalloIp(ipLogin)
       return res.status(401).json({ error: 'Documento o contraseña incorrectos' })
     }
 
@@ -61,6 +96,7 @@ router.post('/login', async (req, res) => {
     const passwordCorrecta = await bcrypt.compare(password, usuario.password)
     if (!passwordCorrecta) {
       registrarIntentoFallido(documento)
+      registrarFalloIp(ipLogin)
       return res.status(401).json({ error: 'Documento o contraseña incorrectos' })
     }
 
@@ -166,6 +202,9 @@ router.post('/recuperar', async (req, res) => {
     const reg = recuperarPorIp.get(ip)
     if (!reg || ahora > reg.resetAt) {
       recuperarPorIp.set(ip, { count: 1, resetAt: ahora + 60 * 1000 })
+      if (recuperarPorIp.size > 5000) {
+        for (const [k, v] of recuperarPorIp) if (ahora > v.resetAt) recuperarPorIp.delete(k)
+      }
     } else {
       reg.count++
       if (reg.count > 10) {
@@ -173,15 +212,20 @@ router.post('/recuperar', async (req, res) => {
       }
     }
 
+    // Limpieza: elimina códigos/registros con más de 24 horas
+    prisma._db.prepare("DELETE FROM password_resets WHERE creadoEn < datetime('now', '-1 day')").run()
+
     const usuario = await prisma.usuario.findUnique({ where: { correo }, include: { docente: true } })
     if (!usuario || usuario.rol !== 'DOCENTE') {
       // No revela si el correo existe (seguridad)
       return res.json({ mensaje: 'Si el correo existe, recibirás un código de recuperación.' })
     }
 
-    // Máximo 3 códigos por correo en la última hora (evita bombardeo de emails)
+    // Máximo 3 códigos por correo en la última hora (evita bombardeo de emails).
+    // Se excluyen las filas INVALID- que registran intentos fallidos, para que
+    // unos intentos erróneos no bloqueen la recuperación legítima.
     const enviadosHora = prisma._db.prepare(
-      "SELECT COUNT(*) AS c FROM password_resets WHERE usuarioId = ? AND creadoEn > datetime('now', '-1 hour')"
+      "SELECT COUNT(*) AS c FROM password_resets WHERE usuarioId = ? AND codigo NOT LIKE 'INVALID-%' AND creadoEn > datetime('now', '-1 hour')"
     ).get(usuario.id)
     if (enviadosHora.c >= 3) {
       console.log(`⚠️  Límite de códigos por correo alcanzado: ${correo}`)

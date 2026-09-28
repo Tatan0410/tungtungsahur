@@ -3,6 +3,7 @@ const jwt     = require('jsonwebtoken')
 const path    = require('path')
 const Database = require('better-sqlite3')
 const prisma  = require('../prisma')
+const { calcularReporteCorte } = require('../services/reporteCorte')
 
 const DB_PATH = path.resolve(__dirname, '../../prisma/dev.db')
 const db = new Database(DB_PATH)
@@ -55,64 +56,6 @@ function periodoAbierto(anio, sede, periodo) {
     }
     return true
   } catch { return true }
-}
-
-function calcularReporteCorte(curso, periodo, anio) {
-  const sedeRow = prisma._db.prepare('SELECT sede FROM estudiantes WHERE curso = ? LIMIT 1').get(curso)
-  if (!sedeRow) return []
-  const sede = sedeRow.sede
-
-  const materias = prisma._db.prepare(`
-    SELECT dm.id as dmId, dm.materiaId, m.nombre as materiaNombre, d.usuarioId as docenteUsuarioId
-    FROM docente_materias dm
-    JOIN materias m ON m.id = dm.materiaId
-    LEFT JOIN docentes d ON d.id = dm.docenteId
-    WHERE dm.curso = ?
-  `).all(curso)
-
-  const estudiantes = prisma._db.prepare(`
-    SELECT e.id as estudianteId, u.nombre as estudianteNombre
-    FROM estudiantes e
-    JOIN usuarios u ON u.id = e.usuarioId
-    WHERE e.curso = ?
-  `).all(curso)
-
-  const reporte = []
-  for (const est of estudiantes) {
-    for (const mat of materias) {
-      const cal = prisma._db.prepare(
-        'SELECT definitiva FROM calificaciones WHERE estudianteId = ? AND materiaId = ? AND periodo = ? AND anio = ?'
-      ).get(est.estudianteId, mat.materiaId, periodo, anio)
-
-      if (!cal) {
-        let docenteNombre = ''
-        if (mat.docenteUsuarioId) {
-          const doc = prisma._db.prepare('SELECT nombre FROM usuarios WHERE id = ?').get(mat.docenteUsuarioId)
-          if (doc) docenteNombre = doc.nombre
-        }
-        reporte.push({
-          estudianteId: est.estudianteId,
-          estudianteNombre: est.estudianteNombre,
-          materiaId: mat.materiaId,
-          materiaNombre: mat.materiaNombre,
-          docenteNombre: docenteNombre,
-          definitiva: null,
-          estado: 'PENDIENTE'
-        })
-      } else if (cal.definitiva !== null && cal.definitiva < 3.0) {
-        reporte.push({
-          estudianteId: est.estudianteId,
-          estudianteNombre: est.estudianteNombre,
-          materiaId: mat.materiaId,
-          materiaNombre: mat.materiaNombre,
-          docenteNombre: null,
-          definitiva: cal.definitiva,
-          estado: 'RIESGO'
-        })
-      }
-    }
-  }
-  return reporte
 }
 
 function calcularDefinitiva(items) {
@@ -1113,20 +1056,22 @@ router.delete('/observaciones/:id', async (req, res) => {
 
 router.get('/observaciones-curso', async (req, res) => {
   try {
-    if (req.usuario.rol !== 'DOCENTE') {
-      return res.status(403).json({ error: 'Solo docentes' })
+    if (req.usuario.rol !== 'DOCENTE' && req.usuario.rol !== 'ADMIN') {
+      return res.status(403).json({ error: 'Solo docentes y administradores' })
     }
     const { curso } = req.query
     if (!curso) {
       return res.status(400).json({ error: 'curso es requerido' })
     }
 
-    // Verify this teacher is director of the course
-    const director = prisma._db.prepare(
-      'SELECT * FROM directores_grupo WHERE docenteId = ? AND curso = ?'
-    ).get(req.usuario.docenteId, curso)
-    if (!director) {
-      return res.status(403).json({ error: 'No eres director de este curso' })
+    // El admin ve cualquier curso; el docente solo si es director del curso
+    if (req.usuario.rol !== 'ADMIN') {
+      const director = prisma._db.prepare(
+        'SELECT * FROM directores_grupo WHERE docenteId = ? AND curso = ?'
+      ).get(req.usuario.docenteId, curso)
+      if (!director) {
+        return res.status(403).json({ error: 'No eres director de este curso' })
+      }
     }
 
     const rows = prisma._db.prepare(`

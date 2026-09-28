@@ -14,6 +14,12 @@ const path    = require('path')
 const app  = express()
 const PORT = process.env.PORT || 3000
 
+// Detrás de un proxy/reverse proxy (Vercel, Nginx, etc.) hay que confiar en él
+// para que req.ip refleje la IP real y los rate limits por IP funcionen.
+// Solo se activa explícitamente con TRUST_PROXY=1: sin proxy real, activarlo
+// permitiría falsear X-Forwarded-For y evadir esos límites.
+if (process.env.TRUST_PROXY === '1') app.set('trust proxy', 1)
+
 // ─────────────────────────────────────────────────────
 // MIDDLEWARES GLOBALES
 // Estas líneas se ejecutan en CADA petición que llega
