@@ -24,12 +24,18 @@ function puertoLibre() {
 // snapshot viejo sin esas escrituras.
 // SMTP queda vacío: dotenv no pisa variables ya definidas, así que el servidor
 // entra en la rama "SMTP no configurado" y nunca intenta enviar correos.
-async function arrancarServidor() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sagrado-test-'))
-  const dbPath = path.join(dir, 'dev.db')
-  const origen = new Database(path.join(RAIZ, 'prisma', 'dev.db'), { readonly: true })
-  await origen.backup(dbPath)
-  origen.close()
+// Con { dbPath } se arranca contra una BD propia (por ejemplo una recién
+// migrada): en ese caso no se copia nada ni se borra esa carpeta al cerrar.
+async function arrancarServidor(opciones = {}) {
+  let dir = null
+  let dbPath = opciones.dbPath
+  if (!dbPath) {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sagrado-test-'))
+    dbPath = path.join(dir, 'dev.db')
+    const origen = new Database(path.join(RAIZ, 'prisma', 'dev.db'), { readonly: true })
+    await origen.backup(dbPath)
+    origen.close()
+  }
   const puerto = await puertoLibre()
 
   const proc = spawn(process.execPath, ['src/index.js'], {
@@ -80,6 +86,7 @@ async function arrancarServidor() {
         proc.kill()
         await new Promise(r => setTimeout(r, 200))
       }
+      if (!dir) return
       for (let i = 0; i < 3; i++) {
         try { fs.rmSync(dir, { recursive: true, force: true }); break }
         catch { await new Promise(r => setTimeout(r, 200)) }

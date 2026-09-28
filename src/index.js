@@ -49,6 +49,19 @@ app.use(express.json({ limit: '500kb' }))
 app.use(express.static(path.join(__dirname, '../public')))
 
 // ─────────────────────────────────────────────────────
+// MIGRACIONES DEL ESQUEMA
+// Se aplican ANTES de montar las rutas para que una BD recién creada (deploy
+// nuevo, entorno de pruebas) tenga todas las tablas e índices desde el
+// primer arranque. Idempotente: lo ya registrado en _prisma_migrations se salta.
+// ─────────────────────────────────────────────────────
+
+const { aplicarMigraciones } = require('./db/migraciones')
+const migracionesAplicadas = aplicarMigraciones(require('./prisma')._db)
+if (migracionesAplicadas.length > 0) {
+  console.log('  📄 Migraciones aplicadas: ' + migracionesAplicadas.join(', '))
+}
+
+// ─────────────────────────────────────────────────────
 // RUTAS DE LA API
 // Cada archivo maneja una parte del sistema
 // ─────────────────────────────────────────────────────

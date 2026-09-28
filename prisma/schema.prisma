@@ -38,6 +38,8 @@ model Estudiante {
   consultas      ConsultaEstudiante[]
   informes       Informe[]
 
+  @@index([curso])
+  @@index([sede])
   @@map("estudiantes")
 }
 
@@ -48,6 +50,7 @@ model Docente {
   usuario        Usuario          @relation(fields: [usuarioId], references: [id])
   asignaciones   DocenteMateria[]
   calificaciones Calificacion[]
+  directores     DirectorGrupo[]
 
   @@map("docentes")
 }
@@ -137,4 +140,89 @@ model Informe {
 
   @@unique([estudianteId, periodo, anio])
   @@map("informes")
+}
+
+// ─── Modelos añadidos en la migración 2 ───
+// Sus tablas se crearon en desarrollo y se formalizaron en
+// prisma/migrations/20260928120000_tablas_adicionales_e_indices/.
+// FKs reales que solo existen en el SQL: observaciones estudianteId → estudiantes,
+// password_resets usuarioId → usuarios, intentos_login documento → usuarios.documento.
+
+model Observacion {
+  id           String  @id @default(cuid())
+  estudianteId String
+  docenteId    String?
+  materiaId    String
+  texto        String
+  tipo         String  @default("GENERAL")
+  fecha        String?
+  creadoEn     DateTime @default(now())
+
+  @@index([estudianteId])
+  @@index([materiaId])
+  @@map("observaciones")
+}
+
+model PeriodoConfig {
+  id               String   @id
+  sede             String
+  periodo          Int
+  nombre           String   @default("Período 1")
+  peso             Float    @default(0.25)
+  fechaInicio      String?  @map("fecha_inicio")
+  fechaFin         String?  @map("fecha_fin")
+  fechaCorte       String?  @map("fecha_corte")
+  abierto          Boolean  @default(true)
+  anio             Int      @default(2025)
+  reaperturaManual Int      @default(0) @map("reapertura_manual")
+
+  @@unique([sede, periodo, anio])
+  @@map("periodos_config")
+}
+
+model PasswordReset {
+  id        String   @id @default(cuid())
+  usuarioId String
+  codigo    String
+  expira    String
+  usado     Int      @default(0)
+  creadoEn  DateTime @default(now())
+
+  @@index([usuarioId])
+  @@map("password_resets")
+}
+
+model DirectorGrupo {
+  id        String   @id @default(cuid())
+  docenteId String
+  curso     String
+  creadoEn  DateTime @default(now())
+
+  docente Docente @relation(fields: [docenteId], references: [id])
+
+  @@unique([docenteId, curso])
+  @@index([curso])
+  @@map("directores_grupo")
+}
+
+model Columna {
+  id        String   @id @default(cuid())
+  curso     String
+  materiaId String
+  periodo   Int
+  anio      Int
+  tipo      String
+  titulo    String
+  creadoEn  DateTime @default(now())
+
+  @@unique([curso, materiaId, periodo, anio, tipo, titulo])
+  @@map("columnas")
+}
+
+model IntentoLogin {
+  documento      String  @id
+  intentos       Int     @default(0)
+  bloqueadoHasta String?
+
+  @@map("intentos_login")
 }

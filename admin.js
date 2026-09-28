@@ -1,7 +1,7 @@
 const Database = require('better-sqlite3');
 const bcrypt = require('bcryptjs');
 const path = require('path');
-const db = new Database(path.join(__dirname, 'prisma/dev.db'));
+const db = new Database(process.env.DATABASE_PATH || path.join(__dirname, 'prisma/dev.db'));
 
 function uuid() { return require('crypto').randomUUID() }
 
@@ -241,12 +241,25 @@ else if (cmd === 'importar-excel') {
   ok('Importación completada — ' + creados + ' estudiantes nuevos, ' + omitidos + ' omitidos (duplicados o filas incompletas)');
 }
 
+// ---- MIGRACIONES ----
+else if (cmd === 'migrar') {
+  const { aplicarMigraciones } = require('./src/db/migraciones');
+  const aplicadas = aplicarMigraciones(db);
+  if (aplicadas.length === 0) ok('Base de datos al día (sin migraciones pendientes)');
+  else {
+    ok('Migraciones aplicadas:');
+    aplicadas.forEach(m => console.log('   → ' + m));
+  }
+}
+
 // ---- AYUDA ----
 else {
   console.log(`
   📋 ADMIN - Sistema Sagrado Corazón
   ====================================
 
+  BASE DE DATOS:
+    node admin.js migrar                                            → aplicar migraciones pendientes
   PROFESORES Y ADMINISTRADORES:
     node admin.js listar                                            → ver docentes y admins
     node admin.js crear-profesor DOC "NOMBRE" [PASS]                → crear profesor (pass opcional)

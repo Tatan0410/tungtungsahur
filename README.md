@@ -56,6 +56,7 @@ npm start                     # servidor
 npm run dev                   # con --watch (reinicia al guardar)
 npm test                      # suite completa de pruebas
 npm run test:watch            # reejecuta las pruebas al guardar
+node admin.js migrar          # aplicar migraciones pendientes de la BD
 node admin.js importar-excel RUTA.xlsx --anio 2026   # importar matrícula (offline)
 node admin.js                 # lista todos los comandos del CLI
 ```
@@ -75,6 +76,20 @@ arranca su propio servidor en un puerto libre con una **copia temporal** de
 | `test/periodos.test.js` | cierre/reapertura de período y bloqueo de notas |
 | `test/reporteCorte.test.js` | reglas de `RIESGO`/`PENDIENTE` del reporte |
 | `test/frontend.test.js` | XSS (`esc`/`escArg`), HTML, ids, `.env` no trackeado |
+| `test/migracion.test.js` | BD nueva desde cero, índices, idempotencia del runner |
+
+## Migraciones del esquema
+
+Al arrancar, el servidor aplica solo las migraciones pendientes de
+`prisma/migrations/` (registradas en `_prisma_migrations`, igual que el CLI de
+Prisma). Todo es idempotente (`CREATE ... IF NOT EXISTS`), así que:
+
+- **BD nueva**: se crean las 16 tablas y los índices desde cero.
+- **BD existente**: solo se aplica lo que falte; los datos no se tocan.
+- **Manual**: `node admin.js migrar` (o en deploy, mira el log `📄 Migraciones aplicadas: ...`).
+
+Para agregar una: crea `prisma/migrations/<AAAAMMDDHHMMSS>_<nombre>/migration.sql`
+y reinicia el servidor.
 
 ## Documentación
 

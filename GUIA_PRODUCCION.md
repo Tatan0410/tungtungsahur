@@ -83,6 +83,10 @@ Sin tocar la base de datos. Alcance: cientos de usuarios concurrentes.
    - Cambiar `Admin2025` y las contraseñas de prueba (ver SECURITY.md §3.10).
    - Verificar `https://tudominio/api/ping` → `200`.
    - Verificar login y recuperación de contraseña con un correo real.
+   - En el log del arranque debe aparecer `📄 Migraciones aplicadas: ...` (o
+     `sin migraciones pendientes` si ya corrió): el servidor aplica solo las
+     migraciones de `prisma/migrations/` al arrancar, así que en una BD nueva
+     no hay nada que ejecutar a mano (alternativa: `node admin.js migrar`).
 
 4. **Límites de esta fase**
    - Un solo proceso: el escritor de SQLite serializa los writes.
@@ -101,8 +105,11 @@ El objetivo es salir de SQLite. El esquema ya existe en
 ### 3.1 Crear el proyecto
 1. supabase.com → nuevo proyecto → guardar `DATABASE_URL` (modo **pooler**,
    transaction) y la `DB password`.
-2. SQL Editor → pegar y ejecutar `prisma/migrations/*/migration.sql`
-   (adaptar tipos si Prisma emite `TEXT` para fechas; ver 3.3).
+2. SQL Editor → pegar y ejecutar `prisma/migrations/*/migration.sql` (las 2
+   migraciones, en orden: la inicial y `20260928120000_tablas_adicionales_e_indices`,
+   que crea las tablas `observaciones`, `periodos_config`, `password_resets`,
+   `directores_grupo`, `columnas`, `intentos_login` y sus índices).
+   Adaptar tipos si Prisma emite `TEXT` para fechas; ver 3.3.
 
 ### 3.2 Estrategia de porting
 
