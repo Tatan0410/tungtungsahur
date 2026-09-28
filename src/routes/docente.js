@@ -13,7 +13,7 @@ function verificarToken(req, res, next) {
 
   try {
     const token  = authHeader.split(' ')[1]
-    const datos  = jwt.verify(token, process.env.JWT_SECRET)
+    const datos  = jwt.verify(token, process.env.JWT_SECRET, { issuer: 'sagrado-corazon-sistema', audience: 'sagrado-corazon-web' })
     req.usuario  = datos
     next()
   } catch {

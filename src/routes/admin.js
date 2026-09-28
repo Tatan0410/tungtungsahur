@@ -70,7 +70,7 @@ function verificarTokenAdmin(req, res, next) {
   }
   try {
     const token  = authHeader.split(' ')[1]
-    const datos  = jwt.verify(token, process.env.JWT_SECRET)
+    const datos  = jwt.verify(token, process.env.JWT_SECRET, { issuer: 'sagrado-corazon-sistema', audience: 'sagrado-corazon-web' })
     req.usuario  = datos
     if (datos.rol !== 'ADMIN') {
       return res.status(403).json({ error: 'Solo administradores' })
@@ -248,17 +248,34 @@ router.post('/materias', async (req, res) => {
 
 // ─── ASIGNACIONES ───
 
+router.get('/cursos', async (req, res) => {
+  try {
+    const rows = prisma._db.prepare(
+      "SELECT DISTINCT e.curso FROM estudiantes e JOIN usuarios u ON u.id = e.usuarioId WHERE u.activo = 1 AND e.curso != '' ORDER BY e.curso"
+    ).all()
+    res.json(rows.map(r => r.curso))
+  } catch (error) {
+    console.error('Error GET /cursos:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
 router.get('/asignaciones', async (req, res) => {
   try {
-    const rows = prisma._db.prepare(`
-      SELECT dm.id, dm.curso, u.nombre as profesor, m.nombre as materia
+    let sql = `
+      SELECT dm.id, dm.curso, u.nombre as profesor, m.nombre as materia, m.grado as materia_grado
       FROM docente_materias dm
       JOIN docentes d ON d.id = dm.docenteId
       JOIN usuarios u ON u.id = d.usuarioId
       JOIN materias m ON m.id = dm.materiaId
-      ORDER BY dm.curso, u.nombre, m.nombre
-    `).all()
-    res.json(rows)
+    `
+    const params = []
+    if (req.query.curso) {
+      sql += ' WHERE dm.curso = ?'
+      params.push(String(req.query.curso))
+    }
+    sql += ' ORDER BY dm.curso, u.nombre, m.nombre'
+    res.json(prisma._db.prepare(sql).all(...params))
   } catch (error) {
     console.error('Error GET /asignaciones:', error)
     res.status(500).json({ error: 'Error interno' })

@@ -19,14 +19,24 @@ const PORT = process.env.PORT || 3000
 // Estas líneas se ejecutan en CADA petición que llega
 // ─────────────────────────────────────────────────────
 
-// Permite que el frontend (en otro dominio) hable con este servidor
+// Headers de seguridad en todas las respuestas
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff')
+  res.setHeader('X-Frame-Options', 'DENY')
+  res.setHeader('X-XSS-Protection', '1; mode=block')
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
+  next()
+})
+
+// CORS: por defecto permite todo en desarrollo. Si defines ALLOWED_ORIGINS (separado por comas), solo esas.
+const ALLOWED = (process.env.ALLOWED_ORIGINS || '').split(',').filter(Boolean)
 app.use(cors({
-  origin: '*',   // En producción cambia esto por el dominio real del colegio
+  origin: ALLOWED.length ? ALLOWED : '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
 }))
 
-// Le dice a Express que entienda JSON en el cuerpo de las peticiones
-app.use(express.json())
+// Límite de cuerpo JSON (evita payloads gigantes)
+app.use(express.json({ limit: '500kb' }))
 
 // Sirve el HTML del frontend como archivos estáticos
 // Cuando alguien entra a http://localhost:3000 ve tu portal

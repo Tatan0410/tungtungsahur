@@ -366,7 +366,7 @@ body::before {
       <div class="inp-g"><label class="lbl">Contraseña</label><input class="inp" id="password" type="password" placeholder="••••••••"/></div>
       <div class="error-msg" id="login-error"></div>
       <button class="btn-primary" id="login-btn" style="margin-top:6px;" onclick="doLogin()">Ingresar</button>
-      <div style="text-align:center;margin-top:12px;font-size:13px;">
+      <div style="text-align:center;margin-top:12px;font-size:13px;" id="recuperar-link" style="display:none;">
         <span style="color:var(--ink-400);">¿Olvidaste tu contraseña?</span>
         <a href="javascript:void(0)" onclick="abrirRecuperarPassword()" style="color:var(--burgundy-700);font-weight:600;">Recuperar</a>
       </div>
@@ -393,18 +393,18 @@ body::before {
     <div style="color:var(--ink-400);font-size:13px;padding:20px;text-align:center;">Selecciona un período y consulta</div>
   </div>
   <div id="stu-corte-status" style="display:none;margin-top:16px;"></div>
-  <div class="sec-label" style="margin-top:24px;">Informes finales</div>
-  <div class="informe-row">
+  <div class="sec-label" style="margin-top:24px;" id="sec-informes-titulo">Informes finales</div>
+  <div class="informe-row" id="informe-row-1" style="display:none;">
     <div style="width:38px;height:38px;background:var(--rose-50);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">📄</div>
     <div><div style="font-size:13px;font-weight:600;" id="stu-informe1-titulo">Informe final · Período 1</div><div style="font-size:11px;color:var(--ink-400);margin-top:2px;">PDF generado automáticamente al cerrar el período</div></div>
     <button class="dl-btn">Descargar PDF</button>
   </div>
-  <div class="informe-row" style="opacity:.55;">
+  <div class="informe-row" id="informe-row-2" style="display:none;">
     <div style="width:38px;height:38px;background:var(--rose-50);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">📄</div>
     <div><div style="font-size:13px;font-weight:600;" id="stu-informe2-titulo">Informe final · Período 2</div><div style="font-size:11px;color:var(--ink-400);margin-top:2px;">Se generará al cerrar el período académico</div></div>
     <button class="dl-btn" disabled>No disponible</button>
   </div>
-  <div class="sec-label" style="margin-top:24px;">Observaciones</div>
+  <div class="sec-label" style="margin-top:24px;">Оbservaciones</div>
   <div id="stu-observaciones" style="padding:8px 0;">
     <div style="color:var(--ink-400);font-size:13px;">Cargando...</div>
   </div>
@@ -479,17 +479,30 @@ body::before {
     <div class="brand-right"><button class="btn-logout" onclick="doLogout()">Cerrar sesión</button></div>
   </div>
 
-  <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
-    <button class="btn-sm primary" onclick="cargarAdminProfesores()" style="font-weight:600;">👤 Profesores</button>
-    <button class="btn-sm primary" onclick="cargarAdminAsignaciones()" style="font-weight:600;">📋 Asignaciones</button>
-    <button class="btn-sm primary" onclick="cargarAdminPeriodos()" style="font-weight:600;">📅 Períodos</button>
-    <button class="btn-sm" onclick="cargarAdminReporteCorte()" style="font-weight:600;">⚠️ Reporte de corte</button>
-    <button class="btn-sm primary" onclick="cargarAdminEstudiantes()" style="font-weight:600;">👥 Estudiantes</button>
-    <button class="btn-sm primary" onclick="cargarAdminDirectores()" style="font-weight:600;">🎓 Directores</button>
-    <button class="btn-sm primary" onclick="cargarAdminObservaciones()" style="font-weight:600;">👁️ Obs</button>
-  </div>
+  <div style="display:flex;gap:20px;align-items:flex-start;">
+    <!-- Sidebar -->
+    <div style="
+      width:200px;flex-shrink:0;
+      background:var(--paper);border:1px solid var(--line);
+      border-radius:var(--r-lg);
+      padding:10px;position:sticky;top:20px;
+      height:fit-content;
+    ">
+      <div style="font-size:11px;font-weight:700;color:var(--ink-500);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;padding:0 6px;">
+        Menu
+      </div>
+      <button class="btn-sm" onclick="cargarAdminProfesores()" style="width:100%;text-align:left;justify-content:flex-start;margin-bottom:6px;font-size:12px;padding:9px 10px;" id="nav-profesores">👤 Profesores</button>
+      <button class="btn-sm" onclick="cargarAdminAsignaciones()" style="width:100%;text-align:left;justify-content:flex-start;margin-bottom:6px;font-size:12px;padding:9px 10px;" id="nav-asignaciones">📋 Asignaciones</button>
+      <button class="btn-sm" onclick="cargarAdminPeriodos()" style="width:100%;text-align:left;justify-content:flex-start;margin-bottom:6px;font-size:12px;padding:9px 10px;" id="nav-periodos">📅 Períodos</button>
+      <button class="btn-sm" onclick="cargarAdminReporteCorte()" style="width:100%;text-align:left;justify-content:flex-start;margin-bottom:6px;font-size:12px;padding:9px 10px;" id="nav-reporte">⚠️ Reporte</button>
+      <button class="btn-sm" onclick="cargarAdminEstudiantes()" style="width:100%;text-align:left;justify-content:flex-start;margin-bottom:6px;font-size:12px;padding:9px 10px;" id="nav-estudiantes">👥 Estudiantes</button>
+      <button class="btn-sm" onclick="cargarAdminDirectores()" style="width:100%;text-align:left;justify-content:flex-start;margin-bottom:6px;font-size:12px;padding:9px 10px;" id="nav-directores">🎓 Directores</button>
+      <button class="btn-sm" onclick="cargarAdminObservaciones()" style="width:100%;text-align:left;justify-content:flex-start;margin-bottom:6px;font-size:12px;padding:9px 10px;" id="nav-obs">👁️ Obs</button>
+    </div>
 
-  <div id="admin-periodos-section" style="display:none;">
+    <!-- Main content area -->
+    <div style="flex:1;min-width:0;">
+      <div id="admin-periodos-section" style="display:none;">
     <div style="font-size:15px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);margin-bottom:12px;">Configuración de Períodos por Sede</div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:16px;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px;">
       <div><div class="lbl">Sede</div><select class="sel" id="admin-sel-sede"><option value="">Todas</option></select></div>
@@ -559,12 +572,19 @@ body::before {
   </div>
 
   <div id="admin-asignaciones-section" style="display:none;">
-    <div style="font-size:15px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);margin-bottom:12px;">Asignaciones</div>
+    <div style="font-size:15px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);margin-bottom:12px;">Asignaciones por Curso</div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:16px;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px;">
-      <div><div class="lbl">Profesor</div><select class="sel" id="admin-sel-profesor" style="min-width:200px;"><option value="">Seleccionar</option></select></div>
-      <div><div class="lbl">Materia</div><select class="sel" id="admin-sel-materia" style="min-width:160px;"><option value="">Seleccionar</option></select></div>
-      <div><div class="lbl">Curso</div><input class="inp" id="admin-input-curso" style="width:80px;" placeholder="301"></div>
-      <div><button class="btn-sm success" onclick="adminCrearAsignacion()" style="font-weight:600;padding:8px 16px;">Asignar</button></div>
+      <div><div class="lbl">Curso</div><select class="sel" id="admin-sel-curso-asign" style="min-width:150px;" onchange="cargarAsignacionesCurso()"><option value="">Seleccionar</option></select></div>
+      <div><button class="btn-sm primary" onclick="cargarAsignacionesCurso()" style="font-weight:600;">Ver asignaciones</button></div>
+    </div>
+    <div id="admin-asignaciones-curso-info" style="">
+      <div style="color:var(--ink-400);text-align:center;padding:16px;font-size:13px;background:var(--paper);border:1px dashed var(--line);border-radius:var(--r-md);margin-bottom:16px;">Selecciona un curso para ver sus materias y profesores</div>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:16px;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px;">
+      <div><div class="lbl">Nueva asignación</div><span style="font-size:11px;color:var(--ink-400);">Selecciona curso primero</span></div>
+      <div><div class="lbl">Profesor</div><select class="sel" id="admin-sel-profesor" style="min-width:220px;"><option value="">Seleccionar</option></select></div>
+      <div><div class="lbl">Materia</div><select class="sel" id="admin-sel-materia" style="min-width:180px;"><option value="">Seleccionar</option></select></div>
+      <div><button class="btn-sm success" onclick="adminCrearAsignacion()" style="font-weight:600;padding:8px 16px;">➕ Asignar</button></div>
     </div>
     <div style="overflow-x:auto;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);">
       <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:500px;">
@@ -578,7 +598,6 @@ body::before {
       </table>
     </div>
   </div>
-</div>
 
   <div id="admin-estudiantes-section" style="display:none;">
     <div style="font-size:15px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);margin-bottom:12px;">👥 Estudiantes</div>
@@ -640,6 +659,9 @@ body::before {
       </table>
     </div>
   </div>
+    </div>
+  </div>
+</div>
 
 <!-- Modal observaciones -->
 <div id="modal-observaciones" style="display:none;position:fixed;inset:0;z-index:100;background:rgba(0,0,0,0.4);align-items:center;justify-content:center;" onclick="if(event.target===this)cerrarModalObservaciones()">
@@ -874,10 +896,22 @@ const PESOS_PERIODO = { 1: 0.20, 2: 0.30, 3: 0.20, 4: 0.30 }
 const TIPOS = ['ACTITUDINAL', 'RESPONSABILIDAD', 'ACTIVIDAD', 'EVALUACION']
 const TIPOS_LABEL = { ACTITUDINAL: 'Actitudinal', RESPONSABILIDAD: 'Responsabilidad', ACTIVIDAD: 'Actividades', EVALUACION: 'Evaluación' }
 
+// Sanitización de texto para prevenir XSS cuando se inserta datos del usuario en el DOM
+function esc(s) {
+  if (s === null || s === undefined) return ''
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;')
+}
+
 function selRole(r) {
   currentRole = r
   document.getElementById('r-est').classList.toggle('sel', r === 'est')
   document.getElementById('r-doc').classList.toggle('sel', r === 'doc')
+  // "¿Olvidaste tu contraseña?" solo para docentes
+  document.getElementById('recuperar-link').style.display = (r === 'doc' ? '' : 'none')
 }
 
 function showScreen(id) {
@@ -1608,6 +1642,19 @@ function mostrarToast(tipo, msg) {
 }
 
 // ---- ADMIN PANEL ----
+
+function actualizarNavActivo(idActivo) {
+  const botones = ['nav-profesores','nav-asignaciones','nav-periodos','nav-reporte','nav-estudiantes','nav-directores','nav-obs']
+  botones.forEach(id => {
+    const b = document.getElementById(id)
+    if (b) {
+      b.style.fontWeight = (id === idActivo ? '700' : '400')
+      b.style.color = (id === idActivo ? 'var(--burgundy-700)' : 'var(--ink-900)')
+      b.style.background = (id === idActivo ? 'var(--cream-100)' : 'transparent')
+    }
+  })
+}
+
 function showAdminPortal(user) {
   document.getElementById('app').classList.add('wide-mode')
   document.getElementById('admin-name').textContent = user.nombre || 'Administrador'
@@ -1622,6 +1669,10 @@ async function cargarAdminProfesores() {
   document.getElementById('admin-asignaciones-section').style.display = 'none'
   document.getElementById('admin-periodos-section').style.display = 'none'
   document.getElementById('admin-obs-section').style.display = 'none'
+  document.getElementById('admin-estudiantes-section').style.display = 'none'
+  document.getElementById('admin-directores-section').style.display = 'none'
+  document.getElementById('admin-reporte-corte-section').style.display = 'none'
+  actualizarNavActivo('nav-profesores')
   const tb = document.getElementById('admin-tb-profesores')
   tb.innerHTML = '<tr><td colspan="5" style="padding:24px;text-align:center;color:var(--ink-400);">Cargando...</td></tr>'
   try {
@@ -1655,42 +1706,57 @@ async function cargarAdminAsignaciones() {
   document.getElementById('admin-asignaciones-section').style.display = 'block'
   document.getElementById('admin-periodos-section').style.display = 'none'
   document.getElementById('admin-obs-section').style.display = 'none'
+  document.getElementById('admin-reporte-corte-section').style.display = 'none'
+  document.getElementById('admin-estudiantes-section').style.display = 'none'
+  document.getElementById('admin-directores-section').style.display = 'none'
+  actualizarNavActivo('nav-asignaciones')
   try {
-    const [profRes, matRes] = await Promise.all([
+    const [profRes, matRes, curRes] = await Promise.all([
       fetch(API + '/api/admin/profesores', { headers: { 'Authorization': 'Bearer ' + currentToken } }),
-      fetch(API + '/api/admin/materias', { headers: { 'Authorization': 'Bearer ' + currentToken } })
+      fetch(API + '/api/admin/materias', { headers: { 'Authorization': 'Bearer ' + currentToken } }),
+      fetch(API + '/api/admin/cursos', { headers: { 'Authorization': 'Bearer ' + currentToken } })
     ])
     if (!profRes.ok || !matRes.ok) return
     const profes = await profRes.json()
     const materias = await matRes.json()
+    const cursos = curRes.ok ? await curRes.json() : []
     const profSel = document.getElementById('admin-sel-profesor')
     profSel.innerHTML = '<option value="">Seleccionar</option>' + profes.map(p => '<option value="' + p.docenteId + '">' + p.nombre + ' (' + p.documento + ')</option>').join('')
     const matSel = document.getElementById('admin-sel-materia')
     matSel.innerHTML = '<option value="">Seleccionar</option>' + materias.map(m => '<option value="' + m.id + '">' + m.nombre + ' (' + m.grado + '°)</option>').join('')
-
-    const asigRes = await fetch(API + '/api/admin/asignaciones', { headers: { 'Authorization': 'Bearer ' + currentToken } })
-    if (!asigRes.ok) return
-    const asignaciones = await asigRes.json()
-    const tb = document.getElementById('admin-tb-asignaciones')
-    tb.innerHTML = asignaciones.map(a => {
-      return '<tr>' +
-        '<td style="padding:10px 12px;border-bottom:1px solid var(--line);">' + a.profesor + '</td>' +
-        '<td style="padding:10px 12px;border-bottom:1px solid var(--line);">' + a.curso + '</td>' +
-        '<td style="padding:10px 12px;border-bottom:1px solid var(--line);">' + a.materia + '</td>' +
-        '<td style="padding:10px 12px;border-bottom:1px solid var(--line);text-align:center;"><button class="btn-sm" onclick="adminEliminarAsignacion(\'' + a.id + '\')" style="font-size:11px;color:#A32D2D;">Eliminar</button></td>' +
-        '</tr>'
-    }).join('')
-    if (!asignaciones.length) tb.innerHTML = '<tr><td colspan="4" style="padding:24px;text-align:center;color:var(--ink-400);">Sin asignaciones registradas</td></tr>'
+    const cursoSel = document.getElementById('admin-sel-curso-asign')
+    cursoSel.innerHTML = '<option value="">Todos los cursos</option>' + cursos.map(c => '<option value="' + c + '">' + c + '</option>').join('')
+    cargarAsignacionesCurso()
   } catch (e) {
     document.getElementById('admin-tb-asignaciones').innerHTML = '<tr><td colspan="4" style="padding:24px;text-align:center;color:#A32D2D;">Error al cargar</td></tr>'
   }
 }
 
+async function cargarAsignacionesCurso() {
+  const curso = document.getElementById('admin-sel-curso-asign').value
+  const info = document.getElementById('admin-asignaciones-curso-info')
+  const asigRes = await fetch(API + '/api/admin/asignaciones' + (curso ? '?curso=' + encodeURIComponent(curso) : ''), { headers: { 'Authorization': 'Bearer ' + currentToken } })
+  if (!asigRes.ok) return
+  const asignaciones = await asigRes.json()
+  const tb = document.getElementById('admin-tb-asignaciones')
+  tb.innerHTML = asignaciones.map(a => {
+    return '<tr>' +
+      '<td style="padding:10px 12px;border-bottom:1px solid var(--line);">' + a.profesor + '</td>' +
+      '<td style="padding:10px 12px;border-bottom:1px solid var(--line);">' + a.curso + '</td>' +
+      '<td style="padding:10px 12px;border-bottom:1px solid var(--line);">' + a.materia + '</td>' +
+      '<td style="padding:10px 12px;border-bottom:1px solid var(--line);text-align:center;"><button class="btn-sm" onclick="adminEliminarAsignacion(\'' + a.id + '\')" style="font-size:11px;color:#A32D2D;">Eliminar</button></td>' +
+      '</tr>'
+  }).join('')
+  if (!asignaciones.length) tb.innerHTML = '<tr><td colspan="4" style="padding:24px;text-align:center;color:var(--ink-400);">Sin asignaciones para este curso</td></tr>'
+  info.style.display = curso ? 'none' : 'block'
+}
+
 async function adminCrearAsignacion() {
   const profId = document.getElementById('admin-sel-profesor').value
   const matId = document.getElementById('admin-sel-materia').value
-  const curso = document.getElementById('admin-input-curso').value.trim()
-  if (!profId || !matId || !curso) { mostrarToast('error', 'Completa todos los campos'); return }
+  const curso = document.getElementById('admin-sel-curso-asign').value
+  if (!curso) { mostrarToast('error', 'Selecciona un curso primero'); return }
+  if (!profId || !matId) { mostrarToast('error', 'Completa profesor y materia'); return }
   try {
     const res = await fetch(API + '/api/admin/asignaciones', {
       method: 'POST',
@@ -1927,6 +1993,11 @@ async function cargarAdminPeriodos() {
   document.getElementById('admin-profesores-section').style.display = 'none'
   document.getElementById('admin-asignaciones-section').style.display = 'none'
   document.getElementById('admin-periodos-section').style.display = 'block'
+  document.getElementById('admin-reporte-corte-section').style.display = 'none'
+  document.getElementById('admin-estudiantes-section').style.display = 'none'
+  document.getElementById('admin-directores-section').style.display = 'none'
+  document.getElementById('admin-obs-section').style.display = 'none'
+  actualizarNavActivo('nav-periodos')
   try {
     const sedesRes = await fetch(API + '/api/admin/sedes', { headers: { 'Authorization': 'Bearer ' + currentToken } })
     const sedes = sedesRes.ok ? await sedesRes.json() : []
@@ -2232,6 +2303,7 @@ async function cargarAdminReporteCorte() {
   document.getElementById('admin-estudiantes-section').style.display = 'none'
   document.getElementById('admin-directores-section').style.display = 'none'
   document.getElementById('admin-reporte-corte-section').style.display = 'block'
+  actualizarNavActivo('nav-reporte')
   try {
     const sedesRes = await fetch(API + '/api/admin/sedes', { headers: { 'Authorization': 'Bearer ' + currentToken } })
     const sedes = sedesRes.ok ? await sedesRes.json() : []
@@ -2306,7 +2378,10 @@ async function cargarAdminEstudiantes() {
   document.getElementById('admin-asignaciones-section').style.display = 'none'
   document.getElementById('admin-periodos-section').style.display = 'none'
   document.getElementById('admin-obs-section').style.display = 'none'
+  document.getElementById('admin-directores-section').style.display = 'none'
+  document.getElementById('admin-reporte-corte-section').style.display = 'none'
   document.getElementById('admin-estudiantes-section').style.display = 'block'
+  actualizarNavActivo('nav-estudiantes')
 
   // Populate sede filter
   try {
@@ -2470,7 +2545,9 @@ async function cargarAdminDirectores() {
   document.getElementById('admin-periodos-section').style.display = 'none'
   document.getElementById('admin-obs-section').style.display = 'none'
   document.getElementById('admin-estudiantes-section').style.display = 'none'
+  document.getElementById('admin-reporte-corte-section').style.display = 'none'
   document.getElementById('admin-directores-section').style.display = 'block'
+  actualizarNavActivo('nav-directores')
 
   // Load profesores for the select
   try {
@@ -2554,7 +2631,11 @@ async function cargarAdminObservaciones(pagina) {
   document.getElementById('admin-profesores-section').style.display = 'none'
   document.getElementById('admin-asignaciones-section').style.display = 'none'
   document.getElementById('admin-periodos-section').style.display = 'none'
+  document.getElementById('admin-estudiantes-section').style.display = 'none'
+  document.getElementById('admin-directores-section').style.display = 'none'
+  document.getElementById('admin-reporte-corte-section').style.display = 'none'
   document.getElementById('admin-obs-section').style.display = 'block'
+  actualizarNavActivo('nav-obs')
 
   // Load sedes and materias into filters
   try {
@@ -2687,9 +2768,9 @@ async function cargarObservacionesCursoDirector(curso) {
       const materiaLabel = o.materiaNombre ? ' <span style="background:var(--cream-100);padding:1px 6px;border-radius:8px;font-size:10px;">' + o.materiaNombre + '</span>' : ''
       return '<div style="background:#f9f8f6;border:1px solid var(--line);border-radius:var(--r-md);padding:10px 12px;margin-bottom:8px;">' +
         '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:4px;">' +
-        '<span style="font-size:11px;color:var(--ink-500);">' + (o.docenteNombre || 'Coordinación') + ' · ' + fechaCreado + materiaLabel + '</span>' +
+        '<span style="font-size:11px;color:var(--ink-500);">' + esc(o.docenteNombre || 'Coordinación') + ' · ' + fechaCreado + materiaLabel + '</span>' +
         '</div>' +
-        '<div style="font-size:13px;color:var(--ink-900);white-space:pre-wrap;line-height:1.5;">' + o.texto + '</div>' +
+        '<div style="font-size:13px;color:var(--ink-900);white-space:pre-wrap;line-height:1.5;">' + esc(o.texto) + '</div>' +
         '</div>'
     }).join('')
   } catch (e) {
@@ -2768,13 +2849,13 @@ async function cargarObservaciones(estudianteId) {
       const materiaLabel = o.materiaNombre ? ' <span style="background:var(--cream-100);padding:1px 6px;border-radius:8px;font-size:10px;">' + o.materiaNombre + '</span>' : ''
       return '<div style="background:#f9f8f6;border:1px solid var(--line);border-radius:var(--r-md);padding:10px 12px;margin-bottom:8px;" id="obs-card-' + o.id + '">' +
         '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:4px;">' +
-        '<span style="font-size:11px;color:var(--ink-500);">' + (o.docenteNombre || o.docenteId || 'Coordinación') + ' · ' + fechaCreado + materiaLabel + '</span>' +
+        '<span style="font-size:11px;color:var(--ink-500);">' + esc(o.docenteNombre || o.docenteId || 'Coordinación') + ' · ' + fechaCreado + esc(materiaLabel) + '</span>' +
         '<span>' +
-        '<button onclick="modalObsEditar(\'' + o.id + '\',\'' + o.texto.replace(/'/g, "\\'") + '\')" style="border:none;background:none;cursor:pointer;font-size:13px;padding:0 4px;" title="Editar">✏️</button>' +
+        '<button onclick="modalObsEditar(\'' + o.id + '\')" style="border:none;background:none;cursor:pointer;font-size:13px;padding:0 4px;" title="Editar">✏️</button>' +
         '<button onclick="eliminarObservacion(\'' + o.id + '\')" style="border:none;background:none;cursor:pointer;color:#A32D2D;font-size:14px;padding:0;line-height:1;" title="Eliminar">✕</button>' +
         '</span>' +
         '</div>' +
-        '<div id="obs-text-' + o.id + '" style="font-size:13px;color:var(--ink-900);white-space:pre-wrap;line-height:1.5;">' + o.texto + '</div>' +
+        '<div id="obs-text-' + o.id + '" style="font-size:13px;color:var(--ink-900);white-space:pre-wrap;line-height:1.5;">' + esc(o.texto) + '</div>' +
         '</div>'
     }).join('')
   } catch (e) {
@@ -2821,19 +2902,21 @@ async function eliminarObservacion(id) {
   }
 }
 
-function modalObsEditar(id, textoActual) {
+function modalObsEditar(id) {
   const div = document.getElementById('obs-text-' + id)
   const texto = div.textContent.trim()
+  div.dataset.textoOriginal = texto
   div.innerHTML = '<div style="display:flex;flex-direction:column;gap:6px;">' +
     '<textarea id="modal-obs-editarea-' + id + '" style="width:100%;border:1px solid var(--line);border-radius:6px;padding:8px;font-size:13px;font-family:inherit;resize:vertical;min-height:50px;">' + texto.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</textarea>' +
     '<div style="display:flex;gap:6px;justify-content:end;">' +
-    '<button class="btn-sm" onclick="modalObsCancelarEdicion(\'' + id + '\',\'' + texto.replace(/'/g, "\\'") + '\')" style="font-size:11px;">Cancelar</button>' +
+    '<button class="btn-sm" onclick="modalObsCancelarEdicion(\'' + id + '\')" style="font-size:11px;">Cancelar</button>' +
     '<button class="btn-sm success" onclick="modalObsGuardarEdicion(\'' + id + '\')" style="font-size:11px;">Guardar</button>' +
     '</div></div>'
 }
 
-function modalObsCancelarEdicion(id, textoOriginal) {
-  document.getElementById('obs-text-' + id).innerHTML = textoOriginal
+function modalObsCancelarEdicion(id) {
+  const el = document.getElementById('obs-text-' + id)
+  if (el && el.dataset.textoOriginal) el.textContent = el.dataset.textoOriginal
 }
 
 async function modalObsGuardarEdicion(id) {

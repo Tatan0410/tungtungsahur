@@ -18,7 +18,7 @@ function verificarToken(req, res, next) {
 
   try {
     const token  = authHeader.split(' ')[1]
-    const datos  = jwt.verify(token, process.env.JWT_SECRET)
+    const datos  = jwt.verify(token, process.env.JWT_SECRET, { issuer: 'sagrado-corazon-sistema', audience: 'sagrado-corazon-web' })
     req.usuario  = datos
     next()
   } catch {
@@ -860,8 +860,21 @@ router.post('/guardar-grid', async (req, res) => {
       const p = parseInt(periodo) || 1
       const a = parseInt(anio) || new Date().getFullYear()
 
-      const est = prisma._db.prepare('SELECT sede FROM estudiantes WHERE id = ?').get(estudianteId)
-      const sede = est?.sede || 'PPAL - TRIUNFO'
+      const est = prisma._db.prepare('SELECT sede, curso FROM estudiantes WHERE id = ?').get(estudianteId)
+      if (!est) continue
+      const sede = est.sede
+      const cursoEstudiante = est.curso
+
+      // SEGURIDAD: un docente NO puede guardar notas de una materia/curso que no tiene asignada
+      if (req.usuario.rol === 'DOCENTE') {
+        const asignacion = prisma._db.prepare(
+          'SELECT id FROM docente_materias WHERE docenteId = ? AND materiaId = ? AND curso = ?'
+        ).get(req.usuario.docenteId, materiaId, cursoEstudiante)
+        if (!asignacion) {
+          advertencias.add('No tienes asignada la materia en el curso ' + cursoEstudiante + ' — se ignoró el cambio.')
+          continue
+        }
+      }
 
       // Periodo cerrado manualmente → saltar
       if (!periodoAbierto(a, sede, p)) {

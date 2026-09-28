@@ -77,7 +77,11 @@ router.post('/login', async (req, res) => {
       docenteId:    usuario.docente?.id    || null,
     }
 
-    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '8h' })
+    const token = jwt.sign(payload, process.env.JWT_SECRET, {
+      expiresIn: '8h',
+      issuer: 'sagrado-corazon-sistema',
+      audience: 'sagrado-corazon-web'
+    })
 
     res.json({
       token,
@@ -107,7 +111,7 @@ router.get('/yo', async (req, res) => {
     if (!authHeader) return res.status(401).json({ error: 'No hay token' })
 
     const token = authHeader.split(' ')[1]
-    const datos = jwt.verify(token, process.env.JWT_SECRET)
+    const datos = jwt.verify(token, process.env.JWT_SECRET, { issuer: 'sagrado-corazon-sistema', audience: 'sagrado-corazon-web' })
 
     res.json({ usuario: datos })
   } catch (error) {
@@ -147,17 +151,43 @@ function enviarCodigoRecuperacion(correoDestino, codigo) {
   })
 }
 
+// Rate limit en memoria para /recuperar (por IP): 10 solicitudes/minuto
+const recuperarPorIp = new Map()
+
 router.post('/recuperar', async (req, res) => {
   try {
     const { correo } = req.body
     if (!correo) {
       return res.status(400).json({ error: 'El correo es requerido' })
     }
+
+    const ip = req.ip || req.connection.remoteAddress || 'desconocida'
+    const ahora = Date.now()
+    const reg = recuperarPorIp.get(ip)
+    if (!reg || ahora > reg.resetAt) {
+      recuperarPorIp.set(ip, { count: 1, resetAt: ahora + 60 * 1000 })
+    } else {
+      reg.count++
+      if (reg.count > 10) {
+        return res.status(429).json({ error: 'Demasiadas solicitudes. Intenta de nuevo en un minuto.' })
+      }
+    }
+
     const usuario = await prisma.usuario.findUnique({ where: { correo }, include: { docente: true } })
     if (!usuario || usuario.rol !== 'DOCENTE') {
       // No revela si el correo existe (seguridad)
       return res.json({ mensaje: 'Si el correo existe, recibirás un código de recuperación.' })
     }
+
+    // Máximo 3 códigos por correo en la última hora (evita bombardeo de emails)
+    const enviadosHora = prisma._db.prepare(
+      "SELECT COUNT(*) AS c FROM password_resets WHERE usuarioId = ? AND creadoEn > datetime('now', '-1 hour')"
+    ).get(usuario.id)
+    if (enviadosHora.c >= 3) {
+      console.log(`⚠️  Límite de códigos por correo alcanzado: ${correo}`)
+      return res.json({ mensaje: 'Si el correo existe, recibirás un código de recuperación.' })
+    }
+
     const codigo = String(Math.floor(100000 + Math.random() * 900000))
     const expira = new Date(Date.now() + 15 * 60 * 1000).toISOString()
     prisma._db.prepare('INSERT INTO password_resets (id, usuarioId, codigo, expira) VALUES (?, ?, ?, ?)').run(require('crypto').randomUUID(), usuario.id, codigo, expira)
@@ -185,16 +215,34 @@ router.post('/recuperar/verificar', async (req, res) => {
       return res.status(400).json({ error: 'Código inválido o expirado' })
     }
 
+    // ─── RATE LIMIT: bloquear después de 5 intentos fallidos por correo ───
+    const MAX_INTENTOS_CODIGO = 5
+    const intentosRecientes = prisma._db.prepare(`
+      SELECT COUNT(*) as c FROM password_resets
+      WHERE usuarioId = ? AND usado = 0 AND expira > datetime('now')
+      AND creadoEn > datetime('now', '-15 minutes')
+    `).get(usuario.id)
+    if (intentosRecientes.c >= MAX_INTENTOS_CODIGO) {
+      prisma._db.prepare('UPDATE password_resets SET usado = 1 WHERE usuarioId = ? AND usado = 0').run(usuario.id)
+      return res.status(429).json({ error: 'Demasiados intentos fallidos. Pide un nuevo código.' })
+    }
+
     const reset = prisma._db.prepare(
       'SELECT * FROM password_resets WHERE usuarioId = ? AND codigo = ? AND usado = 0 ORDER BY creadoEn DESC LIMIT 1'
     ).get(usuario.id, String(codigo))
     if (!reset || new Date(reset.expira) < new Date()) {
-      return res.status(400).json({ error: 'Código inválido o expirado' })
+      // Registrar intento fallido
+      prisma._db.prepare('INSERT INTO password_resets (id, usuarioId, codigo, expira) VALUES (?, ?, ?, ?)').run(
+        require('crypto').randomUUID(), usuario.id, 'INVALID-' + require('crypto').randomUUID(), new Date(Date.now() + 15 * 60 * 1000).toISOString()
+      )
+      return res.status(400).json({ error: 'Código inválido o expirado. Te quedan ' + (MAX_INTENTOS_CODIGO - (intentosRecientes.c + 1)) + ' intentos.' })
     }
 
     const hash = bcrypt.hashSync(String(nuevaPassword), 10)
     prisma._db.prepare('UPDATE usuarios SET password = ? WHERE id = ?').run(hash, usuario.id)
     prisma._db.prepare('UPDATE password_resets SET usado = 1 WHERE id = ?').run(reset.id)
+    // Limpiar cualquier otro código activo
+    prisma._db.prepare('UPDATE password_resets SET usado = 1 WHERE usuarioId = ? AND usado = 0').run(usuario.id)
 
     res.json({ mensaje: 'Contraseña restablecida exitosamente' })
   } catch (error) {
@@ -210,7 +258,7 @@ router.put('/mi-perfil', async (req, res) => {
     const authHeader = req.headers.authorization
     if (!authHeader) return res.status(401).json({ error: 'No hay token' })
     const token = authHeader.split(' ')[1]
-    const datos = jwt.verify(token, process.env.JWT_SECRET)
+    const datos = jwt.verify(token, process.env.JWT_SECRET, { issuer: 'sagrado-corazon-sistema', audience: 'sagrado-corazon-web' })
 
     const { passwordActual, nuevaPassword, nuevoCorreo } = req.body
     if (!passwordActual) {
