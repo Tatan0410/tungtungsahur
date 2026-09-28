@@ -166,6 +166,81 @@ else if (cmd === 'eliminar-profesor') {
   ok('Profesor eliminado: ' + user.nombre);
 }
 
+// ---- IMPORTAR EXCEL DE ESTUDIANTES ----
+else if (cmd === 'importar-excel') {
+  const ruta = args[1];
+  const anioIdx = args.indexOf('--anio');
+  const anio = anioIdx >= 0 ? parseInt(args[anioIdx + 1]) : new Date().getFullYear();
+
+  if (!ruta) error('Uso: node admin.js importar-excel RUTA_AL_EXCEL.xlsx [--anio AÑO]');
+
+  const xlsx = require('xlsx');
+
+  let wb;
+  try {
+    wb = xlsx.readFile(ruta);
+  } catch (e) {
+    error('No se pudo leer el archivo. Verifica la ruta y que sea un Excel válido (.xlsx). ' + e.message);
+  }
+
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  const rows = xlsx.utils.sheet_to_json(sheet, { header: 1 });
+
+  if (!rows || rows.length < 2) error('El archivo está vacío o no tiene datos suficientes.');
+
+  const header = rows[0].map(h => String(h || '').toLowerCase().trim());
+  console.log('\n  Columnas detectadas: ' + header.join(' | ') + '\n');
+
+  let creados = 0;
+  let omitidos = 0;
+  const transaccion = db.transaction(() => {
+    for (let i = 1; i < rows.length; i++) {
+      const r = rows[i];
+      const fila = {};
+      for (let j = 0; j < header.length; j++) {
+        fila[header[j]] = String(r[j] || '').trim();
+      }
+
+      const nombre = fila['nombre'] || fila['nombre completo'] || fila['nombres'] || fila['alumno'] || '';
+      const documento = fila['documento'] || fila['doc'] || fila['cédula'] || fila['cedula'] || fila['id'] || '';
+      const sede = fila['sede'] || '';
+      const jornada = fila['jornada'] || fila['turno'] || '';
+      const grado = fila['grado'] || fila['gr'] || '';
+      const curso = fila['curso'] || fila['clase'] || '';
+      const mesa = fila['mesa'] || fila['grupo'] || fila['grupo n°'] || '';
+
+      if (!nombre || !documento || !sede || !grado || !curso) {
+        console.log('  ⚠️  Fila ' + (i+1) + ' omitida (falta: ' + ['nombre','documento','sede','grado','curso'].filter(c => !fila[c]).join(' ') + ')');
+        omitidos++;
+        continue;
+      }
+
+      const existe = db.prepare('SELECT id FROM usuarios WHERE documento = ?').get(documento);
+      if (existe) {
+        omitidos++;
+        continue;
+      }
+
+      const primerNombre = nombre.split(/\s+/)[0] || '';
+      const primerApellido = nombre.split(/\s+/).slice(1).join(' ') || '';
+      const correoBase = primerNombre.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z]/g, '') + '.' + primerApellido.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z]/g, '');
+      const correo = correoBase + '@sagradocorazon.edu.co';
+
+      const usuarioId = uuid();
+      const hash = bcrypt.hashSync(documento, 10);
+
+      db.prepare('INSERT INTO usuarios (id, correo, password, rol, nombre, documento, activo) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(usuarioId, correo, hash, 'ESTUDIANTE', nombre, documento, 1);
+      db.prepare('INSERT INTO estudiantes (id, usuarioId, documento, codigo, sede, jornada, grado, curso, mesa) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(uuid(), usuarioId, documento, documento, sede, jornada, parseInt(grado), curso, mesa ? parseInt(mesa) : null);
+      creados++;
+    }
+  });
+  transaccion();
+  console.log('');
+  ok('Importación completada — ' + creados + ' estudiantes nuevos, ' + omitidos + ' omitidos (duplicados o filas incompletas)');
+}
+
 // ---- AYUDA ----
 else {
   console.log(`

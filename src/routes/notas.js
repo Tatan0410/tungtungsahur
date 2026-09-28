@@ -996,7 +996,8 @@ router.post('/observaciones', async (req, res) => {
     }
 
     const id = require('crypto').randomUUID()
-    const hoy = new Date().toISOString().split('T')[0]
+    // Fecha de hoy en zona Colombia (el server corre con TZ=America/Bogota)
+    const hoy = new Date().toLocaleDateString('es-CO', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'America/Bogota' }).split('/').reverse().join('-')
     const obsFecha = fecha || hoy
     prisma._db.prepare(
       'INSERT INTO observaciones (id, estudianteId, docenteId, materiaId, texto, tipo, fecha) VALUES (?, ?, ?, ?, ?, ?, ?)'

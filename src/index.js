@@ -3,6 +3,9 @@
 // Punto de entrada del servidor — aquí arranca todo
 // =====================================================
 
+// Fuerza la zona horaria de Colombia en TODO el servidor (fechas, logs, comparaciones)
+process.env.TZ = 'America/Bogota'
+
 require('dotenv').config()   // Carga las variables del archivo .env
 const express = require('express')
 const cors    = require('cors')
@@ -80,6 +83,29 @@ app.get('/api/config/periodos', (req, res) => {
 // ARRANCAR EL SERVIDOR
 // ─────────────────────────────────────────────────────
 
+// Auto-crea los 4 períodos del año actual por sede si no existen
+function asegurarPeriodosAnioActual() {
+  try {
+    const db = require('./prisma')._db
+    const anio = new Date().getFullYear()
+    const sedes = db.prepare('SELECT DISTINCT sede FROM estudiantes').all().map(r => r.sede)
+    const pesos = { 1: 0.20, 2: 0.30, 3: 0.20, 4: 0.30 }
+    let creados = 0
+    for (const sede of sedes) {
+      for (let p = 1; p <= 4; p++) {
+        const existe = db.prepare('SELECT id FROM periodos_config WHERE sede = ? AND periodo = ? AND anio = ?').get(sede, p, anio)
+        if (!existe) {
+          db.prepare('INSERT INTO periodos_config (id, sede, periodo, nombre, peso, abierto, anio) VALUES (?, ?, ?, ?, ?, 1, ?)').run(require('crypto').randomUUID(), sede, p, 'Período ' + p, pesos[p], anio)
+          creados++
+        }
+      }
+    }
+    if (creados > 0) console.log(`  📅 Se crearon ${creados} períodos para el año ${anio}`)
+  } catch (error) {
+    console.error('Error asegurando períodos del año:', error)
+  }
+}
+
 app.listen(PORT, () => {
   console.log('')
   console.log('╔══════════════════════════════════════════╗')
@@ -89,5 +115,7 @@ app.listen(PORT, () => {
   console.log('')
   console.log(`  🚀 Servidor corriendo en http://localhost:${PORT}`)
   console.log(`  🔗 Prueba: http://localhost:${PORT}/api/ping`)
+  console.log(`  🕐 Zona horaria: ${process.env.TZ} · Hora: ${new Date().toLocaleString('es-CO')}`)
   console.log('')
+  asegurarPeriodosAnioActual()
 })

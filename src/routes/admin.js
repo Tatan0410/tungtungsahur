@@ -201,6 +201,26 @@ router.delete('/profesores/:id', async (req, res) => {
   }
 })
 
+router.put('/profesores/:id/correo', async (req, res) => {
+  try {
+    const { correo } = req.body
+    if (!correo) return res.status(400).json({ error: 'correo es requerido' })
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(String(correo).trim())) {
+      return res.status(400).json({ error: 'Correo electrónico inválido' })
+    }
+    const user = prisma._db.prepare('SELECT id FROM usuarios WHERE id = ? AND rol = ?').get(req.params.id, 'DOCENTE')
+    if (!user) return res.status(404).json({ error: 'Profesor no encontrado' })
+    const existente = prisma._db.prepare('SELECT id FROM usuarios WHERE correo = ? AND id != ?').get(String(correo).trim(), req.params.id)
+    if (existente) return res.status(409).json({ error: 'Ese correo ya está en uso por otro usuario' })
+    prisma._db.prepare('UPDATE usuarios SET correo = ? WHERE id = ?').run(String(correo).trim(), req.params.id)
+    res.json({ mensaje: 'Correo actualizado exitosamente' })
+  } catch (error) {
+    console.error('Error PUT /profesores/correo:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
 // ─── MATERIAS ───
 
 router.get('/materias', async (req, res) => {
