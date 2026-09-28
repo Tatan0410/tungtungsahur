@@ -234,6 +234,8 @@ router.post('/recuperar', async (req, res) => {
 
     const codigo = String(Math.floor(100000 + Math.random() * 900000))
     const expira = new Date(Date.now() + 15 * 60 * 1000).toISOString()
+    // Pedir un código nuevo reinicia los intentos fallidos del ciclo anterior
+    prisma._db.prepare("DELETE FROM password_resets WHERE usuarioId = ? AND codigo LIKE 'INVALID-%'").run(usuario.id)
     prisma._db.prepare('INSERT INTO password_resets (id, usuarioId, codigo, expira) VALUES (?, ?, ?, ?)').run(require('crypto').randomUUID(), usuario.id, codigo, expira)
 
     await enviarCodigoRecuperacion(usuario.correo, codigo)
@@ -260,11 +262,12 @@ router.post('/recuperar/verificar', async (req, res) => {
     }
 
     // ─── RATE LIMIT: bloquear después de 5 intentos fallidos por correo ───
+    // Solo cuentan los intentos fallidos (filas INVALID-): el código vigente
+    // no consume intentos, así el usuario tiene exactamente 5 oportunidades.
     const MAX_INTENTOS_CODIGO = 5
     const intentosRecientes = prisma._db.prepare(`
       SELECT COUNT(*) as c FROM password_resets
-      WHERE usuarioId = ? AND usado = 0 AND expira > datetime('now')
-      AND creadoEn > datetime('now', '-15 minutes')
+      WHERE usuarioId = ? AND codigo LIKE 'INVALID-%' AND creadoEn > datetime('now', '-15 minutes')
     `).get(usuario.id)
     if (intentosRecientes.c >= MAX_INTENTOS_CODIGO) {
       prisma._db.prepare('UPDATE password_resets SET usado = 1 WHERE usuarioId = ? AND usado = 0').run(usuario.id)

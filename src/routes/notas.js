@@ -5,7 +5,7 @@ const Database = require('better-sqlite3')
 const prisma  = require('../prisma')
 const { calcularReporteCorte } = require('../services/reporteCorte')
 
-const DB_PATH = path.resolve(__dirname, '../../prisma/dev.db')
+const DB_PATH = process.env.DATABASE_PATH || path.resolve(__dirname, '../../prisma/dev.db')
 const db = new Database(DB_PATH)
 
 const router = express.Router()

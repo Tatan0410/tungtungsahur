@@ -46,6 +46,7 @@ src/
 admin.js              CLI offline: importar Excel de matrícula por año
 public/index.html     Toda la interfaz (una sola página)
 prisma/schema.prisma  Esquema de referencia + migración inicial SQLite
+test/                 Pruebas de API, reglas de negocio y frontend (node:test)
 ```
 
 ## Comandos útiles
@@ -53,9 +54,27 @@ prisma/schema.prisma  Esquema de referencia + migración inicial SQLite
 ```bash
 npm start                     # servidor
 npm run dev                   # con --watch (reinicia al guardar)
+npm test                      # suite completa de pruebas
+npm run test:watch            # reejecuta las pruebas al guardar
 node admin.js importar-excel RUTA.xlsx --anio 2026   # importar matrícula (offline)
 node admin.js                 # lista todos los comandos del CLI
 ```
+
+## Pruebas
+
+`npm test` corre con el runner de `node:test` (sin dependencias extra). Cada archivo
+arranca su propio servidor en un puerto libre con una **copia temporal** de
+`prisma/dev.db` (backup con `better-sqlite3`), así que nunca toca la base real.
+
+| Archivo | Qué cubre |
+| --- | --- |
+| `test/auth.test.js` | login, JWT (iss/aud), rate limit por fallos, bloqueo por IP |
+| `test/recuperacion.test.js` | flujo de código por correo, 5 intentos, anti-DoS `INVALID-` |
+| `test/roles.test.js` | permisos por rol (ESTUDIANTE/DOCENTE/ADMIN) |
+| `test/admin.test.js` | CRUD de profesores y asignaciones, validaciones |
+| `test/periodos.test.js` | cierre/reapertura de período y bloqueo de notas |
+| `test/reporteCorte.test.js` | reglas de `RIESGO`/`PENDIENTE` del reporte |
+| `test/frontend.test.js` | XSS (`esc`/`escArg`), HTML, ids, `.env` no trackeado |
 
 ## Documentación
 

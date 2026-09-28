@@ -1,0 +1,130 @@
+const { test, before, after } = require('node:test')
+const assert = require('node:assert/strict')
+const { arrancarServidor } = require('./helpers/servidor')
+const { crearApi, login, ADMIN, DOCENTE } = require('./helpers/api')
+
+const NUEVO = { documento: '90099901', nombre: 'Docente Temporal', password: 'ClaveSegura123' }
+
+let srv, api, tokenAdmin, tokenDocente, idNuevo, curso, materiaId
+
+before(async () => {
+  srv = await arrancarServidor()
+  api = crearApi(srv.base)
+  tokenAdmin = await login(api, ADMIN.documento, ADMIN.password)
+  tokenDocente = await login(api, DOCENTE.documento, DOCENTE.password)
+  const materias = (await api.get('/api/admin/materias', { token: tokenAdmin })).data
+  materiaId = materias[0].id
+  // Se toma un curso que ya tenga asignaciones, para poder filtrar por él
+  const todas = (await api.get('/api/admin/asignaciones', { token: tokenAdmin })).data
+  assert.ok(todas.length >= 1, 'la BD debe traer asignaciones de ejemplo')
+  curso = todas[0].curso
+})
+after(async () => { await srv.cerrar() })
+
+test('GET /api/admin/cursos devuelve los cursos con estudiantes', async () => {
+  const r = await api.get('/api/admin/cursos', { token: tokenAdmin })
+  assert.equal(r.status, 200)
+  assert.ok(Array.isArray(r.data))
+  assert.ok(r.data.length >= 30, `esperaba ≥30 cursos, llegaron ${r.data.length}`)
+  assert.ok(r.data.every(c => typeof c === 'string'))
+})
+
+test('GET /api/admin/asignaciones filtra por curso y expone profesor/materia', async () => {
+  const r = await api.get('/api/admin/asignaciones?curso=' + encodeURIComponent(curso), { token: tokenAdmin })
+  assert.equal(r.status, 200)
+  assert.ok(r.data.length >= 1)
+  for (const a of r.data) {
+    assert.equal(a.curso, curso)
+    assert.ok(a.profesor, 'cada asignación debe traer el profesor')
+    assert.ok(a.materia, 'cada asignación debe traer la materia')
+    assert.ok(a.id)
+  }
+})
+
+test('crear profesor valida contraseña corta (400) y documento duplicado (409)', async () => {
+  const corta = await api.post('/api/admin/profesores', {
+    token: tokenAdmin, body: { documento: NUEVO.documento, nombre: NUEVO.nombre, password: '123' },
+  })
+  assert.equal(corta.status, 400)
+  assert.match(corta.data.error, /6 caracteres/)
+
+  const ok = await api.post('/api/admin/profesores', {
+    token: tokenAdmin, body: { documento: NUEVO.documento, nombre: NUEVO.nombre, password: NUEVO.password },
+  })
+  assert.equal(ok.status, 201)
+  idNuevo = ok.data.id
+
+  const dup = await api.post('/api/admin/profesores', {
+    token: tokenAdmin, body: { documento: NUEVO.documento, nombre: 'Otro', password: NUEVO.password },
+  })
+  assert.equal(dup.status, 409)
+})
+
+test('el profesor recién creado puede iniciar sesión', async () => {
+  const r = await api.post('/api/auth/login', { body: { documento: NUEVO.documento, password: NUEVO.password } })
+  assert.equal(r.status, 200)
+  assert.equal(r.data.usuario.rol, 'DOCENTE')
+  assert.ok(r.data.usuario.docenteId)
+})
+
+test('cambiar contraseña del profesor: corta 400, válida 200 y sirve para entrar', async () => {
+  const corta = await api.put(`/api/admin/profesores/${idNuevo}/password`, {
+    token: tokenAdmin, body: { password: '12345' },
+  })
+  assert.equal(corta.status, 400)
+
+  const ok = await api.put(`/api/admin/profesores/${idNuevo}/password`, {
+    token: tokenAdmin, body: { password: 'OtraClave456' },
+  })
+  assert.equal(ok.status, 200)
+
+  const vieja = await api.post('/api/auth/login', { body: { documento: NUEVO.documento, password: NUEVO.password } })
+  assert.equal(vieja.status, 401)
+  const nueva = await api.post('/api/auth/login', { body: { documento: NUEVO.documento, password: 'OtraClave456' } })
+  assert.equal(nueva.status, 200)
+})
+
+test('CRUD de asignaciones: crear, duplicado 409, listar, eliminar', async () => {
+  const creada = await api.post('/api/admin/asignaciones', {
+    token: tokenAdmin, body: { docenteDocumento: NUEVO.documento, materiaId, curso },
+  })
+  assert.equal(creada.status, 201)
+  const idAsig = creada.data.id
+
+  const dup = await api.post('/api/admin/asignaciones', {
+    token: tokenAdmin, body: { docenteDocumento: NUEVO.documento, materiaId, curso },
+  })
+  assert.equal(dup.status, 409)
+
+  const lista = await api.get('/api/admin/asignaciones?curso=' + encodeURIComponent(curso), { token: tokenAdmin })
+  const creadaEnLista = lista.data.find(a => a.id === idAsig)
+  assert.ok(creadaEnLista, 'la asignación creada debe aparecer en el listado')
+  assert.equal(creadaEnLista.profesor, NUEVO.nombre)
+
+  const borrada = await api.delete('/api/admin/asignaciones/' + idAsig, { token: tokenAdmin })
+  assert.equal(borrada.status, 200)
+
+  const trasBorrar = await api.get('/api/admin/asignaciones?curso=' + encodeURIComponent(curso), { token: tokenAdmin })
+  assert.ok(!trasBorrar.data.some(a => a.id === idAsig), 'ya no debe aparecer')
+})
+
+test('crear asignación sin datos → 400 y con profesor inexistente → 404', async () => {
+  const vacia = await api.post('/api/admin/asignaciones', { token: tokenAdmin, body: {} })
+  assert.equal(vacia.status, 400)
+
+  const noExiste = await api.post('/api/admin/asignaciones', {
+    token: tokenAdmin, body: { docenteDocumento: '00000000', materiaId, curso },
+  })
+  assert.equal(noExiste.status, 404)
+})
+
+test('eliminar profesor → desaparece del listado', async () => {
+  const listaAntes = (await api.get('/api/admin/profesores', { token: tokenAdmin })).data
+  assert.ok(listaAntes.some(p => p.id === idNuevo))
+
+  const del = await api.delete('/api/admin/profesores/' + idNuevo, { token: tokenAdmin })
+  assert.equal(del.status, 200)
+
+  const listaDespues = (await api.get('/api/admin/profesores', { token: tokenAdmin })).data
+  assert.ok(!listaDespues.some(p => p.id === idNuevo))
+})

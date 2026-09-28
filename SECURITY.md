@@ -122,13 +122,17 @@ Estos **no** están resueltos; están documentados a propósito.
 ## 4. Cómo reproducir las pruebas
 
 ```bash
-npm start
+npm test        # automatiza todo lo de abajo (49 pruebas, no toca la BD real)
+npm start       # y verificación manual:
 # 200 en la raíz y en /api/ping
 # login con 30 intentos malos desde la misma IP → 429
 # 6 verificaciones de código incorrecto → 429 "Demasiados intentos fallidos"
 # con 3 códigos INVALID-* previos, POST /api/auth/recuperar sigue respondiendo 200
 # GET /api/notas/observaciones-curso?curso=301 sin token → 401; con rol ADMIN → 200
 ```
+
+Las pruebas relevantes están en `test/auth.test.js`, `test/recuperacion.test.js`
+y `test/roles.test.js`.
 
 ## 5. Reporte de vulnerabilidades
 
