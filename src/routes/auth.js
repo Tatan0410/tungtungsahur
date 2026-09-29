@@ -36,18 +36,18 @@ function registrarFalloIp(ip) {
   }
 }
 
-function registrarIntentoFallido(documento) {
-  const existente = prisma._db.prepare('SELECT * FROM intentos_login WHERE documento = ?').get(documento)
+async function registrarIntentoFallido(documento) {
+  const existente = await prisma._db.prepare('SELECT * FROM intentos_login WHERE documento = ?').get(documento)
   if (existente) {
     const nuevos = existente.intentos + 1
     if (nuevos >= MAX_INTENTOS) {
       const bloqueadoHasta = new Date(Date.now() + TIEMPO_BLOQUEO_MS).toISOString()
-      prisma._db.prepare('UPDATE intentos_login SET intentos = ?, bloqueadoHasta = ? WHERE documento = ?').run(nuevos, bloqueadoHasta, documento)
+      await prisma._db.prepare('UPDATE intentos_login SET intentos = ?, bloqueadoHasta = ? WHERE documento = ?').run(nuevos, bloqueadoHasta, documento)
     } else {
-      prisma._db.prepare('UPDATE intentos_login SET intentos = ? WHERE documento = ?').run(nuevos, documento)
+      await prisma._db.prepare('UPDATE intentos_login SET intentos = ? WHERE documento = ?').run(nuevos, documento)
     }
   } else {
-    prisma._db.prepare('INSERT INTO intentos_login (documento, intentos, bloqueadoHasta) VALUES (?, 1, NULL)').run(documento)
+    await prisma._db.prepare('INSERT INTO intentos_login (documento, intentos, bloqueadoHasta) VALUES (?, 1, NULL)').run(documento)
   }
 }
 
@@ -66,7 +66,7 @@ router.post('/login', async (req, res) => {
     }
 
     // ─── RATE LIMITING ───
-    const intento = prisma._db.prepare('SELECT * FROM intentos_login WHERE documento = ?').get(documento)
+    const intento = await prisma._db.prepare('SELECT * FROM intentos_login WHERE documento = ?').get(documento)
     if (intento && intento.bloqueadoHasta) {
       const hasta = new Date(intento.bloqueadoHasta)
       if (hasta > new Date()) {
@@ -84,7 +84,7 @@ router.post('/login', async (req, res) => {
     })
 
     if (!usuario) {
-      registrarIntentoFallido(documento)
+      await registrarIntentoFallido(documento)
       registrarFalloIp(ipLogin)
       return res.status(401).json({ error: 'Documento o contraseña incorrectos' })
     }
@@ -95,13 +95,13 @@ router.post('/login', async (req, res) => {
 
     const passwordCorrecta = await bcrypt.compare(password, usuario.password)
     if (!passwordCorrecta) {
-      registrarIntentoFallido(documento)
+      await registrarIntentoFallido(documento)
       registrarFalloIp(ipLogin)
       return res.status(401).json({ error: 'Documento o contraseña incorrectos' })
     }
 
     // Login exitoso → resetear contador
-    prisma._db.prepare('DELETE FROM intentos_login WHERE documento = ?').run(documento)
+    await prisma._db.prepare('DELETE FROM intentos_login WHERE documento = ?').run(documento)
 
     const payload = {
       id:     usuario.id,
@@ -213,7 +213,8 @@ router.post('/recuperar', async (req, res) => {
     }
 
     // Limpieza: elimina códigos/registros con más de 24 horas
-    prisma._db.prepare("DELETE FROM password_resets WHERE creadoEn < datetime('now', '-1 day')").run()
+    const ayer = new Date(Date.now() - 86400000).toISOString()
+    await prisma._db.prepare('DELETE FROM password_resets WHERE creadoEn < ?').run(ayer)
 
     const usuario = await prisma.usuario.findUnique({ where: { correo }, include: { docente: true } })
     if (!usuario || usuario.rol !== 'DOCENTE') {
@@ -224,9 +225,10 @@ router.post('/recuperar', async (req, res) => {
     // Máximo 3 códigos por correo en la última hora (evita bombardeo de emails).
     // Se excluyen las filas INVALID- que registran intentos fallidos, para que
     // unos intentos erróneos no bloqueen la recuperación legítima.
-    const enviadosHora = prisma._db.prepare(
-      "SELECT COUNT(*) AS c FROM password_resets WHERE usuarioId = ? AND codigo NOT LIKE 'INVALID-%' AND creadoEn > datetime('now', '-1 hour')"
-    ).get(usuario.id)
+    const ahoraMenosUnaHora = new Date(Date.now() - 3600000).toISOString()
+    const enviadosHora = await prisma._db.prepare(
+      "SELECT COUNT(*) AS c FROM password_resets WHERE usuarioId = ? AND codigo NOT LIKE 'INVALID-%' AND creadoEn > ?"
+    ).get(usuario.id, ahoraMenosUnaHora)
     if (enviadosHora.c >= 3) {
       console.log(`⚠️  Límite de códigos por correo alcanzado: ${correo}`)
       return res.json({ mensaje: 'Si el correo existe, recibirás un código de recuperación.' })
@@ -235,8 +237,8 @@ router.post('/recuperar', async (req, res) => {
     const codigo = String(Math.floor(100000 + Math.random() * 900000))
     const expira = new Date(Date.now() + 15 * 60 * 1000).toISOString()
     // Pedir un código nuevo reinicia los intentos fallidos del ciclo anterior
-    prisma._db.prepare("DELETE FROM password_resets WHERE usuarioId = ? AND codigo LIKE 'INVALID-%'").run(usuario.id)
-    prisma._db.prepare('INSERT INTO password_resets (id, usuarioId, codigo, expira) VALUES (?, ?, ?, ?)').run(require('crypto').randomUUID(), usuario.id, codigo, expira)
+    await prisma._db.prepare("DELETE FROM password_resets WHERE usuarioId = ? AND codigo LIKE 'INVALID-%'").run(usuario.id)
+    await prisma._db.prepare('INSERT INTO password_resets (id, usuarioId, codigo, expira) VALUES (?, ?, ?, ?)').run(require('crypto').randomUUID(), usuario.id, codigo, expira)
 
     await enviarCodigoRecuperacion(usuario.correo, codigo)
     res.json({ mensaje: 'Si el correo existe, recibirás un código de recuperación.' })
@@ -265,12 +267,13 @@ router.post('/recuperar/verificar', async (req, res) => {
     // Solo cuentan los intentos fallidos (filas INVALID-): el código vigente
     // no consume intentos, así el usuario tiene exactamente 5 oportunidades.
     const MAX_INTENTOS_CODIGO = 5
-    const intentosRecientes = prisma._db.prepare(`
+    const hace15Min = new Date(Date.now() - 900000).toISOString()
+    const intentosRecientes = await prisma._db.prepare(`
       SELECT COUNT(*) as c FROM password_resets
-      WHERE usuarioId = ? AND codigo LIKE 'INVALID-%' AND creadoEn > datetime('now', '-15 minutes')
-    `).get(usuario.id)
+      WHERE usuarioId = ? AND codigo LIKE 'INVALID-%' AND creadoEn > ?
+    `).get(usuario.id, hace15Min)
     if (intentosRecientes.c >= MAX_INTENTOS_CODIGO) {
-      prisma._db.prepare('UPDATE password_resets SET usado = 1 WHERE usuarioId = ? AND usado = 0').run(usuario.id)
+      await prisma._db.prepare('UPDATE password_resets SET usado = 1 WHERE usuarioId = ? AND usado = 0').run(usuario.id)
       return res.status(429).json({ error: 'Demasiados intentos fallidos. Pide un nuevo código.' })
     }
 
@@ -279,17 +282,17 @@ router.post('/recuperar/verificar', async (req, res) => {
     ).get(usuario.id, String(codigo))
     if (!reset || new Date(reset.expira) < new Date()) {
       // Registrar intento fallido
-      prisma._db.prepare('INSERT INTO password_resets (id, usuarioId, codigo, expira) VALUES (?, ?, ?, ?)').run(
+      await prisma._db.prepare('INSERT INTO password_resets (id, usuarioId, codigo, expira) VALUES (?, ?, ?, ?)').run(
         require('crypto').randomUUID(), usuario.id, 'INVALID-' + require('crypto').randomUUID(), new Date(Date.now() + 15 * 60 * 1000).toISOString()
       )
       return res.status(400).json({ error: 'Código inválido o expirado. Te quedan ' + (MAX_INTENTOS_CODIGO - (intentosRecientes.c + 1)) + ' intentos.' })
     }
 
     const hash = bcrypt.hashSync(String(nuevaPassword), 10)
-    prisma._db.prepare('UPDATE usuarios SET password = ? WHERE id = ?').run(hash, usuario.id)
-    prisma._db.prepare('UPDATE password_resets SET usado = 1 WHERE id = ?').run(reset.id)
+    await prisma._db.prepare('UPDATE usuarios SET password = ? WHERE id = ?').run(hash, usuario.id)
+    await prisma._db.prepare('UPDATE password_resets SET usado = 1 WHERE id = ?').run(reset.id)
     // Limpiar cualquier otro código activo
-    prisma._db.prepare('UPDATE password_resets SET usado = 1 WHERE usuarioId = ? AND usado = 0').run(usuario.id)
+    await prisma._db.prepare('UPDATE password_resets SET usado = 1 WHERE usuarioId = ? AND usado = 0').run(usuario.id)
 
     res.json({ mensaje: 'Contraseña restablecida exitosamente' })
   } catch (error) {
@@ -330,7 +333,7 @@ router.put('/mi-perfil', async (req, res) => {
       params.push(bcrypt.hashSync(String(nuevaPassword), 10))
     }
     if (nuevoCorreo) {
-      const existente = prisma._db.prepare('SELECT id FROM usuarios WHERE correo = ? AND id != ?').get(nuevoCorreo, usuario.id)
+      const existente = await prisma._db.prepare('SELECT id FROM usuarios WHERE correo = ? AND id != ?').get(nuevoCorreo, usuario.id)
       if (existente) return res.status(409).json({ error: 'Ese correo ya está en uso' })
       updates.push('correo = ?')
       params.push(String(nuevoCorreo).trim())
@@ -340,7 +343,7 @@ router.put('/mi-perfil', async (req, res) => {
     }
 
     params.push(usuario.id)
-    prisma._db.prepare(`UPDATE usuarios SET ${updates.join(', ')} WHERE id = ?`).run(...params)
+    await prisma._db.prepare(`UPDATE usuarios SET ${updates.join(', ')} WHERE id = ?`).run(...params)
     res.json({ mensaje: 'Perfil actualizado exitosamente' })
   } catch (error) {
     if (error.name === 'TokenExpiredError') return res.status(401).json({ error: 'Sesión expirada, inicia sesión de nuevo' })

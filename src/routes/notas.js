@@ -1,12 +1,10 @@
 const express = require('express')
 const jwt     = require('jsonwebtoken')
-const path    = require('path')
-const Database = require('better-sqlite3')
 const prisma  = require('../prisma')
 const { calcularReporteCorte } = require('../services/reporteCorte')
 
-const DB_PATH = process.env.DATABASE_PATH || path.resolve(__dirname, '../../prisma/dev.db')
-const db = new Database(DB_PATH)
+// Mismo adaptador que el resto de la app (SQLite local / Postgres en Supabase)
+const db = prisma._db
 
 const router = express.Router()
 
@@ -29,9 +27,9 @@ function verificarToken(req, res, next) {
 
 router.use(verificarToken)
 
-function obtenerPesosPeriodos(anio, sede) {
+async function obtenerPesosPeriodos(anio, sede) {
   try {
-    const rows = prisma._db.prepare('SELECT periodo, peso FROM periodos_config WHERE anio = ? AND sede = ?').all(anio, sede)
+    const rows = await prisma._db.prepare('SELECT periodo, peso FROM periodos_config WHERE anio = ? AND sede = ?').all(anio, sede)
     if (rows.length > 0) {
       const pesos = {}
       for (const r of rows) pesos[r.periodo] = r.peso
@@ -41,9 +39,9 @@ function obtenerPesosPeriodos(anio, sede) {
   return { 1: 0.20, 2: 0.30, 3: 0.20, 4: 0.30 }
 }
 
-function periodoAbierto(anio, sede, periodo) {
+async function periodoAbierto(anio, sede, periodo) {
   try {
-    const cfg = prisma._db.prepare(
+    const cfg = await prisma._db.prepare(
       'SELECT abierto, fecha_fin, reapertura_manual FROM periodos_config WHERE anio = ? AND sede = ? AND periodo = ?'
     ).get(anio, sede, periodo)
     if (!cfg) return true
@@ -233,7 +231,7 @@ router.get('/grupo', async (req, res) => {
     let periodInfo = null
     if (estudiantes.length > 0) {
       const sede = estudiantes[0].sede
-      periodInfo = prisma._db.prepare('SELECT nombre, fecha_inicio, fecha_fin, abierto, reapertura_manual FROM periodos_config WHERE anio = ? AND sede = ? AND periodo = ?').get(parseInt(anio), sede, parseInt(periodo))
+      periodInfo = await prisma._db.prepare('SELECT nombre, fecha_inicio, fecha_fin, abierto, reapertura_manual FROM periodos_config WHERE anio = ? AND sede = ? AND periodo = ?').get(parseInt(anio), sede, parseInt(periodo))
     }
 
     res.json({
@@ -437,9 +435,9 @@ router.put('/guardar', async (req, res) => {
       return res.status(400).json({ error: 'estudianteId, materiaId, periodo y anio son requeridos' })
     }
 
-    const est = prisma._db.prepare('SELECT sede FROM estudiantes WHERE id = ?').get(estudianteId)
+    const est = await prisma._db.prepare('SELECT sede FROM estudiantes WHERE id = ?').get(estudianteId)
     const sede = est?.sede || 'PPAL - TRIUNFO'
-    if (!periodoAbierto(parseInt(anio), sede, parseInt(periodo))) {
+    if (!(await periodoAbierto(parseInt(anio), sede, parseInt(periodo)))) {
       return res.status(403).json({ error: 'Este período está cerrado para esta sede' })
     }
 
@@ -515,9 +513,9 @@ router.get('/anual', async (req, res) => {
       orderBy: { periodo: 'asc' }
     })
 
-    const estudiante = prisma._db.prepare('SELECT sede FROM estudiantes WHERE id = ?').get(estudianteId)
+    const estudiante = await prisma._db.prepare('SELECT sede FROM estudiantes WHERE id = ?').get(estudianteId)
     const sede = estudiante?.sede || 'PPAL - TRIUNFO'
-    const pesos = obtenerPesosPeriodos(anio, sede)
+    const pesos = await obtenerPesosPeriodos(anio, sede)
 
     const periodos = {}
     for (let p = 1; p <= 4; p++) {
@@ -651,7 +649,7 @@ router.get('/columnas', async (req, res) => {
     const a = parseInt(anio)
 
     for (const tipo of TIPOS_CAT) {
-      const rows = db.prepare(`
+      const rows = await db.prepare(`
         SELECT DISTINCT titulo FROM (
           SELECT titulo FROM columnas WHERE curso = ? AND materiaId = ? AND periodo = ? AND anio = ? AND tipo = ?
           UNION
@@ -692,7 +690,9 @@ router.post('/columna', async (req, res) => {
     const p = parseInt(periodo) || 1
     const a = parseInt(anio) || new Date().getFullYear()
 
-    db.prepare('INSERT OR IGNORE INTO columnas (id, curso, materiaId, periodo, anio, tipo, titulo, creadoEn) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(require('crypto').randomUUID(), curso, materiaId, p, a, tipo, titulo.trim(), new Date().toISOString())
+    // ON CONFLICT DO NOTHING = INSERT OR IGNORE en ambos motores (requiere el
+    // índice único columnas_unicas)
+    await db.prepare('INSERT INTO columnas (id, curso, materiaId, periodo, anio, tipo, titulo, creadoEn) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING').run(require('crypto').randomUUID(), curso, materiaId, p, a, tipo, titulo.trim(), new Date().toISOString())
 
     res.json({ mensaje: `Columna "${titulo}" agregada` })
   } catch (error) {
@@ -716,9 +716,9 @@ router.put('/columna', async (req, res) => {
     const p = parseInt(periodo) || 1
     const a = parseInt(anio) || new Date().getFullYear()
 
-    db.prepare('UPDATE columnas SET titulo = ? WHERE curso = ? AND materiaId = ? AND periodo = ? AND anio = ? AND tipo = ? AND titulo = ?').run(tituloNuevo.trim(), curso, materiaId, p, a, tipo, tituloViejo)
+    await db.prepare('UPDATE columnas SET titulo = ? WHERE curso = ? AND materiaId = ? AND periodo = ? AND anio = ? AND tipo = ? AND titulo = ?').run(tituloNuevo.trim(), curso, materiaId, p, a, tipo, tituloViejo)
 
-    const result = db.prepare(`
+    const result = await db.prepare(`
       UPDATE notas_items SET descripcion = ?
       WHERE calificacionId IN (
         SELECT c.id FROM calificaciones c
@@ -749,10 +749,10 @@ router.delete('/columna', async (req, res) => {
     const p = parseInt(periodo) || 1
     const a = parseInt(anio) || new Date().getFullYear()
 
-    db.prepare('DELETE FROM columnas WHERE curso = ? AND materiaId = ? AND periodo = ? AND anio = ? AND tipo = ? AND titulo = ?').run(curso, materiaId, p, a, tipo, titulo)
+    await db.prepare('DELETE FROM columnas WHERE curso = ? AND materiaId = ? AND periodo = ? AND anio = ? AND tipo = ? AND titulo = ?').run(curso, materiaId, p, a, tipo, titulo)
 
     // Get IDs of items to delete so we can recalculate definitivas
-    const itemsToDelete = db.prepare(`
+    const itemsToDelete = await db.prepare(`
       SELECT ni.id FROM notas_items ni
       JOIN calificaciones c ON c.id = ni.calificacionId
       JOIN estudiantes e ON e.id = c.estudianteId
@@ -762,9 +762,9 @@ router.delete('/columna', async (req, res) => {
 
     const calIds = new Set()
     for (const item of itemsToDelete) {
-      const cal = db.prepare('SELECT calificacionId FROM notas_items WHERE id = ?').get(item.id)
+      const cal = await db.prepare('SELECT calificacionId FROM notas_items WHERE id = ?').get(item.id)
       if (cal) calIds.add(cal.calificacionId)
-      db.prepare('DELETE FROM notas_items WHERE id = ?').run(item.id)
+      await db.prepare('DELETE FROM notas_items WHERE id = ?').run(item.id)
     }
 
     // Recalculate definitivas
@@ -803,14 +803,14 @@ router.post('/guardar-grid', async (req, res) => {
       const p = parseInt(periodo) || 1
       const a = parseInt(anio) || new Date().getFullYear()
 
-      const est = prisma._db.prepare('SELECT sede, curso FROM estudiantes WHERE id = ?').get(estudianteId)
+      const est = await prisma._db.prepare('SELECT sede, curso FROM estudiantes WHERE id = ?').get(estudianteId)
       if (!est) continue
       const sede = est.sede
       const cursoEstudiante = est.curso
 
       // SEGURIDAD: un docente NO puede guardar notas de una materia/curso que no tiene asignada
       if (req.usuario.rol === 'DOCENTE') {
-        const asignacion = prisma._db.prepare(
+        const asignacion = await prisma._db.prepare(
           'SELECT id FROM docente_materias WHERE docenteId = ? AND materiaId = ? AND curso = ?'
         ).get(req.usuario.docenteId, materiaId, cursoEstudiante)
         if (!asignacion) {
@@ -820,12 +820,12 @@ router.post('/guardar-grid', async (req, res) => {
       }
 
       // Periodo cerrado manualmente → saltar
-      if (!periodoAbierto(a, sede, p)) {
+      if (!(await periodoAbierto(a, sede, p))) {
         continue
       }
 
       // Fecha límite pasada pero período aún abierto → advertir
-      const cfg = prisma._db.prepare('SELECT fecha_fin, reapertura_manual FROM periodos_config WHERE anio = ? AND sede = ? AND periodo = ?').get(a, sede, p)
+      const cfg = await prisma._db.prepare('SELECT fecha_fin, reapertura_manual FROM periodos_config WHERE anio = ? AND sede = ? AND periodo = ?').get(a, sede, p)
       if (cfg?.fecha_fin) {
         const fechaFin = new Date(cfg.fecha_fin)
         if (fechaFin < new Date() && cfg.reapertura_manual) {
@@ -913,7 +913,7 @@ router.get('/observaciones', async (req, res) => {
     if (estudianteId) { where.push('o.estudianteId = ?'); params.push(estudianteId) }
     if (docenteId) { where.push('o.docenteId = ?'); params.push(docenteId) }
     if (where.length === 0) return res.status(400).json({ error: 'Se requiere al menos estudianteId o docenteId' })
-    const rows = prisma._db.prepare(`
+    const rows = await prisma._db.prepare(`
       SELECT o.*, m.nombre as materiaNombre, u.nombre as docenteNombre
       FROM observaciones o
       LEFT JOIN materias m ON m.id = o.materiaId
@@ -939,11 +939,11 @@ router.post('/observaciones', async (req, res) => {
       return res.status(400).json({ error: 'estudianteId, materiaId y texto requeridos' })
     }
 
-    const estudiante = prisma._db.prepare('SELECT curso FROM estudiantes WHERE id = ?').get(estudianteId)
+    const estudiante = await prisma._db.prepare('SELECT curso FROM estudiantes WHERE id = ?').get(estudianteId)
     if (!estudiante) return res.status(404).json({ error: 'Estudiante no encontrado' })
 
     if (req.usuario.rol !== 'ADMIN') {
-      const asignacion = prisma._db.prepare(
+      const asignacion = await prisma._db.prepare(
         'SELECT id FROM docente_materias WHERE docenteId = ? AND materiaId = ? AND curso = ?'
       ).get(req.usuario.docenteId, materiaId, estudiante.curso)
       if (!asignacion) {
@@ -955,7 +955,7 @@ router.post('/observaciones', async (req, res) => {
     // Fecha de hoy en zona Colombia (el server corre con TZ=America/Bogota)
     const hoy = new Date().toLocaleDateString('es-CO', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'America/Bogota' }).split('/').reverse().join('-')
     const obsFecha = fecha || hoy
-    prisma._db.prepare(
+    await prisma._db.prepare(
       'INSERT INTO observaciones (id, estudianteId, docenteId, materiaId, texto, tipo, fecha) VALUES (?, ?, ?, ?, ?, ?, ?)'
     ).run(id, estudianteId, req.usuario.docenteId, materiaId, texto, tipo || 'GENERAL', obsFecha)
     res.status(201).json({ mensaje: 'Observación creada', id })
@@ -970,7 +970,7 @@ router.put('/observaciones/:id', async (req, res) => {
     if (req.usuario.rol !== 'DOCENTE' && req.usuario.rol !== 'ADMIN') {
       return res.status(403).json({ error: 'Solo docentes y administradores' })
     }
-    const obs = prisma._db.prepare('SELECT * FROM observaciones WHERE id = ?').get(req.params.id)
+    const obs = await prisma._db.prepare('SELECT * FROM observaciones WHERE id = ?').get(req.params.id)
     if (!obs) return res.status(404).json({ error: 'Observación no encontrada' })
     if (req.usuario.rol !== 'ADMIN' && obs.docenteId !== req.usuario.docenteId) {
       return res.status(403).json({ error: 'No puedes editar esta observación' })
@@ -982,9 +982,9 @@ router.put('/observaciones/:id', async (req, res) => {
     }
 
     if (materiaId && req.usuario.rol !== 'ADMIN') {
-      const estudiante = prisma._db.prepare('SELECT curso FROM estudiantes WHERE id = ?').get(obs.estudianteId)
+      const estudiante = await prisma._db.prepare('SELECT curso FROM estudiantes WHERE id = ?').get(obs.estudianteId)
       if (estudiante) {
-        const asignacion = prisma._db.prepare(
+        const asignacion = await prisma._db.prepare(
           'SELECT id FROM docente_materias WHERE docenteId = ? AND materiaId = ? AND curso = ?'
         ).get(req.usuario.docenteId, materiaId, estudiante.curso)
         if (!asignacion) {
@@ -999,9 +999,9 @@ router.put('/observaciones/:id', async (req, res) => {
     if (fecha !== undefined) { updates.push('fecha = ?'); params.push(fecha) }
     if (materiaId !== undefined) { updates.push('materiaId = ?'); params.push(materiaId) }
     params.push(req.params.id)
-    prisma._db.prepare(`UPDATE observaciones SET ${updates.join(', ')} WHERE id = ?`).run(...params)
+    await prisma._db.prepare(`UPDATE observaciones SET ${updates.join(', ')} WHERE id = ?`).run(...params)
 
-    const updated = prisma._db.prepare(`
+    const updated = await prisma._db.prepare(`
       SELECT o.*, m.nombre as materiaNombre, u.nombre as docenteNombre
       FROM observaciones o
       LEFT JOIN materias m ON m.id = o.materiaId
@@ -1021,7 +1021,7 @@ router.get('/mis-observaciones', async (req, res) => {
     if (req.usuario.rol !== 'ESTUDIANTE') {
       return res.status(403).json({ error: 'Solo para estudiantes' })
     }
-    const rows = prisma._db.prepare(`
+    const rows = await prisma._db.prepare(`
       SELECT o.id, o.texto, o.tipo, o.fecha, o.creadoEn, m.nombre as materiaNombre, u.nombre as docenteNombre
       FROM observaciones o
       LEFT JOIN materias m ON m.id = o.materiaId
@@ -1039,12 +1039,12 @@ router.get('/mis-observaciones', async (req, res) => {
 
 router.delete('/observaciones/:id', async (req, res) => {
   try {
-    const obs = prisma._db.prepare('SELECT * FROM observaciones WHERE id = ?').get(req.params.id)
+    const obs = await prisma._db.prepare('SELECT * FROM observaciones WHERE id = ?').get(req.params.id)
     if (!obs) return res.status(404).json({ error: 'Observación no encontrada' })
     if (req.usuario.rol !== 'ADMIN' && obs.docenteId !== req.usuario.docenteId) {
       return res.status(403).json({ error: 'No puedes eliminar esta observación' })
     }
-    prisma._db.prepare('DELETE FROM observaciones WHERE id = ?').run(req.params.id)
+    await prisma._db.prepare('DELETE FROM observaciones WHERE id = ?').run(req.params.id)
     res.json({ mensaje: 'Observación eliminada' })
   } catch (error) {
     console.error('Error DELETE /observaciones:', error)
@@ -1066,7 +1066,7 @@ router.get('/observaciones-curso', async (req, res) => {
 
     // El admin ve cualquier curso; el docente solo si es director del curso
     if (req.usuario.rol !== 'ADMIN') {
-      const director = prisma._db.prepare(
+      const director = await prisma._db.prepare(
         'SELECT * FROM directores_grupo WHERE docenteId = ? AND curso = ?'
       ).get(req.usuario.docenteId, curso)
       if (!director) {
@@ -1074,7 +1074,7 @@ router.get('/observaciones-curso', async (req, res) => {
       }
     }
 
-    const rows = prisma._db.prepare(`
+    const rows = await prisma._db.prepare(`
       SELECT o.*, m.nombre as materiaNombre, u.nombre as docenteNombre,
              e.curso as estudianteCurso, u2.nombre as estudianteNombre
       FROM observaciones o
@@ -1101,7 +1101,7 @@ router.get('/soy-director', async (req, res) => {
     if (req.usuario.rol !== 'DOCENTE') {
       return res.status(403).json({ error: 'Solo docentes' })
     }
-    const rows = prisma._db.prepare(
+    const rows = await prisma._db.prepare(
       'SELECT curso FROM directores_grupo WHERE docenteId = ?'
     ).all(req.usuario.docenteId)
     res.json({ cursos: rows.map(r => r.curso) })
@@ -1123,14 +1123,14 @@ router.get('/reporte-corte', async (req, res) => {
       return res.status(400).json({ error: 'curso, periodo y anio son requeridos' })
     }
 
-    const director = prisma._db.prepare(
+    const director = await prisma._db.prepare(
       'SELECT * FROM directores_grupo WHERE docenteId = ? AND curso = ?'
     ).get(req.usuario.docenteId, curso)
     if (!director) {
       return res.status(403).json({ error: 'No eres director de este curso' })
     }
 
-    const reporte = calcularReporteCorte(curso, parseInt(periodo), parseInt(anio))
+    const reporte = await calcularReporteCorte(curso, parseInt(periodo), parseInt(anio))
 
     const sedeRow = prisma._db.prepare('SELECT sede FROM estudiantes WHERE curso = ? LIMIT 1').get(curso)
     const sede = sedeRow ? sedeRow.sede : 'PPAL - TRIUNFO'
@@ -1162,12 +1162,12 @@ router.get('/mi-reporte-corte', async (req, res) => {
       return res.status(404).json({ error: 'Datos de estudiante no encontrados' })
     }
 
-    const estudiante = prisma._db.prepare('SELECT curso FROM estudiantes WHERE id = ?').get(req.usuario.estudianteId)
+    const estudiante = await prisma._db.prepare('SELECT curso FROM estudiantes WHERE id = ?').get(req.usuario.estudianteId)
     if (!estudiante) {
       return res.status(404).json({ error: 'Estudiante no encontrado' })
     }
     const curso = estudiante.curso
-    const reporte = calcularReporteCorte(curso, parseInt(periodo), parseInt(anio))
+    const reporte = await calcularReporteCorte(curso, parseInt(periodo), parseInt(anio))
       .filter(r => r.estudianteId === req.usuario.estudianteId)
       .map(r => ({
         materiaId: r.materiaId,
@@ -1176,9 +1176,9 @@ router.get('/mi-reporte-corte', async (req, res) => {
         estado: r.estado
       }))
 
-    const sedeRow = prisma._db.prepare('SELECT sede FROM estudiantes WHERE curso = ? LIMIT 1').get(curso)
+    const sedeRow = await prisma._db.prepare('SELECT sede FROM estudiantes WHERE curso = ? LIMIT 1').get(curso)
     const sede = sedeRow ? sedeRow.sede : 'PPAL - TRIUNFO'
-    const cfg = prisma._db.prepare(
+    const cfg = await prisma._db.prepare(
       'SELECT fecha_corte FROM periodos_config WHERE sede = ? AND periodo = ? AND anio = ?'
     ).get(sede, parseInt(periodo), parseInt(anio))
     const fechaCorte = cfg?.fecha_corte || null

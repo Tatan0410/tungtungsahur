@@ -30,14 +30,14 @@ router.use(verificarTokenAdmin)
 
 router.get('/profesores', async (req, res) => {
   try {
-    const rows = prisma._db.prepare(`
+    const rows = await prisma._db.prepare(`
       SELECT u.id, u.nombre, u.documento, u.activo, d.id as docenteId
       FROM usuarios u
       JOIN docentes d ON d.usuarioId = u.id
       ORDER BY u.nombre ASC
     `).all()
-    const data = rows.map(r => {
-      const asignaciones = prisma._db.prepare(`
+    const data = await Promise.all(rows.map(async r => {
+      const asignaciones = await prisma._db.prepare(`
         SELECT dm.id as asignacionId, dm.curso, m.nombre as materia
         FROM docente_materias dm
         JOIN materias m ON m.id = dm.materiaId
@@ -45,7 +45,7 @@ router.get('/profesores', async (req, res) => {
         ORDER BY dm.curso, m.nombre
       `).all(r.docenteId)
       return { ...r, asignaciones }
-    })
+    }))
     res.json(data)
   } catch (error) {
     console.error('Error GET /profesores:', error)
@@ -62,18 +62,17 @@ router.post('/profesores', async (req, res) => {
     if (String(password).length < 6) {
       return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' })
     }
-    const existente = prisma._db.prepare('SELECT id FROM usuarios WHERE documento = ?').get(documento)
+    const existente = await prisma._db.prepare('SELECT id FROM usuarios WHERE documento = ?').get(documento)
     if (existente) {
       return res.status(409).json({ error: 'Ya existe un usuario con ese documento' })
     }
     const hash = bcrypt.hashSync(password, 10)
     const id = require('crypto').randomUUID()
     const docenteId = require('crypto').randomUUID()
-    const transaccion = prisma._db.transaction(() => {
-      prisma._db.prepare('INSERT INTO usuarios (id, correo, password, rol, nombre, documento, activo) VALUES (?, ?, ?, ?, ?, ?, 1)').run(id, documento + '@docente.edu.co', hash, 'DOCENTE', nombre, documento)
-      prisma._db.prepare('INSERT INTO docentes (id, usuarioId) VALUES (?, ?)').run(docenteId, id)
-    })
-    transaccion()
+    await prisma._db.transaction(async () => {
+      await prisma._db.prepare('INSERT INTO usuarios (id, correo, password, rol, nombre, documento, activo) VALUES (?, ?, ?, ?, ?, ?, 1)').run(id, documento + '@docente.edu.co', hash, 'DOCENTE', nombre, documento)
+      await prisma._db.prepare('INSERT INTO docentes (id, usuarioId) VALUES (?, ?)').run(docenteId, id)
+    })()
     res.status(201).json({ mensaje: 'Profesor creado', id, nombre, documento })
   } catch (error) {
     console.error('Error POST /profesores:', error)
@@ -88,10 +87,10 @@ router.put('/profesores/:id/password', async (req, res) => {
     if (String(password).length < 6) {
       return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' })
     }
-    const user = prisma._db.prepare('SELECT id FROM usuarios WHERE id = ? AND rol = ?').get(req.params.id, 'DOCENTE')
+    const user = await prisma._db.prepare('SELECT id FROM usuarios WHERE id = ? AND rol = ?').get(req.params.id, 'DOCENTE')
     if (!user) return res.status(404).json({ error: 'Profesor no encontrado' })
     const hash = bcrypt.hashSync(password, 10)
-    prisma._db.prepare('UPDATE usuarios SET password = ? WHERE id = ?').run(hash, req.params.id)
+    await prisma._db.prepare('UPDATE usuarios SET password = ? WHERE id = ?').run(hash, req.params.id)
     res.json({ mensaje: 'Contraseña actualizada' })
   } catch (error) {
     console.error('Error PUT /profesores/password:', error)
@@ -104,11 +103,11 @@ router.put('/profesores/:id/documento', async (req, res) => {
     const { documento } = req.body
     if (!documento) return res.status(400).json({ error: 'documento es requerido' })
     if (!/^\d+$/.test(documento)) return res.status(400).json({ error: 'El documento debe ser numérico' })
-    const user = prisma._db.prepare('SELECT id FROM usuarios WHERE id = ? AND rol = ?').get(req.params.id, 'DOCENTE')
+    const user = await prisma._db.prepare('SELECT id FROM usuarios WHERE id = ? AND rol = ?').get(req.params.id, 'DOCENTE')
     if (!user) return res.status(404).json({ error: 'Profesor no encontrado' })
-    const existente = prisma._db.prepare('SELECT id FROM usuarios WHERE documento = ? AND id != ?').get(documento, req.params.id)
+    const existente = await prisma._db.prepare('SELECT id FROM usuarios WHERE documento = ? AND id != ?').get(documento, req.params.id)
     if (existente) return res.status(409).json({ error: 'Ese documento ya está en uso por otro usuario' })
-    prisma._db.prepare('UPDATE usuarios SET documento = ? WHERE id = ?').run(documento, req.params.id)
+    await prisma._db.prepare('UPDATE usuarios SET documento = ? WHERE id = ?').run(documento, req.params.id)
     res.json({ mensaje: 'Documento actualizado. El profesor deberá usar el nuevo documento en su próximo inicio de sesión.' })
   } catch (error) {
     console.error('Error PUT /profesores/documento:', error)
@@ -120,9 +119,9 @@ router.put('/profesores/:id/activo', async (req, res) => {
   try {
     const { activo } = req.body
     if (activo === undefined || activo === null) return res.status(400).json({ error: 'activo es requerido (true/false)' })
-    const user = prisma._db.prepare('SELECT id FROM usuarios WHERE id = ? AND rol = ?').get(req.params.id, 'DOCENTE')
+    const user = await prisma._db.prepare('SELECT id FROM usuarios WHERE id = ? AND rol = ?').get(req.params.id, 'DOCENTE')
     if (!user) return res.status(404).json({ error: 'Profesor no encontrado' })
-    prisma._db.prepare('UPDATE usuarios SET activo = ? WHERE id = ?').run(activo ? 1 : 0, req.params.id)
+    await prisma._db.prepare('UPDATE usuarios SET activo = ? WHERE id = ?').run(activo ? 1 : 0, req.params.id)
     res.json({ mensaje: 'Estado actualizado', activo: !!activo })
   } catch (error) {
     console.error('Error PUT /profesores/activo:', error)
@@ -132,17 +131,16 @@ router.put('/profesores/:id/activo', async (req, res) => {
 
 router.delete('/profesores/:id', async (req, res) => {
   try {
-    const user = prisma._db.prepare('SELECT id FROM usuarios WHERE id = ? AND rol = ?').get(req.params.id, 'DOCENTE')
+    const user = await prisma._db.prepare('SELECT id FROM usuarios WHERE id = ? AND rol = ?').get(req.params.id, 'DOCENTE')
     if (!user) return res.status(404).json({ error: 'Profesor no encontrado' })
-    const docente = prisma._db.prepare('SELECT id FROM docentes WHERE usuarioId = ?').get(req.params.id)
-    const transaccion = prisma._db.transaction(() => {
+    const docente = await prisma._db.prepare('SELECT id FROM docentes WHERE usuarioId = ?').get(req.params.id)
+    await prisma._db.transaction(async () => {
       if (docente) {
-        prisma._db.prepare('DELETE FROM docente_materias WHERE docenteId = ?').run(docente.id)
-        prisma._db.prepare('DELETE FROM docentes WHERE id = ?').run(docente.id)
+        await prisma._db.prepare('DELETE FROM docente_materias WHERE docenteId = ?').run(docente.id)
+        await prisma._db.prepare('DELETE FROM docentes WHERE id = ?').run(docente.id)
       }
-      prisma._db.prepare('DELETE FROM usuarios WHERE id = ?').run(req.params.id)
-    })
-    transaccion()
+      await prisma._db.prepare('DELETE FROM usuarios WHERE id = ?').run(req.params.id)
+    })()
     res.json({ mensaje: 'Profesor eliminado' })
   } catch (error) {
     console.error('Error DELETE /profesores:', error)
@@ -158,11 +156,11 @@ router.put('/profesores/:id/correo', async (req, res) => {
     if (!emailRegex.test(String(correo).trim())) {
       return res.status(400).json({ error: 'Correo electrónico inválido' })
     }
-    const user = prisma._db.prepare('SELECT id FROM usuarios WHERE id = ? AND rol = ?').get(req.params.id, 'DOCENTE')
+    const user = await prisma._db.prepare('SELECT id FROM usuarios WHERE id = ? AND rol = ?').get(req.params.id, 'DOCENTE')
     if (!user) return res.status(404).json({ error: 'Profesor no encontrado' })
-    const existente = prisma._db.prepare('SELECT id FROM usuarios WHERE correo = ? AND id != ?').get(String(correo).trim(), req.params.id)
+    const existente = await prisma._db.prepare('SELECT id FROM usuarios WHERE correo = ? AND id != ?').get(String(correo).trim(), req.params.id)
     if (existente) return res.status(409).json({ error: 'Ese correo ya está en uso por otro usuario' })
-    prisma._db.prepare('UPDATE usuarios SET correo = ? WHERE id = ?').run(String(correo).trim(), req.params.id)
+    await prisma._db.prepare('UPDATE usuarios SET correo = ? WHERE id = ?').run(String(correo).trim(), req.params.id)
     res.json({ mensaje: 'Correo actualizado exitosamente' })
   } catch (error) {
     console.error('Error PUT /profesores/correo:', error)
@@ -174,7 +172,7 @@ router.put('/profesores/:id/correo', async (req, res) => {
 
 router.get('/materias', async (req, res) => {
   try {
-    const rows = prisma._db.prepare('SELECT * FROM materias ORDER BY grado, nombre').all()
+    const rows = await prisma._db.prepare('SELECT * FROM materias ORDER BY grado, nombre').all()
     res.json(rows)
   } catch (error) {
     console.error('Error GET /materias:', error)
@@ -187,7 +185,7 @@ router.post('/materias', async (req, res) => {
     const { nombre, grado } = req.body
     if (!nombre || !grado) return res.status(400).json({ error: 'nombre y grado son requeridos' })
     const id = require('crypto').randomUUID()
-    prisma._db.prepare('INSERT INTO materias (id, nombre, grado) VALUES (?, ?, ?)').run(id, nombre, parseInt(grado))
+    await prisma._db.prepare('INSERT INTO materias (id, nombre, grado) VALUES (?, ?, ?)').run(id, nombre, parseInt(grado))
     res.status(201).json({ mensaje: 'Materia creada', id, nombre, grado: parseInt(grado) })
   } catch (error) {
     console.error('Error POST /materias:', error)
@@ -199,7 +197,7 @@ router.post('/materias', async (req, res) => {
 
 router.get('/cursos', async (req, res) => {
   try {
-    const rows = prisma._db.prepare(
+    const rows = await prisma._db.prepare(
       "SELECT DISTINCT e.curso FROM estudiantes e JOIN usuarios u ON u.id = e.usuarioId WHERE u.activo = 1 AND e.curso != '' ORDER BY e.curso"
     ).all()
     res.json(rows.map(r => r.curso))
@@ -224,7 +222,7 @@ router.get('/asignaciones', async (req, res) => {
       params.push(String(req.query.curso))
     }
     sql += ' ORDER BY dm.curso, u.nombre, m.nombre'
-    res.json(prisma._db.prepare(sql).all(...params))
+    res.json(await prisma._db.prepare(sql).all(...params))
   } catch (error) {
     console.error('Error GET /asignaciones:', error)
     res.status(500).json({ error: 'Error interno' })
@@ -236,17 +234,17 @@ router.post('/asignaciones', async (req, res) => {
     let { docenteDocumento, materiaId, curso } = req.body
     let docenteId = req.body.docenteId
     if (!docenteId && docenteDocumento) {
-      const user = prisma._db.prepare('SELECT id FROM usuarios WHERE documento = ? AND rol = ?').get(docenteDocumento, 'DOCENTE')
+      const user = await prisma._db.prepare('SELECT id FROM usuarios WHERE documento = ? AND rol = ?').get(docenteDocumento, 'DOCENTE')
       if (!user) return res.status(404).json({ error: 'Profesor no encontrado' })
-      const doc = prisma._db.prepare('SELECT id FROM docentes WHERE usuarioId = ?').get(user.id)
+      const doc = await prisma._db.prepare('SELECT id FROM docentes WHERE usuarioId = ?').get(user.id)
       if (!doc) return res.status(404).json({ error: 'Docente no encontrado' })
       docenteId = doc.id
     }
     if (!docenteId || !materiaId || !curso) return res.status(400).json({ error: 'docenteId, materiaId y curso requeridos' })
-    const existente = prisma._db.prepare('SELECT id FROM docente_materias WHERE docenteId = ? AND materiaId = ? AND curso = ?').get(docenteId, materiaId, curso)
+    const existente = await prisma._db.prepare('SELECT id FROM docente_materias WHERE docenteId = ? AND materiaId = ? AND curso = ?').get(docenteId, materiaId, curso)
     if (existente) return res.status(409).json({ error: 'Esa asignación ya existe' })
     const id = require('crypto').randomUUID()
-    prisma._db.prepare('INSERT INTO docente_materias (id, docenteId, materiaId, curso) VALUES (?, ?, ?, ?)').run(id, docenteId, materiaId, curso)
+    await prisma._db.prepare('INSERT INTO docente_materias (id, docenteId, materiaId, curso) VALUES (?, ?, ?, ?)').run(id, docenteId, materiaId, curso)
     res.status(201).json({ mensaje: 'Asignación creada', id })
   } catch (error) {
     console.error('Error POST /asignaciones:', error)
@@ -256,9 +254,9 @@ router.post('/asignaciones', async (req, res) => {
 
 router.delete('/asignaciones/:id', async (req, res) => {
   try {
-    const asig = prisma._db.prepare('SELECT id FROM docente_materias WHERE id = ?').get(req.params.id)
+    const asig = await prisma._db.prepare('SELECT id FROM docente_materias WHERE id = ?').get(req.params.id)
     if (!asig) return res.status(404).json({ error: 'Asignación no encontrada' })
-    prisma._db.prepare('DELETE FROM docente_materias WHERE id = ?').run(req.params.id)
+    await prisma._db.prepare('DELETE FROM docente_materias WHERE id = ?').run(req.params.id)
     res.json({ mensaje: 'Asignación eliminada' })
   } catch (error) {
     console.error('Error DELETE /asignaciones:', error)
@@ -270,7 +268,7 @@ router.delete('/asignaciones/:id', async (req, res) => {
 
 router.get('/sedes', async (req, res) => {
   try {
-    const rows = prisma._db.prepare('SELECT DISTINCT sede FROM estudiantes ORDER BY sede').all()
+    const rows = await prisma._db.prepare('SELECT DISTINCT sede FROM estudiantes ORDER BY sede').all()
     res.json(rows.map(r => r.sede))
   } catch (error) {
     console.error('Error GET /sedes:', error)
@@ -283,9 +281,9 @@ router.get('/periodos', async (req, res) => {
     const anio = parseInt(req.query.anio) || new Date().getFullYear()
     let rows
     if (req.query.sede) {
-      rows = prisma._db.prepare('SELECT * FROM periodos_config WHERE sede = ? AND anio = ? ORDER BY periodo').all(req.query.sede, anio)
+      rows = await prisma._db.prepare('SELECT * FROM periodos_config WHERE sede = ? AND anio = ? ORDER BY periodo').all(req.query.sede, anio)
     } else {
-      rows = prisma._db.prepare('SELECT * FROM periodos_config WHERE anio = ? ORDER BY sede, periodo').all(anio)
+      rows = await prisma._db.prepare('SELECT * FROM periodos_config WHERE anio = ? ORDER BY sede, periodo').all(anio)
     }
     const hoy = new Date()
     const rowsConEstado = rows.map(r => {
@@ -310,7 +308,7 @@ router.get('/periodos', async (req, res) => {
 router.put('/periodos/:id', async (req, res) => {
   try {
     const { fecha_inicio, fecha_corte, fecha_fin } = req.body
-    const existing = prisma._db.prepare('SELECT id FROM periodos_config WHERE id = ?').get(req.params.id)
+    const existing = await prisma._db.prepare('SELECT id FROM periodos_config WHERE id = ?').get(req.params.id)
     if (!existing) return res.status(404).json({ error: 'Período no encontrado' })
     const updates = []
     const params = []
@@ -319,7 +317,7 @@ router.put('/periodos/:id', async (req, res) => {
     if (fecha_corte !== undefined) { updates.push('fecha_corte = ?'); params.push(fecha_corte || null) }
     if (updates.length === 0) return res.status(400).json({ error: 'Nada que actualizar' })
     params.push(req.params.id)
-    prisma._db.prepare(`UPDATE periodos_config SET ${updates.join(', ')} WHERE id = ?`).run(...params)
+    await prisma._db.prepare(`UPDATE periodos_config SET ${updates.join(', ')} WHERE id = ?`).run(...params)
     res.json({ mensaje: 'Período actualizado' })
   } catch (error) {
     console.error('Error PUT /periodos:', error)
@@ -335,7 +333,7 @@ router.post('/periodos/cerrar', async (req, res) => {
     if (!sede || !periodo || !anio) {
       return res.status(400).json({ error: 'sede, periodo y anio son requeridos' })
     }
-    const row = prisma._db.prepare(
+    const row = await prisma._db.prepare(
       'UPDATE periodos_config SET abierto = 0 WHERE sede = ? AND periodo = ? AND anio = ?'
     ).run(sede, parseInt(periodo), parseInt(anio))
     if (row.changes === 0) return res.status(404).json({ error: 'Período no encontrado' })
@@ -354,7 +352,7 @@ router.post('/periodos/reabrir', async (req, res) => {
     if (!sede || !periodo || !anio) {
       return res.status(400).json({ error: 'sede, periodo y anio son requeridos' })
     }
-    prisma._db.prepare(
+    await prisma._db.prepare(
       'UPDATE periodos_config SET abierto = 1, reapertura_manual = 1 WHERE sede = ? AND periodo = ? AND anio = ?'
     ).run(sede, parseInt(periodo), parseInt(anio))
     res.json({ mensaje: 'Período reabierto. Los profesores pueden volver a guardar notas aunque haya pasado la fecha de corte final.' })
@@ -381,7 +379,7 @@ router.get('/reporte-corte', async (req, res) => {
     const reporte = []
 
     if (curso) {
-      const r = calcularReporteCorte(curso, p, a)
+      const r = await calcularReporteCorte(curso, p, a)
       reporte.push(...r)
     } else {
       let cursosQuery = 'SELECT DISTINCT curso FROM estudiantes'
@@ -390,9 +388,9 @@ router.get('/reporte-corte', async (req, res) => {
         cursosQuery += ' WHERE sede = ?'
         params.push(sede)
       }
-      const cursos = prisma._db.prepare(cursosQuery).all(...params)
+      const cursos = await prisma._db.prepare(cursosQuery).all(...params)
       for (const c of cursos) {
-        const r = calcularReporteCorte(c.curso, p, a)
+        const r = await calcularReporteCorte(c.curso, p, a)
         reporte.push(...r)
       }
     }
@@ -400,17 +398,17 @@ router.get('/reporte-corte', async (req, res) => {
     let fechaCorte = null
     let yaPaso = false
     if (curso) {
-      const sedeRow = prisma._db.prepare('SELECT sede FROM estudiantes WHERE curso = ? LIMIT 1').get(curso)
+      const sedeRow = await prisma._db.prepare('SELECT sede FROM estudiantes WHERE curso = ? LIMIT 1').get(curso)
       const s = sedeRow ? sedeRow.sede : 'PPAL - TRIUNFO'
-      const cfg = prisma._db.prepare(
+      const cfg = await prisma._db.prepare(
         'SELECT fecha_corte FROM periodos_config WHERE sede = ? AND periodo = ? AND anio = ?'
       ).get(s, p, a)
       fechaCorte = cfg?.fecha_corte || null
       yaPaso = fechaCorte ? new Date(fechaCorte) <= new Date() : false
     } else {
-      const sedes = prisma._db.prepare('SELECT DISTINCT sede FROM periodos_config WHERE anio = ? AND periodo = ?').all(a, p)
+      const sedes = await prisma._db.prepare('SELECT DISTINCT sede FROM periodos_config WHERE anio = ? AND periodo = ?').all(a, p)
       for (const s of sedes) {
-        const cfg = prisma._db.prepare(
+        const cfg = await prisma._db.prepare(
           'SELECT fecha_corte FROM periodos_config WHERE sede = ? AND periodo = ? AND anio = ?'
         ).get(s.sede, p, a)
         if (cfg?.fecha_corte) {
@@ -446,14 +444,14 @@ router.get('/observaciones', async (req, res) => {
 
     let total = { total: 0 }
     try {
-      total = prisma._db.prepare(`
+      total = await prisma._db.prepare(`
         SELECT COUNT(*) as total FROM observaciones o
         JOIN estudiantes e ON e.id = o.estudianteId
         ${whereClause}
       `).get(...params)
     } catch (e) { total = { total: 0 } }
 
-    const rows = prisma._db.prepare(`
+    const rows = await prisma._db.prepare(`
       SELECT o.id, o.fecha, o.texto, o.tipo, o.creadoEn,
              u2.nombre as estudianteNombre, e.curso, e.sede,
              m.nombre as materiaNombre,
@@ -492,14 +490,14 @@ router.get('/estudiantes', async (req, res) => {
 
     let total = { total: 0 }
     try {
-      total = prisma._db.prepare(`
+      total = await prisma._db.prepare(`
         SELECT COUNT(*) as total FROM estudiantes e
         JOIN usuarios u ON u.id = e.usuarioId
         ${whereClause}
       `).get(...params)
     } catch (e) { total = { total: 0 } }
 
-    const rows = prisma._db.prepare(`
+    const rows = await prisma._db.prepare(`
       SELECT e.id, u.nombre, e.documento, e.curso, e.grado, e.sede, e.jornada
       FROM estudiantes e
       JOIN usuarios u ON u.id = e.usuarioId
@@ -523,7 +521,7 @@ router.get('/cursos-disponibles', async (req, res) => {
     if (sede) { where.push('sede = ?'); params.push(sede) }
     const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : ''
 
-    const rows = prisma._db.prepare(`
+    const rows = await prisma._db.prepare(`
       SELECT DISTINCT curso, grado, sede FROM estudiantes
       ${whereClause}
       ORDER BY curso ASC
@@ -551,7 +549,7 @@ router.put('/estudiantes/:id/curso', async (req, res) => {
       return res.status(400).json({ error: 'curso y grado son requeridos' })
     }
 
-    const estudiante = prisma._db.prepare('SELECT * FROM estudiantes WHERE id = ?').get(req.params.id)
+    const estudiante = await prisma._db.prepare('SELECT * FROM estudiantes WHERE id = ?').get(req.params.id)
     if (!estudiante) {
       return res.status(404).json({ error: 'Estudiante no encontrado' })
     }
@@ -561,7 +559,7 @@ router.put('/estudiantes/:id/curso', async (req, res) => {
     if (sufijo === '01' || sufijo === '02') nuevaJornada = 'MAÑANA'
     else if (sufijo === '03' || sufijo === '04') nuevaJornada = 'TARDE'
 
-    prisma._db.prepare(
+    await prisma._db.prepare(
       'UPDATE estudiantes SET curso = ?, grado = ?, jornada = ? WHERE id = ?'
     ).run(curso, parseInt(grado), nuevaJornada, req.params.id)
 
@@ -576,7 +574,7 @@ router.put('/estudiantes/:id/curso', async (req, res) => {
 
 router.get('/directores', async (req, res) => {
   try {
-    const rows = prisma._db.prepare(`
+    const rows = await prisma._db.prepare(`
       SELECT dg.id, dg.docenteId, dg.curso, dg.creadoEn,
              u.nombre as docenteNombre, u.documento as docenteDocumento
       FROM directores_grupo dg
@@ -598,18 +596,18 @@ router.post('/directores', async (req, res) => {
       return res.status(400).json({ error: 'docenteId y curso son requeridos' })
     }
 
-    const docente = prisma._db.prepare('SELECT id FROM docentes WHERE id = ?').get(docenteId)
+    const docente = await prisma._db.prepare('SELECT id FROM docentes WHERE id = ?').get(docenteId)
     if (!docente) {
       return res.status(404).json({ error: 'Docente no encontrado' })
     }
 
-    const existente = prisma._db.prepare('SELECT id FROM directores_grupo WHERE curso = ?').get(curso)
+    const existente = await prisma._db.prepare('SELECT id FROM directores_grupo WHERE curso = ?').get(curso)
     if (existente) {
       return res.status(409).json({ error: 'Este curso ya tiene un director asignado. Elimínalo primero si quieres reasignarlo.' })
     }
 
     const id = require('crypto').randomUUID()
-    prisma._db.prepare(
+    await prisma._db.prepare(
       'INSERT INTO directores_grupo (id, docenteId, curso) VALUES (?, ?, ?)'
     ).run(id, docenteId, curso)
 
@@ -622,11 +620,11 @@ router.post('/directores', async (req, res) => {
 
 router.delete('/directores/:id', async (req, res) => {
   try {
-    const existing = prisma._db.prepare('SELECT * FROM directores_grupo WHERE id = ?').get(req.params.id)
+    const existing = await prisma._db.prepare('SELECT * FROM directores_grupo WHERE id = ?').get(req.params.id)
     if (!existing) {
       return res.status(404).json({ error: 'Asignación no encontrada' })
     }
-    prisma._db.prepare('DELETE FROM directores_grupo WHERE id = ?').run(req.params.id)
+    await prisma._db.prepare('DELETE FROM directores_grupo WHERE id = ?').run(req.params.id)
     res.json({ mensaje: 'Director eliminado del curso' })
   } catch (error) {
     console.error('Error DELETE /admin/directores:', error)

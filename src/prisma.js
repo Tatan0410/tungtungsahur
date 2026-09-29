@@ -1,10 +1,9 @@
-const path = require('path')
-const Database = require('better-sqlite3')
+// Capa de datos: expone una API tipo Prisma sobre el adaptador dual
+// (SQLite en local, Postgres en Supabase). Todo es async: los llamadores
+// siempre usan await.
+const { crearCliente } = require('./db/cliente')
 
-// DATABASE_PATH permite apuntar a otra base (los tests usan una copia temporal)
-const DB_PATH = process.env.DATABASE_PATH || path.resolve(__dirname, '../prisma/dev.db')
-const db = new Database(DB_PATH)
-db.pragma('journal_mode = WAL')
+const db = crearCliente()
 
 function uuid() { return require('crypto').randomUUID() }
 
@@ -23,7 +22,7 @@ const prisma = {
     findUnique: async ({ where }) => {
       const key = Object.keys(where)[0]
       const val = where[key]
-      const row = db.prepare('SELECT u.*, e.id as estudiante_id, e.documento as est_doc, e.codigo, e.sede, e.jornada, e.grado, e.curso, e.mesa, d.id as docente_id FROM usuarios u LEFT JOIN estudiantes e ON e.usuarioId = u.id LEFT JOIN docentes d ON d.usuarioId = u.id WHERE u.' + col(key) + ' = ?').get(val)
+      const row = await db.prepare('SELECT u.*, e.id as estudiante_id, e.documento as est_doc, e.codigo, e.sede, e.jornada, e.grado, e.curso, e.mesa, d.id as docente_id FROM usuarios u LEFT JOIN estudiantes e ON e.usuarioId = u.id LEFT JOIN docentes d ON d.usuarioId = u.id WHERE u.' + col(key) + ' = ?').get(val)
       if (!row) return null
       return {
         id: row.id, correo: row.correo, password: row.password, rol: row.rol,
@@ -42,8 +41,8 @@ const prisma = {
   },
   estudiante: {
     findMany: async ({ where, include, orderBy }) => {
-      const rows = db.prepare('SELECT e.*, u.nombre FROM estudiantes e JOIN usuarios u ON u.id = e.usuarioId WHERE e.curso = ?').all(where.curso)
-      return rows.map(row => {
+      const rows = await db.prepare('SELECT e.*, u.nombre FROM estudiantes e JOIN usuarios u ON u.id = e.usuarioId WHERE e.curso = ?').all(where.curso)
+      const resultados = await Promise.all(rows.map(async row => {
         const est = { id: row.id, usuarioId: row.usuarioId, documento: row.documento, codigo: row.codigo, sede: row.sede, jornada: row.jornada, grado: row.grado, curso: row.curso, mesa: row.mesa }
         if (include?.usuario) est.usuario = { nombre: row.nombre }
         if (include?.calificaciones) {
@@ -53,16 +52,17 @@ const prisma = {
           if (w.materiaId) { sql += ' AND c.materiaId = ?'; params.push(w.materiaId) }
           if (w.periodo) { sql += ' AND c.periodo = ?'; params.push(w.periodo) }
           if (w.anio) { sql += ' AND c.anio = ?'; params.push(w.anio) }
-          const calRows = db.prepare(sql).all(...params)
-          est.calificaciones = calRows.map(c => {
-            if (include.calificaciones.include?.notasItems) {
-              c.notasItems = db.prepare('SELECT * FROM notas_items WHERE calificacionId = ?').all(c.id)
+          const calRows = await db.prepare(sql).all(...params)
+          est.calificaciones = calRows.map(c => c)
+          if (include.calificaciones.include?.notasItems) {
+            for (const c of est.calificaciones) {
+              c.notasItems = await db.prepare('SELECT * FROM notas_items WHERE calificacionId = ?').all(c.id)
             }
-            return c
-          })
+          }
         }
         return est
-      }).sort((a, b) => {
+      }))
+      return resultados.sort((a, b) => {
         const keyA = prisma.sortKeyApellidos(a.usuario?.nombre || a.nombre || '')
         const keyB = prisma.sortKeyApellidos(b.usuario?.nombre || b.nombre || '')
         return keyA.localeCompare(keyB, 'es')
@@ -71,7 +71,7 @@ const prisma = {
   },
   docenteMateria: {
     findMany: async ({ where, include, orderBy }) => {
-      const rows = db.prepare('SELECT dm.*, m.nombre as materiaNombre, m.grado as materiaGrado FROM docente_materias dm JOIN materias m ON m.id = dm.materiaId WHERE dm.docenteId = ? ORDER BY dm.curso ASC').all(where.docenteId)
+      const rows = await db.prepare('SELECT dm.*, m.nombre as materiaNombre, m.grado as materiaGrado FROM docente_materias dm JOIN materias m ON m.id = dm.materiaId WHERE dm.docenteId = ? ORDER BY dm.curso ASC').all(where.docenteId)
       return rows.map(r => ({
         id: r.id, docenteId: r.docenteId, materiaId: r.materiaId, curso: r.curso,
         materia: include?.materia ? { id: r.materiaId, nombre: r.materiaNombre, grado: r.materiaGrado } : undefined,
@@ -89,12 +89,12 @@ const prisma = {
     },
     create: async ({ data }) => {
       const id = uuid()
-      db.prepare('INSERT INTO consultas_estudiantes (id, estudianteId, periodo, anio, cantidad) VALUES (?, ?, ?, ?, ?)').run(id, data.estudianteId, data.periodo, data.anio, data.cantidad || 0)
+      await db.prepare('INSERT INTO consultas_estudiantes (id, estudianteId, periodo, anio, cantidad) VALUES (?, ?, ?, ?, ?)').run(id, data.estudianteId, data.periodo, data.anio, data.cantidad || 0)
       return db.prepare('SELECT * FROM consultas_estudiantes WHERE id = ?').get(id)
     },
     update: async ({ where, data }) => {
       const { estudianteId, periodo, anio } = where.estudianteId_periodo_anio
-      db.prepare('UPDATE consultas_estudiantes SET cantidad = cantidad + ? WHERE estudianteId = ? AND periodo = ? AND anio = ?').run(data.cantidad.increment, estudianteId, periodo, anio)
+      await db.prepare('UPDATE consultas_estudiantes SET cantidad = cantidad + ? WHERE estudianteId = ? AND periodo = ? AND anio = ?').run(data.cantidad.increment, estudianteId, periodo, anio)
       return db.prepare('SELECT * FROM consultas_estudiantes WHERE estudianteId = ? AND periodo = ? AND anio = ?').get(estudianteId, periodo, anio)
     },
   },
@@ -108,24 +108,24 @@ const prisma = {
       const joinMateria = include?.materia ? ' JOIN materias m ON m.id = c.materiaId' : ''
       const selectMateria = include?.materia ? ', m.nombre as materiaNombre, m.grado as materiaGrado' : ''
       const order = orderBy?.materia?.nombre === 'asc' ? 'm.nombre ASC' : 'c.periodo ASC'
-      const rows = db.prepare('SELECT c.*' + selectMateria + ' FROM calificaciones c' + joinMateria + ' WHERE ' + conditions.join(' AND ') + ' ORDER BY ' + order).all(...params)
-      return rows.map(r => {
-        if (include?.notasItems) r.notasItems = db.prepare('SELECT * FROM notas_items WHERE calificacionId = ? ORDER BY creadoEn ASC').all(r.id)
+      const rows = await db.prepare('SELECT c.*' + selectMateria + ' FROM calificaciones c' + joinMateria + ' WHERE ' + conditions.join(' AND ') + ' ORDER BY ' + order).all(...params)
+      for (const r of rows) {
+        if (include?.notasItems) r.notasItems = await db.prepare('SELECT * FROM notas_items WHERE calificacionId = ? ORDER BY creadoEn ASC').all(r.id)
         if (include?.materia) r.materia = { nombre: r.materiaNombre, grado: r.materiaGrado }
-        return r
-      })
+      }
+      return rows
     },
     findUnique: async ({ where, include }) => {
       const key = Object.keys(where)[0]
       let row
       if (key === 'estudianteId_materiaId_periodo_anio') {
         const { estudianteId, materiaId, periodo, anio } = where[key]
-        row = db.prepare('SELECT * FROM calificaciones WHERE estudianteId = ? AND materiaId = ? AND periodo = ? AND anio = ?').get(estudianteId, materiaId, periodo, anio)
+        row = await db.prepare('SELECT * FROM calificaciones WHERE estudianteId = ? AND materiaId = ? AND periodo = ? AND anio = ?').get(estudianteId, materiaId, periodo, anio)
       } else {
-        row = db.prepare('SELECT * FROM calificaciones WHERE ' + col(key) + ' = ?').get(where[key])
+        row = await db.prepare('SELECT * FROM calificaciones WHERE ' + col(key) + ' = ?').get(where[key])
       }
       if (!row) return null
-      if (include?.notasItems) row.notasItems = db.prepare('SELECT * FROM notas_items WHERE calificacionId = ?').all(row.id)
+      if (include?.notasItems) row.notasItems = await db.prepare('SELECT * FROM notas_items WHERE calificacionId = ?').all(row.id)
       return row
     },
     create: async ({ data }) => {
@@ -133,28 +133,27 @@ const prisma = {
       const fullData = { ...data, actualizadoEn: data.actualizadoEn || new Date().toISOString() }
       const cols = ['id', ...Object.keys(fullData).map(col)].join(', ')
       const vals = ['?', ...Object.keys(fullData).map(() => '?')].join(', ')
-      db.prepare('INSERT INTO calificaciones (' + cols + ') VALUES (' + vals + ')').run(id, ...Object.values(fullData))
+      await db.prepare('INSERT INTO calificaciones (' + cols + ') VALUES (' + vals + ')').run(id, ...Object.values(fullData))
       return db.prepare('SELECT * FROM calificaciones WHERE id = ?').get(id)
     },
     update: async ({ where, data }) => {
       const sets = Object.keys(data).map(k => col(k) + ' = ?').join(', ')
       const key = Object.keys(where)[0]
       const params = [...Object.values(data), where[key]]
-      db.prepare('UPDATE calificaciones SET ' + sets + ' WHERE ' + col(key) + ' = ?').run(...params)
+      await db.prepare('UPDATE calificaciones SET ' + sets + ' WHERE ' + col(key) + ' = ?').run(...params)
       return db.prepare('SELECT * FROM calificaciones WHERE ' + col(key) + ' = ?').get(where[key])
     },
     upsert: async ({ where, update, create }) => {
       const existing = await prisma.calificacion.findUnique({ where })
       if (existing) {
-        const key = Object.keys(where)[0]
-        const { estudianteId, materiaId, periodo, anio } = where[key]
+        const { estudianteId, materiaId, periodo, anio } = where[Object.keys(where)[0]]
         const upt = { actualizadoEn: new Date().toISOString() }
         for (const [k, v] of Object.entries(update)) {
           if (v !== undefined) upt[k] = v
         }
         if (Object.keys(upt).length > 0) {
           const sets = Object.keys(upt).map(k => k + ' = ?').join(', ')
-          db.prepare('UPDATE calificaciones SET ' + sets + ' WHERE estudianteId = ? AND materiaId = ? AND periodo = ? AND anio = ?').run(...Object.values(upt), estudianteId, materiaId, periodo, anio)
+          await db.prepare('UPDATE calificaciones SET ' + sets + ' WHERE estudianteId = ? AND materiaId = ? AND periodo = ? AND anio = ?').run(...Object.values(upt), estudianteId, materiaId, periodo, anio)
         }
         return db.prepare('SELECT * FROM calificaciones WHERE id = ?').get(existing.id)
       }
@@ -162,7 +161,7 @@ const prisma = {
       const createData = { ...create, id: uuid(), actualizadoEn: create.actualizadoEn || new Date().toISOString(), estudianteId: create.estudianteId || estudianteId, materiaId: create.materiaId || materiaId, periodo: create.periodo || periodo, anio: create.anio || anio }
       const cols = Object.keys(createData).map(col).join(', ')
       const vals = Object.keys(createData).map(() => '?').join(', ')
-      db.prepare('INSERT INTO calificaciones (' + cols + ') VALUES (' + vals + ')').run(...Object.values(createData))
+      await db.prepare('INSERT INTO calificaciones (' + cols + ') VALUES (' + vals + ')').run(...Object.values(createData))
       return db.prepare('SELECT * FROM calificaciones WHERE id = ?').get(createData.id)
     },
   },
@@ -171,7 +170,7 @@ const prisma = {
       const id = uuid()
       const cols = ['id', ...Object.keys(data).map(col)].join(', ')
       const vals = ['?', ...Object.keys(data).map(() => '?')].join(', ')
-      db.prepare('INSERT INTO notas_items (' + cols + ') VALUES (' + vals + ')').run(id, ...Object.values(data))
+      await db.prepare('INSERT INTO notas_items (' + cols + ') VALUES (' + vals + ')').run(id, ...Object.values(data))
       return db.prepare('SELECT * FROM notas_items WHERE id = ?').get(id)
     },
     findMany: async ({ where }) => {
@@ -190,21 +189,21 @@ const prisma = {
       const key = Object.keys(where)[0]
       const sets = Object.keys(data).map(k => col(k) + ' = ?').join(', ')
       const params = [...Object.values(data), where[key]]
-      db.prepare('UPDATE notas_items SET ' + sets + ' WHERE ' + col(key) + ' = ?').run(...params)
+      await db.prepare('UPDATE notas_items SET ' + sets + ' WHERE ' + col(key) + ' = ?').run(...params)
       return db.prepare('SELECT * FROM notas_items WHERE ' + col(key) + ' = ?').get(where[key])
     },
     delete: async ({ where }) => {
       const key = Object.keys(where)[0]
-      db.prepare('DELETE FROM notas_items WHERE ' + col(key) + ' = ?').run(where[key])
+      await db.prepare('DELETE FROM notas_items WHERE ' + col(key) + ' = ?').run(where[key])
     },
     upsert: async ({ where: { calificacionId_tipo_descripcion }, update, create }) => {
       const { calificacionId, tipo, descripcion } = calificacionId_tipo_descripcion
-      const existing = db.prepare('SELECT * FROM notas_items WHERE calificacionId = ? AND tipo = ? AND descripcion = ?').get(calificacionId, tipo, descripcion)
+      const existing = await db.prepare('SELECT * FROM notas_items WHERE calificacionId = ? AND tipo = ? AND descripcion = ?').get(calificacionId, tipo, descripcion)
       if (existing) {
         if (update && Object.keys(update).length > 0) {
           const sets = Object.keys(update).map(k => k + ' = ?').join(', ')
           const params = [...Object.values(update), existing.id]
-          db.prepare('UPDATE notas_items SET ' + sets + ' WHERE id = ?').run(...params)
+          await db.prepare('UPDATE notas_items SET ' + sets + ' WHERE id = ?').run(...params)
         }
         return db.prepare('SELECT * FROM notas_items WHERE id = ?').get(existing.id)
       }
@@ -212,7 +211,7 @@ const prisma = {
       const fullCreate = { ...create, id, calificacionId, tipo, descripcion }
       const cols = Object.keys(fullCreate).map(col).join(', ')
       const vals = Object.keys(fullCreate).map(() => '?').join(', ')
-      db.prepare('INSERT INTO notas_items (' + cols + ') VALUES (' + vals + ')').run(...Object.values(fullCreate))
+      await db.prepare('INSERT INTO notas_items (' + cols + ') VALUES (' + vals + ')').run(...Object.values(fullCreate))
       return db.prepare('SELECT * FROM notas_items WHERE id = ?').get(id)
     },
   },
