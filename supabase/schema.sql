@@ -50,7 +50,8 @@ CREATE TABLE IF NOT EXISTS docentes (
 CREATE TABLE IF NOT EXISTS materias (
     id TEXT PRIMARY KEY,
     nombre TEXT NOT NULL,
-    grado INTEGER NOT NULL
+    grado INTEGER,
+    nombre_norm TEXT
 );
 
 CREATE TABLE IF NOT EXISTS docente_materias (
@@ -194,6 +195,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_nota_item_unique ON notas_items (calificac
 CREATE UNIQUE INDEX IF NOT EXISTS periodos_config_sede_periodo_anio_key ON periodos_config (sede, periodo, anio);
 CREATE UNIQUE INDEX IF NOT EXISTS columnas_unicas ON columnas (curso, materiaId, periodo, anio, tipo, titulo);
 CREATE UNIQUE INDEX IF NOT EXISTS directores_grupo_docenteId_curso_key ON directores_grupo (docenteId, curso);
+CREATE UNIQUE INDEX IF NOT EXISTS materias_nombre_norm_key ON materias (nombre_norm);
 
 -- ─── Índices normales (rendimiento) ───
 CREATE INDEX IF NOT EXISTS estudiantes_curso_idx ON estudiantes (curso);
@@ -214,3 +216,10 @@ ALTER TABLE docente_materias ALTER COLUMN docenteid DROP NOT NULL;
 DROP INDEX IF EXISTS docente_materias_docenteid_materiaid_curso_key;
 DELETE FROM docente_materias a USING docente_materias b
     WHERE a.materiaid = b.materiaid AND a.curso = b.curso AND a.ctid > b.ctid;
+
+-- ─── Actualización idempotente (BD ya existentes): materias únicas ───
+-- ADITIVA (sin el UNIQUE sobre nombre_norm: los duplicados harían fallar este
+-- paso; ese índice lo crea scripts/fusionar-materias.js tras la fusión).
+ALTER TABLE materias ADD COLUMN IF NOT EXISTS nombre_norm TEXT;
+UPDATE materias SET nombre_norm = LOWER(nombre) WHERE nombre_norm IS NULL;
+ALTER TABLE materias ALTER COLUMN grado DROP NOT NULL;

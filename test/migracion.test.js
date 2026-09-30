@@ -11,6 +11,7 @@ const { ClienteSQLite } = require('../src/db/cliente')
 const MIGRACION_1 = '20260606211052_sqlite_inicial'
 const MIGRACION_2 = '20260928120000_tablas_adicionales_e_indices'
 const MIGRACION_3 = '20260928130000_docente_materias_maestro_opcional'
+const MIGRACION_4 = '20260930120000_materias_unicas'
 
 const TABLAS_ESPERADAS = [
   'usuarios', 'estudiantes', 'docentes', 'materias', 'docente_materias',
@@ -52,7 +53,7 @@ function indices(db) {
 test('una BD vacía queda con las 16 tablas y los índices nuevos', async () => {
   dbNueva = new ClienteSQLite(rutaNueva)
   const aplicadas = await aplicarMigraciones(dbNueva)
-  assert.deepEqual(aplicadas, [MIGRACION_1, MIGRACION_2, MIGRACION_3])
+  assert.deepEqual(aplicadas, [MIGRACION_1, MIGRACION_2, MIGRACION_3, MIGRACION_4])
 
   const creadas = await tablas(dbNueva)
   const faltantes = TABLAS_ESPERADAS.filter(t => !creadas.includes(t))
@@ -85,7 +86,7 @@ test('una BD vacía queda con las 16 tablas y los índices nuevos', async () => 
 test('el runner es idempotente: segunda pasada no aplica nada', async () => {
   assert.deepEqual(await aplicarMigraciones(dbNueva), [])
   const filas = await dbNueva.prepare('SELECT COUNT(*) c FROM _prisma_migrations').get()
-  assert.equal(filas.c, 3, 'no debe duplicar registros de migración')
+  assert.equal(filas.c, 4, 'no debe duplicar registros de migración')
   assert.deepEqual(await aplicarMigraciones(dbNueva), [])
 })
 
@@ -128,10 +129,11 @@ test('sobre la BD actual solo aplica la migración 3, sin tocar datos', async ()
     const antes = await db.prepare('SELECT COUNT(*) c FROM usuarios').get()
     assert.ok(antes.c >= 1000, 'la BD de prueba debe traer la matrícula real')
 
-    // Determinista: quita el registro de la migración 3 para forzar su re-aplicación
+    // Determinista: quita los registros de las migraciones 3 y 4 para forzar su re-aplicación
     await db.prepare('DELETE FROM _prisma_migrations WHERE migration_name = ?').run(MIGRACION_3)
+    await db.prepare('DELETE FROM _prisma_migrations WHERE migration_name = ?').run(MIGRACION_4)
     const aplicadas = await aplicarMigraciones(db)
-    assert.deepEqual(aplicadas, [MIGRACION_3], 'solo la migración 3 estaba pendiente')
+    assert.deepEqual(aplicadas, [MIGRACION_3, MIGRACION_4], 'solo las migraciones 3 y 4 estaban pendientes')
 
     const creadas = await tablas(db)
     const faltantes = TABLAS_ESPERADAS.filter(t => !creadas.includes(t))

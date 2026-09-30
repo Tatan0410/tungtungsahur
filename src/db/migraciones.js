@@ -66,23 +66,39 @@ function pendientesDe(db, dir = DIR_MIGRACIONES) {
 // Aplica las migraciones pendientes y devuelve los nombres aplicados.
 // Un error dentro de una migración la deja sin registrar: se reintenta en el
 // próximo arranque (los .sql son idempotentes: CREATE ... IF NOT EXISTS).
+// En SQLite las FKs se desactivan alrededor de las migraciones (las migraciones
+// reconstruyen tablas con DROP/RENAME y las tablas hijas las referencian; el
+// PRAGMA dentro de una transacción sería un no-op, así que va fuera). Se
+// restaura el estado previo al terminar.
 async function aplicarMigraciones(db, dir = DIR_MIGRACIONES) {
   await db.exec(DDL_REGISTRO)
 
   const filas = await db.prepare('SELECT migration_name FROM _prisma_migrations').all()
   const aplicadas = new Set(filas.map(f => f.migration_name))
 
+  let fksPrevias = null
+  if (db.motor === 'sqlite') {
+    fksPrevias = await db.prepare('PRAGMA foreign_keys').all().then(r => r[0]?.foreign_keys)
+    await db.exec('PRAGMA foreign_keys = OFF')
+  }
+
   const hechas = []
-  for (const m of pendientesDe(db, dir)) {
-    if (aplicadas.has(m.nombre)) continue
-    const ahora = new Date().toISOString()
-    await db.transaction(async () => {
-      await db.exec(m.sql)
-      await db.prepare(
-        'INSERT INTO _prisma_migrations (id, checksum, started_at, finished_at, migration_name, applied_steps_count) VALUES (?, ?, ?, ?, ?, 1)'
-      ).run(crypto.randomUUID(), m.checksum, ahora, ahora, m.nombre)
-    })()
-    hechas.push(m.nombre)
+  try {
+    for (const m of pendientesDe(db, dir)) {
+      if (aplicadas.has(m.nombre)) continue
+      const ahora = new Date().toISOString()
+      await db.transaction(async () => {
+        await db.exec(m.sql)
+        await db.prepare(
+          'INSERT INTO _prisma_migrations (id, checksum, started_at, finished_at, migration_name, applied_steps_count) VALUES (?, ?, ?, ?, ?, 1)'
+        ).run(crypto.randomUUID(), m.checksum, ahora, ahora, m.nombre)
+      })()
+      hechas.push(m.nombre)
+    }
+  } finally {
+    if (db.motor === 'sqlite' && fksPrevias) {
+      await db.exec('PRAGMA foreign_keys = ON').catch(() => {})
+    }
   }
   return hechas
 }
