@@ -215,26 +215,27 @@ async function main() {
   }
 
   await db.transaction(async () => {
-    // Reapuntar materiaId a la canónica
+    // La fusión en ~7 sentencias batcheadas (CASE/IN generados en JS): una
+    // transacción de ~100 consultas individuales por el pooler de Supavisor
+    // se topaba con el statement_timeout; con batches tarda ~2-3 s.
+    const expresa = v => "'" + String(v).replace(/'/g, "''") + "'"
+
+    // 1-3. Reapuntar materiaId a la canónica (una sentencia por tabla)
     for (const t of tablasConMateriaId) {
-      for (const [dup, canon] of idsDuplicados) {
-        await db.prepare(`UPDATE ${t} SET materiaId = ? WHERE materiaId = ?`).run(canon, dup)
-      }
+      const entradas = [...idsDuplicados.entries()].map(([dup, canon]) =>
+        `WHEN ${expresa(dup)} THEN ${expresa(canon)}`).join(' ')
+      await db.prepare(`UPDATE ${t} SET materiaId = CASE materiaId ${entradas} ELSE materiaId END WHERE materiaId IN (${[...idsDuplicados.keys()].map(expresa).join(',')})`).run()
     }
-    // Llenar nombre_norm de TODAS las filas con la normalización completa
-    for (const m of materias) {
-      await db.prepare('UPDATE materias SET nombre_norm = ? WHERE id = ?').run(normalizar(m.nombre), m.id)
-    }
-    // El nombre final (mejor escrita) va en la canónica
-    for (const f of fusiones) {
-      await db.prepare('UPDATE materias SET nombre = ? WHERE id = ?').run(f.nombreFinal, f.canonicaId)
-      await db.prepare('UPDATE materias SET nombre_norm = ? WHERE id = ?').run(f.norm, f.canonicaId)
-    }
-    // Eliminar duplicadas (después de reapuntar todo)
-    for (const dup of idsDuplicados.keys()) {
-      await db.prepare('DELETE FROM materias WHERE id = ?').run(dup)
-    }
-    // Índice UNIQUE (ya no hay duplicados)
+
+    // 4. Nombres finales (mejor escrita) + nombre_norm de TODAS las filas
+    const caseNombre = fusiones.map(f => `WHEN ${expresa(f.canonicaId)} THEN ${expresa(f.nombreFinal)}`).join(' ')
+    const caseNorm = materias.map(m => `WHEN ${expresa(m.id)} THEN ${expresa(normalizar(m.nombre))}`).join(' ')
+    await db.prepare(`UPDATE materias SET nombre = CASE id ${caseNombre} ELSE nombre END, nombre_norm = CASE id ${caseNorm} ELSE nombre_norm END`).run()
+
+    // 5. Eliminar duplicadas (después de reapuntar todo)
+    await db.prepare(`DELETE FROM materias WHERE id IN (${[...idsDuplicados.keys()].map(expresa).join(',')})`).run()
+
+    // 6. Índice UNIQUE (ya no hay duplicados)
     await db.exec('CREATE UNIQUE INDEX IF NOT EXISTS materias_nombre_norm_key ON materias (nombre_norm)')
   })()
 
