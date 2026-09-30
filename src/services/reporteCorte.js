@@ -10,7 +10,7 @@ async function calcularReporteCorte(curso, periodo, anio) {
   if (!sedeRow) return []
 
   const materias = await prisma._db.prepare(`
-    SELECT dm.id as dmId, dm.materiaId, m.nombre as materiaNombre, d.usuarioId as docenteUsuarioId
+    SELECT dm.id AS "dmId", dm.materiaId, m.nombre AS "materiaNombre", d.usuarioId AS "docenteUsuarioId"
     FROM docente_materias dm
     JOIN materias m ON m.id = dm.materiaId
     LEFT JOIN docentes d ON d.id = dm.docenteId
@@ -18,7 +18,7 @@ async function calcularReporteCorte(curso, periodo, anio) {
   `).all(curso)
 
   const estudiantes = await prisma._db.prepare(`
-    SELECT e.id as estudianteId, u.nombre as estudianteNombre
+    SELECT e.id AS "estudianteId", u.nombre AS "estudianteNombre"
     FROM estudiantes e
     JOIN usuarios u ON u.id = e.usuarioId
     WHERE e.curso = ?

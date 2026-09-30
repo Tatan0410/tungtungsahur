@@ -71,7 +71,7 @@ const prisma = {
   },
   docenteMateria: {
     findMany: async ({ where, include, orderBy }) => {
-      const rows = await db.prepare('SELECT dm.*, m.nombre as materiaNombre, m.grado as materiaGrado FROM docente_materias dm JOIN materias m ON m.id = dm.materiaId WHERE dm.docenteId = ? ORDER BY dm.curso ASC').all(where.docenteId)
+      const rows = await db.prepare('SELECT dm.*, m.nombre AS "materiaNombre", m.grado AS "materiaGrado" FROM docente_materias dm JOIN materias m ON m.id = dm.materiaId WHERE dm.docenteId = ? ORDER BY dm.curso ASC').all(where.docenteId)
       return rows.map(r => ({
         id: r.id, docenteId: r.docenteId, materiaId: r.materiaId, curso: r.curso,
         materia: include?.materia ? { id: r.materiaId, nombre: r.materiaNombre, grado: r.materiaGrado } : undefined,
@@ -106,7 +106,7 @@ const prisma = {
         conditions.push('c.' + col(k) + ' = ?'); params.push(v)
       }
       const joinMateria = include?.materia ? ' JOIN materias m ON m.id = c.materiaId' : ''
-      const selectMateria = include?.materia ? ', m.nombre as materiaNombre, m.grado as materiaGrado' : ''
+      const selectMateria = include?.materia ? ', m.nombre AS "materiaNombre", m.grado AS "materiaGrado"' : ''
       const order = orderBy?.materia?.nombre === 'asc' ? 'm.nombre ASC' : 'c.periodo ASC'
       const rows = await db.prepare('SELECT c.*' + selectMateria + ' FROM calificaciones c' + joinMateria + ' WHERE ' + conditions.join(' AND ') + ' ORDER BY ' + order).all(...params)
       for (const r of rows) {

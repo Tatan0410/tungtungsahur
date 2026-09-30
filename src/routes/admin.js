@@ -31,14 +31,14 @@ router.use(verificarTokenAdmin)
 router.get('/profesores', async (req, res) => {
   try {
     const rows = await prisma._db.prepare(`
-      SELECT u.id, u.nombre, u.documento, u.activo, d.id as docenteId
+      SELECT u.id, u.nombre, u.documento, u.activo, d.id AS "docenteId"
       FROM usuarios u
       JOIN docentes d ON d.usuarioId = u.id
       ORDER BY u.nombre ASC
     `).all()
     const data = await Promise.all(rows.map(async r => {
       const asignaciones = await prisma._db.prepare(`
-        SELECT dm.id as asignacionId, dm.curso, m.nombre as materia
+        SELECT dm.id AS "asignacionId", dm.curso, m.nombre as materia
         FROM docente_materias dm
         JOIN materias m ON m.id = dm.materiaId
         WHERE dm.docenteId = ?
@@ -212,7 +212,7 @@ router.get('/asignaciones', async (req, res) => {
     // LEFT JOIN: una asignación puede estar "sin maestro" (docenteId NULL)
     // mientras el admin la asigna a un curso.
     let sql = `
-      SELECT dm.id, dm.curso, u.nombre as profesor, m.nombre as materia, m.grado as materia_grado, d.id as docenteid
+      SELECT dm.id, dm.curso, u.nombre as profesor, m.nombre as materia, m.grado as materia_grado, d.id AS "docenteId"
       FROM docente_materias dm
       LEFT JOIN docentes d ON d.id = dm.docenteId
       LEFT JOIN usuarios u ON u.id = d.usuarioId
@@ -485,9 +485,9 @@ router.get('/observaciones', async (req, res) => {
 
     const rows = await prisma._db.prepare(`
       SELECT o.id, o.fecha, o.texto, o.tipo, o.creadoEn,
-             u2.nombre as estudianteNombre, e.curso, e.sede,
-             m.nombre as materiaNombre,
-             u.nombre as docenteNombre
+             u2.nombre AS "estudianteNombre", e.curso, e.sede,
+             m.nombre AS "materiaNombre",
+             u.nombre AS "docenteNombre"
       FROM observaciones o
       JOIN estudiantes e ON e.id = o.estudianteId
       JOIN usuarios u2 ON u2.id = e.usuarioId
@@ -608,7 +608,7 @@ router.get('/directores', async (req, res) => {
   try {
     const rows = await prisma._db.prepare(`
       SELECT dg.id, dg.docenteId, dg.curso, dg.creadoEn,
-             u.nombre as docenteNombre, u.documento as docenteDocumento
+             u.nombre AS "docenteNombre", u.documento AS "docenteDocumento"
       FROM directores_grupo dg
       JOIN docentes d ON d.id = dg.docenteId
       JOIN usuarios u ON u.id = d.usuarioId

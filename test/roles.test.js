@@ -84,6 +84,47 @@ test('rutas de docente: docente/admin 200 y estudiante 403', async () => {
   assert.equal((await api.get('/api/docente/mis-cursos', { token: tokenEstudiante })).status, 403)
 })
 
+test('mis-cursos devuelve materiaNombre y grado como claves correctas (aliases PG)', async () => {
+  // Regresión: en Postgres los alias sin comillas llegan en minúscula y el
+  // desplegable de materias del docente salía en blanco
+  const r = await api.get('/api/docente/mis-cursos', { token: tokenDocente })
+  assert.equal(r.status, 200)
+  const cursos = r.data.cursos
+  assert.ok(Array.isArray(cursos) && cursos.length > 0, 'el docente de prueba debe tener asignaciones')
+  for (const c of cursos) {
+    assert.ok(c.curso, 'cada curso debe traer su nombre')
+    for (const m of c.materias) {
+      assert.equal(typeof m.materiaNombre, 'string', 'materiaNombre debe ser string')
+      assert.ok(m.materiaNombre.length > 0, 'materiaNombre no debe venir vacío (alias PG en minúscula)')
+      assert.equal(typeof m.materiaId, 'string', 'materiaId debe ser string')
+    }
+  }
+})
+
+test('normalizarFila restaura las claves camelCase que Postgres pasa a minúscula', () => {
+  const { normalizarFila, normalizarFilas } = require('../src/db/cliente')
+  const filaPg = {
+    id: 'abc', usuarioid: 'u1', materiaid: 'm1', docenteid: 'd1',
+    estudianteid: 'e1', calificacionid: 'c1', creadoen: '2026-01-01',
+    actualizadoen: '2026-01-02', rutapdf: '/x.pdf', bloqueadohasta: null,
+  }
+  const fila = normalizarFila(filaPg)
+  assert.equal(fila.usuarioId, 'u1')
+  assert.equal(fila.materiaId, 'm1')
+  assert.equal(fila.docenteId, 'd1')
+  assert.equal(fila.estudianteId, 'e1')
+  assert.equal(fila.calificacionId, 'c1')
+  assert.equal(fila.creadoEn, '2026-01-01')
+  assert.equal(fila.actualizadoEn, '2026-01-02')
+  assert.equal(fila.rutaPdf, '/x.pdf')
+  assert.equal(fila.bloqueadoHasta, null)
+  assert.equal(fila.id, 'abc', 'las claves que ya están bien no se tocan')
+  const lista = normalizarFilas([filaPg, { id: 'x', creadoen: 'y' }])
+  assert.equal(lista[1].creadoEn, 'y')
+  assert.equal(normalizarFilas(null), null)
+  assert.equal(normalizarFila(undefined), undefined)
+})
+
 test('login de estudiante devuelve curso y sede', async () => {
   const r = await api.post('/api/auth/login', { body: { documento: correoEstudiante, password: 'Estudiante123' } })
   assert.equal(r.status, 200)

@@ -914,7 +914,7 @@ router.get('/observaciones', async (req, res) => {
     if (docenteId) { where.push('o.docenteId = ?'); params.push(docenteId) }
     if (where.length === 0) return res.status(400).json({ error: 'Se requiere al menos estudianteId o docenteId' })
     const rows = await prisma._db.prepare(`
-      SELECT o.*, m.nombre as materiaNombre, u.nombre as docenteNombre
+      SELECT o.*, m.nombre AS "materiaNombre", u.nombre AS "docenteNombre"
       FROM observaciones o
       LEFT JOIN materias m ON m.id = o.materiaId
       LEFT JOIN docentes d ON d.id = o.docenteId
@@ -1002,7 +1002,7 @@ router.put('/observaciones/:id', async (req, res) => {
     await prisma._db.prepare(`UPDATE observaciones SET ${updates.join(', ')} WHERE id = ?`).run(...params)
 
     const updated = await prisma._db.prepare(`
-      SELECT o.*, m.nombre as materiaNombre, u.nombre as docenteNombre
+      SELECT o.*, m.nombre AS "materiaNombre", u.nombre AS "docenteNombre"
       FROM observaciones o
       LEFT JOIN materias m ON m.id = o.materiaId
       LEFT JOIN docentes d ON d.id = o.docenteId
@@ -1022,7 +1022,7 @@ router.get('/mis-observaciones', async (req, res) => {
       return res.status(403).json({ error: 'Solo para estudiantes' })
     }
     const rows = await prisma._db.prepare(`
-      SELECT o.id, o.texto, o.tipo, o.fecha, o.creadoEn, m.nombre as materiaNombre, u.nombre as docenteNombre
+      SELECT o.id, o.texto, o.tipo, o.fecha, o.creadoEn, m.nombre AS "materiaNombre", u.nombre AS "docenteNombre"
       FROM observaciones o
       LEFT JOIN materias m ON m.id = o.materiaId
       LEFT JOIN docentes d ON d.id = o.docenteId
@@ -1075,8 +1075,8 @@ router.get('/observaciones-curso', async (req, res) => {
     }
 
     const rows = await prisma._db.prepare(`
-      SELECT o.*, m.nombre as materiaNombre, u.nombre as docenteNombre,
-             e.curso as estudianteCurso, u2.nombre as estudianteNombre
+      SELECT o.*, m.nombre AS "materiaNombre", u.nombre AS "docenteNombre",
+             e.curso AS "estudianteCurso", u2.nombre AS "estudianteNombre"
       FROM observaciones o
       JOIN estudiantes e ON e.id = o.estudianteId
       JOIN usuarios u2 ON u2.id = e.usuarioId
@@ -1167,7 +1167,8 @@ router.get('/mi-reporte-corte', async (req, res) => {
       return res.status(404).json({ error: 'Estudiante no encontrado' })
     }
     const curso = estudiante.curso
-    const reporte = await calcularReporteCorte(curso, parseInt(periodo), parseInt(anio))
+    const rep = await calcularReporteCorte(curso, parseInt(periodo), parseInt(anio))
+    const reporte = rep
       .filter(r => r.estudianteId === req.usuario.estudianteId)
       .map(r => ({
         materiaId: r.materiaId,
