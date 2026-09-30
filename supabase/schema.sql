@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS materias (
 
 CREATE TABLE IF NOT EXISTS docente_materias (
     id TEXT PRIMARY KEY,
-    docenteId TEXT NOT NULL,
+    docenteId TEXT,
     materiaId TEXT NOT NULL,
     curso TEXT NOT NULL,
     CONSTRAINT docente_materias_docenteId_fkey FOREIGN KEY (docenteId) REFERENCES docentes (id) ON DELETE RESTRICT ON UPDATE CASCADE,
@@ -186,7 +186,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS estudiantes_usuarioId_key ON estudiantes (usua
 CREATE UNIQUE INDEX IF NOT EXISTS estudiantes_documento_key ON estudiantes (documento);
 CREATE UNIQUE INDEX IF NOT EXISTS estudiantes_codigo_key ON estudiantes (codigo);
 CREATE UNIQUE INDEX IF NOT EXISTS docentes_usuarioId_key ON docentes (usuarioId);
-CREATE UNIQUE INDEX IF NOT EXISTS docente_materias_docenteId_materiaId_curso_key ON docente_materias (docenteId, materiaId, curso);
+CREATE UNIQUE INDEX IF NOT EXISTS docente_materias_materiaId_curso_key ON docente_materias (materiaId, curso);
 CREATE UNIQUE INDEX IF NOT EXISTS calificaciones_estudianteId_materiaId_periodo_anio_key ON calificaciones (estudianteId, materiaId, periodo, anio);
 CREATE UNIQUE INDEX IF NOT EXISTS consultas_estudiantes_estudianteId_periodo_anio_key ON consultas_estudiantes (estudianteId, periodo, anio);
 CREATE UNIQUE INDEX IF NOT EXISTS informes_estudianteId_periodo_anio_key ON informes (estudianteId, periodo, anio);
@@ -205,3 +205,12 @@ CREATE INDEX IF NOT EXISTS calificaciones_materiaId_idx ON calificaciones (mater
 CREATE INDEX IF NOT EXISTS calificaciones_docenteId_idx ON calificaciones (docenteId);
 CREATE INDEX IF NOT EXISTS password_resets_usuarioId_idx ON password_resets (usuarioId);
 CREATE INDEX IF NOT EXISTS directores_grupo_curso_idx ON directores_grupo (curso);
+
+-- ─── Actualización idempotente (BD ya existentes): maestro opcional ───
+-- En BDs creadas con el esquema antiguo, docenteId era NOT NULL y el índice
+-- único incluía docenteId. Esto las deja en el nuevo formato sin borrar datos
+-- (si se vuelve a pegar todo el archivo, es un no-op).
+ALTER TABLE docente_materias ALTER COLUMN docenteid DROP NOT NULL;
+DROP INDEX IF EXISTS docente_materias_docenteid_materiaid_curso_key;
+DELETE FROM docente_materias a USING docente_materias b
+    WHERE a.materiaid = b.materiaid AND a.curso = b.curso AND a.ctid > b.ctid;

@@ -42,6 +42,12 @@ async function arrancarServidor(opciones = {}) {
     cwd: RAIZ,
     env: {
       ...process.env,
+      // FUERZA SQLite: si el shell dejara DATABASE_URL definido (o dotenv la
+      // inyectara desde .env), crearCliente preferiría Postgres y los tests
+      // golpearían Supabase en vez de la copia temporal. Cadena vacía = el
+      // servidor la salta (dotenv no pisa variables ya definidas) y
+      // crearCliente() cae en la rama SQLite con DATABASE_PATH.
+      DATABASE_URL: '',
       DATABASE_PATH: dbPath,
       PORT: String(puerto),
       SMTP_HOST: '',

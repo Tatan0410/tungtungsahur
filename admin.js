@@ -243,15 +243,16 @@ else if (cmd === 'importar-excel') {
 
 // ---- MIGRACIONES ----
 else if (cmd === 'migrar') {
-  const { aplicarMigraciones } = require('./src/db/migraciones');
-  const aplicadas = aplicarMigraciones(db);
-  if (aplicadas.length === 0) ok('Base de datos al día (sin migraciones pendientes)');
-  else {
-    ok('Migraciones aplicadas:');
-    aplicadas.forEach(m => console.log('   → ' + m));
-  }
+  const { aplicarMigraciones } = require('./src/db/migraciones')
+  aplicarMigraciones(db).then(aplicadas => {
+    if (aplicadas.length === 0) ok('Base de datos al día (sin migraciones pendientes)')
+    else {
+      ok('Migraciones aplicadas:')
+      aplicadas.forEach(m => console.log('   → ' + m))
+    }
+  })
 }
-
+//
 // ---- AYUDA ----
 else {
   console.log(`

@@ -209,11 +209,13 @@ router.get('/cursos', async (req, res) => {
 
 router.get('/asignaciones', async (req, res) => {
   try {
+    // LEFT JOIN: una asignación puede estar "sin maestro" (docenteId NULL)
+    // mientras el admin la asigna a un curso.
     let sql = `
-      SELECT dm.id, dm.curso, u.nombre as profesor, m.nombre as materia, m.grado as materia_grado
+      SELECT dm.id, dm.curso, u.nombre as profesor, m.nombre as materia, m.grado as materia_grado, d.id as docenteid
       FROM docente_materias dm
-      JOIN docentes d ON d.id = dm.docenteId
-      JOIN usuarios u ON u.id = d.usuarioId
+      LEFT JOIN docentes d ON d.id = dm.docenteId
+      LEFT JOIN usuarios u ON u.id = d.usuarioId
       JOIN materias m ON m.id = dm.materiaId
     `
     const params = []
@@ -221,7 +223,7 @@ router.get('/asignaciones', async (req, res) => {
       sql += ' WHERE dm.curso = ?'
       params.push(String(req.query.curso))
     }
-    sql += ' ORDER BY dm.curso, u.nombre, m.nombre'
+    sql += " ORDER BY dm.curso, m.nombre"
     res.json(await prisma._db.prepare(sql).all(...params))
   } catch (error) {
     console.error('Error GET /asignaciones:', error)
@@ -229,25 +231,55 @@ router.get('/asignaciones', async (req, res) => {
   }
 })
 
+async function resolverDocenteId(docenteId, docenteDocumento) {
+  if (docenteId) return docenteId
+  if (!docenteDocumento) return null
+  const user = await prisma._db.prepare('SELECT id FROM usuarios WHERE documento = ? AND rol = ?').get(docenteDocumento, 'DOCENTE')
+  if (!user) return undefined
+  const doc = await prisma._db.prepare('SELECT id FROM docentes WHERE usuarioId = ?').get(user.id)
+  if (!doc) return undefined
+  return doc.id
+}
+
 router.post('/asignaciones', async (req, res) => {
   try {
-    let { docenteDocumento, materiaId, curso } = req.body
-    let docenteId = req.body.docenteId
-    if (!docenteId && docenteDocumento) {
-      const user = await prisma._db.prepare('SELECT id FROM usuarios WHERE documento = ? AND rol = ?').get(docenteDocumento, 'DOCENTE')
-      if (!user) return res.status(404).json({ error: 'Profesor no encontrado' })
-      const doc = await prisma._db.prepare('SELECT id FROM docentes WHERE usuarioId = ?').get(user.id)
-      if (!doc) return res.status(404).json({ error: 'Docente no encontrado' })
-      docenteId = doc.id
-    }
-    if (!docenteId || !materiaId || !curso) return res.status(400).json({ error: 'docenteId, materiaId y curso requeridos' })
-    const existente = await prisma._db.prepare('SELECT id FROM docente_materias WHERE docenteId = ? AND materiaId = ? AND curso = ?').get(docenteId, materiaId, curso)
-    if (existente) return res.status(409).json({ error: 'Esa asignación ya existe' })
+    const { docenteDocumento, materiaId, curso } = req.body
+    const docenteId = await resolverDocenteId(req.body.docenteId, docenteDocumento)
+    if (docenteId === undefined) return res.status(404).json({ error: 'Profesor no encontrado' })
+    if (!materiaId || !curso) return res.status(400).json({ error: 'materiaId y curso requeridos' })
+    // Una materia se asigna una vez por curso (con o sin maestro)
+    const existente = await prisma._db.prepare('SELECT id FROM docente_materias WHERE materiaId = ? AND curso = ?').get(materiaId, curso)
+    if (existente) return res.status(409).json({ error: 'Esa materia ya está asignada a ese curso' })
     const id = require('crypto').randomUUID()
     await prisma._db.prepare('INSERT INTO docente_materias (id, docenteId, materiaId, curso) VALUES (?, ?, ?, ?)').run(id, docenteId, materiaId, curso)
     res.status(201).json({ mensaje: 'Asignación creada', id })
   } catch (error) {
     console.error('Error POST /asignaciones:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// Asignar o cambiar el maestro de una asignación ya creada
+// (también acepta docenteId: null para dejarla sin maestro).
+router.put('/asignaciones/:id', async (req, res) => {
+  try {
+    const asig = await prisma._db.prepare('SELECT id FROM docente_materias WHERE id = ?').get(req.params.id)
+    if (!asig) return res.status(404).json({ error: 'Asignación no encontrada' })
+
+    const { docenteId, docenteDocumento } = req.body
+    if (docenteId === undefined && docenteDocumento === undefined) {
+      return res.status(400).json({ error: 'docenteId o docenteDocumento requeridos' })
+    }
+
+    // docenteId/docenteDocumento en null → dejar la asignación sin maestro
+    const quitaMaestro = docenteId === null || docenteDocumento === null
+    const resuelto = quitaMaestro ? null : await resolverDocenteId(docenteId, docenteDocumento)
+    if (resuelto === undefined) return res.status(404).json({ error: 'Profesor no encontrado' })
+
+    await prisma._db.prepare('UPDATE docente_materias SET docenteId = ? WHERE id = ?').run(resuelto, req.params.id)
+    res.json({ mensaje: 'Maestro asignado' })
+  } catch (error) {
+    console.error('Error PUT /asignaciones/:id:', error)
     res.status(500).json({ error: 'Error interno' })
   }
 })

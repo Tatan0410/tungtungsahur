@@ -6,9 +6,11 @@ const path = require('node:path')
 const Database = require('better-sqlite3')
 const { arrancarServidor, RAIZ } = require('./helpers/servidor')
 const { aplicarMigraciones } = require('../src/db/migraciones')
+const { ClienteSQLite } = require('../src/db/cliente')
 
 const MIGRACION_1 = '20260606211052_sqlite_inicial'
 const MIGRACION_2 = '20260928120000_tablas_adicionales_e_indices'
+const MIGRACION_3 = '20260928130000_docente_materias_maestro_opcional'
 
 const TABLAS_ESPERADAS = [
   'usuarios', 'estudiantes', 'docentes', 'materias', 'docente_materias',
@@ -40,49 +42,55 @@ after(() => {
 })
 
 function tablas(db) {
-  return db.prepare('SELECT name FROM sqlite_master').all().map(r => r.name)
+  return db.prepare('SELECT name FROM sqlite_master').all().then(r => r.map(x => x.name))
 }
 
 function indices(db) {
-  return db.prepare('SELECT name FROM sqlite_master').all().map(r => r.name)
+  return db.prepare('SELECT name FROM sqlite_master').all().then(r => r.map(x => x.name))
 }
 
-test('una BD vacía queda con las 16 tablas y los índices nuevos', () => {
-  dbNueva = new Database(rutaNueva)
-  const aplicadas = aplicarMigraciones(dbNueva)
-  assert.deepEqual(aplicadas, [MIGRACION_1, MIGRACION_2])
+test('una BD vacía queda con las 16 tablas y los índices nuevos', async () => {
+  dbNueva = new ClienteSQLite(rutaNueva)
+  const aplicadas = await aplicarMigraciones(dbNueva)
+  assert.deepEqual(aplicadas, [MIGRACION_1, MIGRACION_2, MIGRACION_3])
 
-  const creadas = tablas(dbNueva)
+  const creadas = await tablas(dbNueva)
   const faltantes = TABLAS_ESPERADAS.filter(t => !creadas.includes(t))
   assert.deepEqual(faltantes, [], 'tablas que no se crearon: ' + faltantes.join(', '))
   assert.equal(creadas.filter(t => TABLAS_ESPERADAS.includes(t)).length, TABLAS_ESPERADAS.length)
 
-  const creados = indices(dbNueva)
+  const creados = await indices(dbNueva)
   for (const [tabla, nombre] of INDICES_ESPERADOS) {
     assert.ok(creados.includes(nombre), `falta el índice ${nombre} (${tabla})`)
   }
+  assert.ok(creados.includes('docente_materias_materiaId_curso_key'), 'falta el índice único materiaId+curso')
 
   // Los índices deben traducirse en un plan de consulta (SEARCH, no SCAN)
-  const plan = dbNueva
+  const plan = await dbNueva
     .prepare('EXPLAIN QUERY PLAN SELECT e.id FROM estudiantes e WHERE e.curso = ?')
-    .all('301').map(r => r.detail).join(' | ')
+    .all('301').then(r => r.map(x => x.detail).join(' | '))
   assert.match(plan, /SEARCH/, 'se esperaba SEARCH gracias al índice, salió: ' + plan)
 
-  const planObs = dbNueva
+  const planObs = await dbNueva
     .prepare('EXPLAIN QUERY PLAN SELECT o.id FROM observaciones o WHERE o.estudianteId = ?')
-    .all('x').map(r => r.detail).join(' | ')
+    .all('x').then(r => r.map(x => x.detail).join(' | '))
   assert.match(planObs, /SEARCH/, 'se esperaba SEARCH gracias al índice, salió: ' + planObs)
+
+  // docenteId ahora es opcional: una fila puede nacer sin maestro
+  const info = await dbNueva.prepare('PRAGMA table_info(docente_materias)').all()
+  const col = info.find(c => /docenteid/i.test(c.name))
+  assert.equal(col.notnull, 0, 'docenteId debe admitir NULL (maestro opcional)')
 })
 
-test('el runner es idempotente: segunda pasada no aplica nada', () => {
-  assert.deepEqual(aplicarMigraciones(dbNueva), [])
-  const filas = dbNueva.prepare('SELECT COUNT(*) c FROM _prisma_migrations').get().c
-  assert.equal(filas, 2, 'no debe duplicar registros de migración')
-  assert.deepEqual(aplicarMigraciones(dbNueva), [])
+test('el runner es idempotente: segunda pasada no aplica nada', async () => {
+  assert.deepEqual(await aplicarMigraciones(dbNueva), [])
+  const filas = await dbNueva.prepare('SELECT COUNT(*) c FROM _prisma_migrations').get()
+  assert.equal(filas.c, 3, 'no debe duplicar registros de migración')
+  assert.deepEqual(await aplicarMigraciones(dbNueva), [])
 })
 
 test('el servidor arranca sobre la BD recién migrada y sirve la API', async () => {
-  dbNueva.close()
+  await dbNueva.close()
   dbNueva = null
   const srv = await arrancarServidor({ dbPath: rutaNueva })
   try {
@@ -94,7 +102,9 @@ test('el servidor arranca sobre la BD recién migrada y sirve la API', async () 
     assert.equal(periodos.status, 200)
     const body = await periodos.json()
     assert.ok(Array.isArray(body))
-    assert.equal(body.length, 0, 'una BD vacía no tiene períodos todavía')
+    // El servidor auto-crea los 4 períodos del año para la sede por defecto
+    // aunque la BD esté vacía de estudiantes
+    assert.equal(body.length, 4, 'una BD vacía queda con los 4 períodos de la sede por defecto')
 
     const login = await fetch(srv.base + '/api/auth/login', {
       method: 'POST',
@@ -107,32 +117,34 @@ test('el servidor arranca sobre la BD recién migrada y sirve la API', async () 
   }
 })
 
-test('sobre la BD actual solo aplica la migración 2, sin tocar datos', async () => {
+test('sobre la BD actual solo aplica la migración 3, sin tocar datos', async () => {
   const ruta = path.join(dir, 'actual.db')
   const origen = new Database(path.join(RAIZ, 'prisma', 'dev.db'), { readonly: true })
   await origen.backup(ruta)
   origen.close()
 
-  const db = new Database(ruta)
+  const db = new ClienteSQLite(ruta)
   try {
-    const antes = db.prepare('SELECT COUNT(*) c FROM usuarios').get().c
-    assert.ok(antes >= 1000, 'la BD de prueba debe traer la matrícula real')
+    const antes = await db.prepare('SELECT COUNT(*) c FROM usuarios').get()
+    assert.ok(antes.c >= 1000, 'la BD de prueba debe traer la matrícula real')
 
-    const aplicadas = aplicarMigraciones(db)
-    assert.deepEqual(aplicadas, [MIGRACION_2], 'la inicial ya estaba registrada')
+    // Determinista: quita el registro de la migración 3 para forzar su re-aplicación
+    await db.prepare('DELETE FROM _prisma_migrations WHERE migration_name = ?').run(MIGRACION_3)
+    const aplicadas = await aplicarMigraciones(db)
+    assert.deepEqual(aplicadas, [MIGRACION_3], 'solo la migración 3 estaba pendiente')
 
-    const creadas = tablas(db)
+    const creadas = await tablas(db)
     const faltantes = TABLAS_ESPERADAS.filter(t => !creadas.includes(t))
     assert.deepEqual(faltantes, [])
 
-    const despues = db.prepare('SELECT COUNT(*) c FROM usuarios').get().c
-    assert.equal(despues, antes, 'los usuarios no deben cambiar')
+    const despues = await db.prepare('SELECT COUNT(*) c FROM usuarios').get()
+    assert.equal(despues.c, antes.c, 'los usuarios no deben cambiar')
 
-    const plan = db
+    const plan = await db
       .prepare('EXPLAIN QUERY PLAN SELECT e.id FROM estudiantes e WHERE e.curso = ?')
-      .all('301').map(r => r.detail).join(' | ')
+      .all('301').then(r => r.map(x => x.detail).join(' | '))
     assert.match(plan, /SEARCH/, 'el índice debe estar activo en la BD real: ' + plan)
   } finally {
-    db.close()
+    await db.close()
   }
 })

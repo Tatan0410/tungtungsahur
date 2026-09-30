@@ -149,7 +149,29 @@ router.get('/yo', async (req, res) => {
     const token = authHeader.split(' ')[1]
     const datos = jwt.verify(token, process.env.JWT_SECRET, { issuer: 'sagrado-corazon-sistema', audience: 'sagrado-corazon-web' })
 
-    res.json({ usuario: datos })
+    // Devuelve los datos FRESCOS de la BD (no los del token): así el panel
+    // refleja cambios hechos después del login, como el correo que el
+    // administrador le asignó al docente.
+    const usuario = await prisma.usuario.findUnique({
+      where: { id: datos.id },
+      include: { estudiante: true, docente: true }
+    })
+    if (!usuario || !usuario.activo) return res.status(401).json({ error: 'Token inválido o expirado' })
+
+    res.json({
+      usuario: {
+        nombre: usuario.nombre,
+        correo: usuario.correo,
+        documento: usuario.documento,
+        rol:    usuario.rol,
+        docenteId: usuario.docente?.id || null,
+        ...(usuario.estudiante && {
+          grado:  usuario.estudiante.grado,
+          curso:  usuario.estudiante.curso,
+          sede:   usuario.estudiante.sede,
+        }),
+      }
+    })
   } catch (error) {
     res.status(401).json({ error: 'Token inválido o expirado' })
   }
@@ -238,7 +260,9 @@ router.post('/recuperar', async (req, res) => {
     const expira = new Date(Date.now() + 15 * 60 * 1000).toISOString()
     // Pedir un código nuevo reinicia los intentos fallidos del ciclo anterior
     await prisma._db.prepare("DELETE FROM password_resets WHERE usuarioId = ? AND codigo LIKE 'INVALID-%'").run(usuario.id)
-    await prisma._db.prepare('INSERT INTO password_resets (id, usuarioId, codigo, expira) VALUES (?, ?, ?, ?)').run(require('crypto').randomUUID(), usuario.id, codigo, expira)
+    // creadoEn explícito en ISO-8601: el DEFAULT CURRENT_TIMESTAMP de SQLite
+    // guarda 'YYYY-MM-DD HH:MM:SS' (sin T) y no compara bien contra los ISO.
+    await prisma._db.prepare('INSERT INTO password_resets (id, usuarioId, codigo, expira, creadoEn) VALUES (?, ?, ?, ?, ?)').run(require('crypto').randomUUID(), usuario.id, codigo, expira, new Date().toISOString())
 
     await enviarCodigoRecuperacion(usuario.correo, codigo)
     res.json({ mensaje: 'Si el correo existe, recibirás un código de recuperación.' })
@@ -277,13 +301,13 @@ router.post('/recuperar/verificar', async (req, res) => {
       return res.status(429).json({ error: 'Demasiados intentos fallidos. Pide un nuevo código.' })
     }
 
-    const reset = prisma._db.prepare(
+    const reset = await prisma._db.prepare(
       'SELECT * FROM password_resets WHERE usuarioId = ? AND codigo = ? AND usado = 0 ORDER BY creadoEn DESC LIMIT 1'
     ).get(usuario.id, String(codigo))
     if (!reset || new Date(reset.expira) < new Date()) {
       // Registrar intento fallido
-      await prisma._db.prepare('INSERT INTO password_resets (id, usuarioId, codigo, expira) VALUES (?, ?, ?, ?)').run(
-        require('crypto').randomUUID(), usuario.id, 'INVALID-' + require('crypto').randomUUID(), new Date(Date.now() + 15 * 60 * 1000).toISOString()
+      await prisma._db.prepare('INSERT INTO password_resets (id, usuarioId, codigo, expira, creadoEn) VALUES (?, ?, ?, ?, ?)').run(
+        require('crypto').randomUUID(), usuario.id, 'INVALID-' + require('crypto').randomUUID(), new Date(Date.now() + 15 * 60 * 1000).toISOString(), new Date().toISOString()
       )
       return res.status(400).json({ error: 'Código inválido o expirado. Te quedan ' + (MAX_INTENTOS_CODIGO - (intentosRecientes.c + 1)) + ' intentos.' })
     }

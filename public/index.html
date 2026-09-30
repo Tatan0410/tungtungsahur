@@ -492,6 +492,7 @@ body::before {
         Menu
       </div>
       <button class="btn-sm" onclick="cargarAdminProfesores()" style="width:100%;text-align:left;justify-content:flex-start;margin-bottom:6px;font-size:12px;padding:9px 10px;" id="nav-profesores">👤 Profesores</button>
+      <button class="btn-sm" onclick="cargarAdminMaterias()" style="width:100%;text-align:left;justify-content:flex-start;margin-bottom:6px;font-size:12px;padding:9px 10px;" id="nav-materias">📚 Materias</button>
       <button class="btn-sm" onclick="cargarAdminAsignaciones()" style="width:100%;text-align:left;justify-content:flex-start;margin-bottom:6px;font-size:12px;padding:9px 10px;" id="nav-asignaciones">📋 Asignaciones</button>
       <button class="btn-sm" onclick="cargarAdminPeriodos()" style="width:100%;text-align:left;justify-content:flex-start;margin-bottom:6px;font-size:12px;padding:9px 10px;" id="nav-periodos">📅 Períodos</button>
       <button class="btn-sm" onclick="cargarAdminReporteCorte()" style="width:100%;text-align:left;justify-content:flex-start;margin-bottom:6px;font-size:12px;padding:9px 10px;" id="nav-reporte">⚠️ Reporte</button>
@@ -571,31 +572,52 @@ body::before {
     </div>
   </div>
 
+  <div id="admin-materias-section" style="display:none;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+      <div style="font-size:15px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);">Materias</div>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:16px;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px;">
+      <div><div class="lbl">Nombre de la materia</div><input class="inp" id="admin-input-materia-nombre" placeholder="Ej: Matemáticas" style="width:220px;"></div>
+      <div><div class="lbl">Grado</div><select class="sel" id="admin-sel-materia-grado"><option value="6">6°</option><option value="7">7°</option><option value="8">8°</option><option value="9">9°</option><option value="10">10°</option><option value="11">11°</option></select></div>
+      <div><button class="btn-sm success" onclick="adminCrearMateria()" style="font-weight:600;padding:8px 16px;">➕ Crear materia</button></div>
+    </div>
+    <div style="overflow-x:auto;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:400px;">
+        <thead><tr style="background:var(--cream-100);">
+          <th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);">Nombre</th>
+          <th style="padding:10px 12px;text-align:center;border-bottom:1px solid var(--line);">Grado</th>
+        </tr></thead>
+        <tbody id="admin-tb-materias"></tbody>
+      </table>
+    </div>
+    <div style="font-size:11px;color:var(--ink-400);margin-top:10px;">Para asignar una materia a un curso y darle maestro, ve a la pestaña 📋 Asignaciones.</div>
+  </div>
+
   <div id="admin-asignaciones-section" style="display:none;">
-    <div style="font-size:15px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);margin-bottom:12px;">Asignaciones por Curso</div>
+    <div style="font-size:15px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);margin-bottom:12px;">Materias por Curso</div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:16px;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px;">
       <div><div class="lbl">Curso</div><select class="sel" id="admin-sel-curso-asign" style="min-width:150px;" onchange="cargarAsignacionesCurso()"><option value="">Seleccionar</option></select></div>
       <div><button class="btn-sm primary" onclick="cargarAsignacionesCurso()" style="font-weight:600;">Ver asignaciones</button></div>
     </div>
     <div id="admin-asignaciones-curso-info" style="">
-      <div style="color:var(--ink-400);text-align:center;padding:16px;font-size:13px;background:var(--paper);border:1px dashed var(--line);border-radius:var(--r-md);margin-bottom:16px;">Selecciona un curso para ver sus materias y profesores</div>
+      <div style="color:var(--ink-400);text-align:center;padding:16px;font-size:13px;background:var(--paper);border:1px dashed var(--line);border-radius:var(--r-md);margin-bottom:16px;">Selecciona un curso para ver sus materias y asignarles maestro</div>
     </div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:16px;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px;">
-      <div><div class="lbl">Nueva asignación</div><span style="font-size:11px;color:var(--ink-400);">Selecciona curso primero</span></div>
-      <div><div class="lbl">Profesor</div><select class="sel" id="admin-sel-profesor" style="min-width:220px;"><option value="">Seleccionar</option></select></div>
-      <div><div class="lbl">Materia</div><select class="sel" id="admin-sel-materia" style="min-width:180px;"><option value="">Seleccionar</option></select></div>
-      <div><button class="btn-sm success" onclick="adminCrearAsignacion()" style="font-weight:600;padding:8px 16px;">➕ Asignar</button></div>
-    </div>
-    <div style="overflow-x:auto;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);">
-      <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:500px;">
-        <thead><tr style="background:var(--cream-100);">
-          <th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);">Profesor</th>
-          <th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);">Curso</th>
-          <th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);">Materia</th>
-          <th style="padding:10px 12px;text-align:center;border-bottom:1px solid var(--line);">Acción</th>
-        </tr></thead>
-        <tbody id="admin-tb-asignaciones"></tbody>
-      </table>
+    <div id="admin-panel-asignar" style="display:none;">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:16px;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px;">
+        <div><div class="lbl">Agregar materia al curso</div><select class="sel" id="admin-sel-materia" style="min-width:180px;"><option value="">Seleccionar materia</option></select></div>
+        <div><div class="lbl">Maestro (opcional)</div><select class="sel" id="admin-sel-profesor" style="min-width:220px;"><option value="">Sin maestro</option></select></div>
+        <div><button class="btn-sm success" onclick="adminCrearAsignacion()" style="font-weight:600;padding:8px 16px;">➕ Asignar al curso</button></div>
+      </div>
+      <div style="overflow-x:auto;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:500px;">
+          <thead><tr style="background:var(--cream-100);">
+            <th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);">Materia</th>
+            <th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);">Maestro</th>
+            <th style="padding:10px 12px;text-align:center;border-bottom:1px solid var(--line);">Acción</th>
+          </tr></thead>
+          <tbody id="admin-tb-asignaciones"></tbody>
+        </table>
+      </div>
     </div>
   </div>
 
@@ -1033,10 +1055,7 @@ function showStudentPortal(user) {
     return;
   }
   document.getElementById('stu-name').textContent = user.nombre || 'Estudiante';
-  document.getElementById('stu-info').textContent = (user.correo || '') + (user.curso ? ' · ' + user.curso : '');
-  if (user.grado) {
-    document.getElementById('stu-info').textContent += ' · ' + user.grado;
-  }
+  document.getElementById('stu-info').textContent = (user.curso ? user.curso : '') + (user.grado ? ' · ' + user.grado + '°' : '');
   document.getElementById('stu-period-pill').textContent = 'Período ' + currentPeriodo + ' · ' + new Date().getFullYear();
   document.getElementById('stu-informe1-titulo').textContent = 'Informe final · Período 1 · ' + new Date().getFullYear();
   document.getElementById('stu-informe2-titulo').textContent = 'Informe final · Período 2 · ' + new Date().getFullYear();
@@ -1055,10 +1074,48 @@ function showTeacherPortal(user) {
   document.getElementById('period-pill').textContent = 'Período ' + currentPeriodo + ' · ' + new Date().getFullYear()
   showScreen('teacher')
   cargarAsignaciones()
+  iniciarRefrescoDocente()
+}
+
+// Refresco en tiempo real del panel docente: trae el correo actual (el que el
+// admin le asignó) y las materias/cursos nuevos sin recargar la página.
+let _refrescoDocenteTimer = null
+function iniciarRefrescoDocente() {
+  if (_refrescoDocenteTimer) clearInterval(_refrescoDocenteTimer)
+  refrescarPanelDocente()
+  _refrescoDocenteTimer = setInterval(refrescarPanelDocente, 30000)
+}
+
+async function refrescarPanelDocente() {
+  if (!currentToken) return
+  try {
+    const res = await fetch(API + '/api/auth/yo', { headers: { 'Authorization': 'Bearer ' + currentToken } })
+    if (res.ok) {
+      const data = await res.json()
+      const u = data.usuario
+      if (u && currentUser && currentUser.rol !== 'ESTUDIANTE') {
+        currentUser = Object.assign({}, currentUser, u)
+        document.getElementById('doc-name').textContent = u.nombre || 'Docente'
+        document.getElementById('doc-info').textContent = (u.correo || '')
+      }
+    }
+  } catch (e) {}
+  try {
+    const res = await fetch(API + '/api/docente/mis-cursos', { headers: { 'Authorization': 'Bearer ' + currentToken } })
+    if (res.ok) {
+      const data = await res.json()
+      const cursos = data.cursos || []
+      const cursoSigueValido = cursos.some(c => c.curso === selectedCurso && c.materias.some(m => m.materiaId === selectedMateria))
+      if (!cursoSigueValido && cursos.length > 0) {
+        await cargarAsignaciones()
+      }
+    }
+  } catch (e) {}
 }
 
 function doLogout() {
   document.getElementById('app').classList.remove('wide-mode')
+  if (_refrescoDocenteTimer) { clearInterval(_refrescoDocenteTimer); _refrescoDocenteTimer = null }
   currentToken = null
   currentUser = null
   studentsData = []
@@ -1707,7 +1764,7 @@ function mostrarToast(tipo, msg) {
 // ---- ADMIN PANEL ----
 
 function actualizarNavActivo(idActivo) {
-  const botones = ['nav-profesores','nav-asignaciones','nav-periodos','nav-reporte','nav-estudiantes','nav-directores','nav-obs']
+  const botones = ['nav-profesores','nav-materias','nav-asignaciones','nav-periodos','nav-reporte','nav-estudiantes','nav-directores','nav-obs']
   botones.forEach(id => {
     const b = document.getElementById(id)
     if (b) {
@@ -1730,6 +1787,7 @@ function showAdminPortal(user) {
 async function cargarAdminProfesores() {
   document.getElementById('admin-profesores-section').style.display = 'block'
   document.getElementById('admin-asignaciones-section').style.display = 'none'
+  document.getElementById('admin-materias-section').style.display = 'none'
   document.getElementById('admin-periodos-section').style.display = 'none'
   document.getElementById('admin-obs-section').style.display = 'none'
   document.getElementById('admin-estudiantes-section').style.display = 'none'
@@ -1781,37 +1839,75 @@ async function cargarAdminAsignaciones() {
     ])
     if (!profRes.ok || !matRes.ok) return
     const profes = await profRes.json()
+    window._adminProfes = profes
     const materias = await matRes.json()
     const cursos = curRes.ok ? await curRes.json() : []
     const profSel = document.getElementById('admin-sel-profesor')
-    profSel.innerHTML = '<option value="">Seleccionar</option>' + profes.map(p => '<option value="' + p.docenteId + '">' + esc(p.nombre) + ' (' + esc(p.documento) + ')</option>').join('')
+    profSel.innerHTML = '<option value="">Sin maestro</option>' + profes.map(p => '<option value="' + p.docenteId + '">' + esc(p.nombre) + ' (' + esc(p.documento) + ')</option>').join('')
     const matSel = document.getElementById('admin-sel-materia')
-    matSel.innerHTML = '<option value="">Seleccionar</option>' + materias.map(m => '<option value="' + m.id + '">' + esc(m.nombre) + ' (' + m.grado + '°)</option>').join('')
+    matSel.innerHTML = '<option value="">Seleccionar materia</option>' + materias.map(m => '<option value="' + m.id + '">' + esc(m.nombre) + ' (' + m.grado + '°)</option>').join('')
     const cursoSel = document.getElementById('admin-sel-curso-asign')
     cursoSel.innerHTML = '<option value="">Todos los cursos</option>' + cursos.map(c => '<option value="' + c + '">' + c + '</option>').join('')
     cargarAsignacionesCurso()
   } catch (e) {
-    document.getElementById('admin-tb-asignaciones').innerHTML = '<tr><td colspan="4" style="padding:24px;text-align:center;color:#A32D2D;">Error al cargar</td></tr>'
+    document.getElementById('admin-tb-asignaciones').innerHTML = '<tr><td colspan="3" style="padding:24px;text-align:center;color:#A32D2D;">Error al cargar</td></tr>'
   }
 }
 
 async function cargarAsignacionesCurso() {
   const curso = document.getElementById('admin-sel-curso-asign').value
   const info = document.getElementById('admin-asignaciones-curso-info')
-  const asigRes = await fetch(API + '/api/admin/asignaciones' + (curso ? '?curso=' + encodeURIComponent(curso) : ''), { headers: { 'Authorization': 'Bearer ' + currentToken } })
-  if (!asigRes.ok) return
-  const asignaciones = await asigRes.json()
+  const panel = document.getElementById('admin-panel-asignar')
   const tb = document.getElementById('admin-tb-asignaciones')
+  if (!curso) {
+    info.style.display = 'block'
+    panel.style.display = 'none'
+    return
+  }
+  info.style.display = 'none'
+  panel.style.display = 'block'
+  let asignaciones = []
+  try {
+    const asigRes = await fetch(API + '/api/admin/asignaciones?curso=' + encodeURIComponent(curso), { headers: { 'Authorization': 'Bearer ' + currentToken } })
+    if (!asigRes.ok) { tb.innerHTML = '<tr><td colspan="3" style="padding:24px;text-align:center;color:#A32D2D;">Error al cargar</td></tr>'; return }
+    asignaciones = await asigRes.json()
+  } catch (e) {
+    tb.innerHTML = '<tr><td colspan="3" style="padding:24px;text-align:center;color:#A32D2D;">Error de conexión</td></tr>'
+    return
+  }
+  const profes = window._adminProfes || []
   tb.innerHTML = asignaciones.map(a => {
+    const opciones = profes.map(p => '<option value="' + p.docenteId + '"' + (a.docenteId === p.docenteId ? ' selected' : '') + '>' + esc(p.nombre) + '</option>').join('')
+    const selMaestro = '<select class="sel" style="min-width:200px;font-size:12px;" onchange="adminAsignarMaestro(\'' + a.id + '\', this)"><option value=""' + (!a.docenteId ? ' selected' : '') + '>Sin maestro</option>' + opciones + '</select>'
     return '<tr>' +
-      '<td style="padding:10px 12px;border-bottom:1px solid var(--line);">' + esc(a.profesor) + '</td>' +
-      '<td style="padding:10px 12px;border-bottom:1px solid var(--line);">' + esc(a.curso) + '</td>' +
-      '<td style="padding:10px 12px;border-bottom:1px solid var(--line);">' + esc(a.materia) + '</td>' +
-      '<td style="padding:10px 12px;border-bottom:1px solid var(--line);text-align:center;"><button class="btn-sm" onclick="adminEliminarAsignacion(\'' + a.id + '\')" style="font-size:11px;color:#A32D2D;">Eliminar</button></td>' +
+      '<td style="padding:10px 12px;border-bottom:1px solid var(--line);font-weight:600;">' + esc(a.materia) + ' <span style="color:var(--ink-400);font-weight:400;font-size:11px;">(' + a.materia_grado + '°)</span></td>' +
+      '<td style="padding:10px 12px;border-bottom:1px solid var(--line);">' + selMaestro + '</td>' +
+      '<td style="padding:10px 12px;border-bottom:1px solid var(--line);text-align:center;"><button class="btn-sm" onclick="adminEliminarAsignacion(\'' + a.id + '\')" style="font-size:11px;color:#A32D2D;">Quitar del curso</button></td>' +
       '</tr>'
   }).join('')
-  if (!asignaciones.length) tb.innerHTML = '<tr><td colspan="4" style="padding:24px;text-align:center;color:var(--ink-400);">Sin asignaciones para este curso</td></tr>'
-  info.style.display = curso ? 'none' : 'block'
+  if (!asignaciones.length) tb.innerHTML = '<tr><td colspan="3" style="padding:24px;text-align:center;color:var(--ink-400);">Este curso no tiene materias aún. Agrégale una arriba.</td></tr>'
+}
+
+// Asignar o cambiar el maestro de una asignación ya creada (PUT)
+async function adminAsignarMaestro(id, select) {
+  const valor = select.value
+  try {
+    const res = await fetch(API + '/api/admin/asignaciones/' + id, {
+      method: 'PUT',
+      headers: { 'Authorization': 'Bearer ' + currentToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify(valor ? { docenteId: valor } : { docenteId: null })
+    })
+    if (res.ok) {
+      mostrarToast('ok', valor ? 'Maestro asignado' : 'Asignación sin maestro')
+    } else {
+      const data = await res.json().catch(()=>({}))
+      mostrarToast('error', data.error || 'Error al asignar maestro')
+      cargarAsignacionesCurso()
+    }
+  } catch (e) {
+    mostrarToast('error', 'Error de conexión')
+    cargarAsignacionesCurso()
+  }
 }
 
 async function adminCrearAsignacion() {
@@ -1819,19 +1915,72 @@ async function adminCrearAsignacion() {
   const matId = document.getElementById('admin-sel-materia').value
   const curso = document.getElementById('admin-sel-curso-asign').value
   if (!curso) { mostrarToast('error', 'Selecciona un curso primero'); return }
-  if (!profId || !matId) { mostrarToast('error', 'Completa profesor y materia'); return }
+  if (!matId) { mostrarToast('error', 'Selecciona una materia'); return }
   try {
+    const cuerpo = { materiaId: matId, curso }
+    if (profId) cuerpo.docenteId = profId
     const res = await fetch(API + '/api/admin/asignaciones', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + currentToken, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ docenteId: profId, materiaId: matId, curso })
+      body: JSON.stringify(cuerpo)
     })
     const data = await res.json()
     if (res.ok) {
-      mostrarToast('ok', 'Asignación creada')
-      cargarAdminAsignaciones()
+      mostrarToast('ok', profId ? 'Materia asignada al curso' : 'Materia agregada al curso (sin maestro)')
+      cargarAsignacionesCurso()
     } else {
       mostrarToast('error', data.error || 'Error al asignar')
+    }
+  } catch (e) {
+    mostrarToast('error', 'Error de conexión')
+  }
+}
+
+async function cargarAdminMaterias() {
+  document.getElementById('admin-profesores-section').style.display = 'none'
+  document.getElementById('admin-materias-section').style.display = 'block'
+  document.getElementById('admin-asignaciones-section').style.display = 'none'
+  document.getElementById('admin-periodos-section').style.display = 'none'
+  document.getElementById('admin-obs-section').style.display = 'none'
+  document.getElementById('admin-reporte-corte-section').style.display = 'none'
+  document.getElementById('admin-estudiantes-section').style.display = 'none'
+  document.getElementById('admin-directores-section').style.display = 'none'
+  actualizarNavActivo('nav-materias')
+  const tb = document.getElementById('admin-tb-materias')
+  tb.innerHTML = '<tr><td colspan="2" style="padding:24px;text-align:center;color:var(--ink-400);">Cargando...</td></tr>'
+  try {
+    const res = await fetch(API + '/api/admin/materias', { headers: { 'Authorization': 'Bearer ' + currentToken } })
+    if (!res.ok) return
+    const materias = await res.json()
+    tb.innerHTML = materias.map(m => {
+      return '<tr>' +
+        '<td style="padding:10px 12px;border-bottom:1px solid var(--line);font-weight:600;">' + esc(m.nombre) + '</td>' +
+        '<td style="padding:10px 12px;border-bottom:1px solid var(--line);text-align:center;">' + m.grado + '°</td>' +
+        '</tr>'
+    }).join('')
+    if (!materias.length) tb.innerHTML = '<tr><td colspan="2" style="padding:24px;text-align:center;color:var(--ink-400);">No hay materias. Crea la primera arriba.</td></tr>'
+  } catch (e) {
+    tb.innerHTML = '<tr><td colspan="2" style="padding:24px;text-align:center;color:#A32D2D;">Error al cargar</td></tr>'
+  }
+}
+
+async function adminCrearMateria() {
+  const nombre = document.getElementById('admin-input-materia-nombre').value.trim()
+  const grado = document.getElementById('admin-sel-materia-grado').value
+  if (!nombre) { mostrarToast('error', 'Ingresa el nombre de la materia'); return }
+  try {
+    const res = await fetch(API + '/api/admin/materias', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + currentToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nombre, grado })
+    })
+    const data = await res.json()
+    if (res.ok) {
+      mostrarToast('ok', 'Materia creada')
+      document.getElementById('admin-input-materia-nombre').value = ''
+      cargarAdminMaterias()
+    } else {
+      mostrarToast('error', data.error || 'Error al crear la materia')
     }
   } catch (e) {
     mostrarToast('error', 'Error de conexión')
@@ -2059,6 +2208,7 @@ async function adminGuardarProfesor() {
 async function cargarAdminPeriodos() {
   document.getElementById('admin-profesores-section').style.display = 'none'
   document.getElementById('admin-asignaciones-section').style.display = 'none'
+  document.getElementById('admin-materias-section').style.display = 'none'
   document.getElementById('admin-periodos-section').style.display = 'block'
   document.getElementById('admin-reporte-corte-section').style.display = 'none'
   document.getElementById('admin-estudiantes-section').style.display = 'none'
@@ -2370,6 +2520,7 @@ async function cargarAdminReporteCorte() {
   document.getElementById('admin-periodos-section').style.display = 'none'
   document.getElementById('admin-obs-section').style.display = 'none'
   document.getElementById('admin-asignaciones-section').style.display = 'none'
+  document.getElementById('admin-materias-section').style.display = 'none'
   document.getElementById('admin-estudiantes-section').style.display = 'none'
   document.getElementById('admin-directores-section').style.display = 'none'
   document.getElementById('admin-reporte-corte-section').style.display = 'block'
@@ -2448,6 +2599,7 @@ let currentEstPage = 1
 async function cargarAdminEstudiantes() {
   document.getElementById('admin-profesores-section').style.display = 'none'
   document.getElementById('admin-asignaciones-section').style.display = 'none'
+  document.getElementById('admin-materias-section').style.display = 'none'
   document.getElementById('admin-periodos-section').style.display = 'none'
   document.getElementById('admin-obs-section').style.display = 'none'
   document.getElementById('admin-directores-section').style.display = 'none'
@@ -2614,6 +2766,7 @@ async function adminGuardarCambioCurso() {
 async function cargarAdminDirectores() {
   document.getElementById('admin-profesores-section').style.display = 'none'
   document.getElementById('admin-asignaciones-section').style.display = 'none'
+  document.getElementById('admin-materias-section').style.display = 'none'
   document.getElementById('admin-periodos-section').style.display = 'none'
   document.getElementById('admin-obs-section').style.display = 'none'
   document.getElementById('admin-estudiantes-section').style.display = 'none'
@@ -2704,6 +2857,7 @@ async function adminEliminarDirector(id) {
 async function cargarAdminObservaciones(pagina) {
   document.getElementById('admin-profesores-section').style.display = 'none'
   document.getElementById('admin-asignaciones-section').style.display = 'none'
+  document.getElementById('admin-materias-section').style.display = 'none'
   document.getElementById('admin-periodos-section').style.display = 'none'
   document.getElementById('admin-estudiantes-section').style.display = 'none'
   document.getElementById('admin-directores-section').style.display = 'none'

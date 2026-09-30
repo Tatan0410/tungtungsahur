@@ -59,10 +59,12 @@ app.use(express.static(path.join(__dirname, '../public')))
 const { aplicarMigraciones } = require('./db/migraciones')
 const { crearCliente } = require('./db/cliente')
 const db = crearCliente()
-const migracionesAplicadas = aplicarMigraciones(db)
-if (migracionesAplicadas.length > 0) {
-  console.log('  📄 Migraciones aplicadas: ' + migracionesAplicadas.join(', '))
-}
+const migracionesAplicadas = aplicarMigraciones(db).then(nombres => {
+  if (nombres.length > 0) {
+    console.log('  📄 Migraciones aplicadas: ' + nombres.join(', '))
+  }
+  return nombres
+})
 
 // ─────────────────────────────────────────────────────
 // RUTAS DE LA API
@@ -93,15 +95,15 @@ app.get('/api/ping', (req, res) => {
 })
 
 // Configuración pública de períodos (sin auth)
-app.get('/api/config/periodos', (req, res) => {
+app.get('/api/config/periodos', async (req, res) => {
   try {
     const anio = parseInt(req.query.anio) || new Date().getFullYear()
     const sede = req.query.sede
     let rows
     if (sede) {
-      rows = db.prepare('SELECT * FROM periodos_config WHERE sede = ? AND anio = ? ORDER BY periodo').all(sede, anio)
+      rows = await db.prepare('SELECT * FROM periodos_config WHERE sede = ? AND anio = ? ORDER BY periodo').all(sede, anio)
     } else {
-      rows = db.prepare('SELECT * FROM periodos_config WHERE anio = ? ORDER BY sede, periodo').all(anio)
+      rows = await db.prepare('SELECT * FROM periodos_config WHERE anio = ? ORDER BY sede, periodo').all(anio)
     }
     res.json(rows)
   } catch (error) {

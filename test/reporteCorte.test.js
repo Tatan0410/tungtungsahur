@@ -45,8 +45,8 @@ after(() => {
   try { fs.rmSync(dir, { recursive: true, force: true }) } catch { /* temp ya borrado */ }
 })
 
-test('el reporte marca RIESGO solo debajo de 3.0', () => {
-  const rep = calcularReporteCorte(curso, 1, ANIO_PRUEBA)
+test('el reporte marca RIESGO solo debajo de 3.0', async () => {
+  const rep = await calcularReporteCorte(curso, 1, ANIO_PRUEBA)
   const riesgo = rep.filter(r => r.estado === 'RIESGO')
   assert.equal(riesgo.length, 1, 'solo la nota 2.5 debe quedar en riesgo')
   assert.equal(riesgo[0].estudianteId, estudiantes[0].id)
@@ -55,8 +55,8 @@ test('el reporte marca RIESGO solo debajo de 3.0', () => {
   assert.ok(!rep.some(r => r.definitiva === 4.0), 'una definitiva aprobada no aparece')
 })
 
-test('las materias sin nota aparecen como PENDIENTE', () => {
-  const rep = calcularReporteCorte(curso, 1, ANIO_PRUEBA)
+test('las materias sin nota aparecen como PENDIENTE', async () => {
+  const rep = await calcularReporteCorte(curso, 1, ANIO_PRUEBA)
   const pendientes = rep.filter(r => r.estado === 'PENDIENTE')
   assert.ok(pendientes.length >= 1)
   assert.equal(pendientes[0].definitiva, null)
@@ -67,12 +67,12 @@ test('las materias sin nota aparecen como PENDIENTE', () => {
   assert.ok(rep.every(r => r.estudianteId && r.materiaId && r.materiaNombre))
 })
 
-test('un curso inexistente devuelve lista vacía', () => {
-  assert.deepEqual(calcularReporteCorte('ZZZ-INEXISTENTE', 1, ANIO_PRUEBA), [])
+test('un curso inexistente devuelve lista vacía', async () => {
+  assert.deepEqual(await calcularReporteCorte('ZZZ-INEXISTENTE', 1, ANIO_PRUEBA), [])
 })
 
-test('otro año no toca las notas insertadas', () => {
-  const rep = calcularReporteCorte(curso, 1, 1998)
+test('otro año no toca las notas insertadas', async () => {
+  const rep = await calcularReporteCorte(curso, 1, 1998)
   assert.equal(rep.filter(r => r.estado === 'RIESGO').length, 0)
   assert.equal(rep.length, estudiantes.length * materias.length, 'todo queda PENDIENTE en ese año')
 })

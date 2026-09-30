@@ -31,6 +31,43 @@ function convertirMarcadores(sql) {
   return sql.replace(/\?/g, () => '$' + (++n))
 }
 
+// Postgres guarda los identificadores SIN comillas en minúscula: `usuarioId`
+// se convierte en `usuarioid`. El código (y las respuestas JSON) esperan las
+// claves en camelCase tal como las devuelve SQLite, así que restauramos el
+// camelCase de las columnas conocidas al leer filas.
+const CLAVES_CAMEL = {
+  usuarioid: 'usuarioId',
+  materiaid: 'materiaId',
+  docenteid: 'docenteId',
+  estudianteid: 'estudianteId',
+  calificacionid: 'calificacionId',
+  creadoen: 'creadoEn',
+  actualizadoen: 'actualizadoEn',
+  rutapdf: 'rutaPdf',
+  bloqueadohasta: 'bloqueadoHasta',
+}
+
+function normalizarFila(fila) {
+  if (!fila || typeof fila !== 'object') return fila
+  let cambiada = false
+  const salida = {}
+  for (const clave of Object.keys(fila)) {
+    const alternativa = CLAVES_CAMEL[clave.toLowerCase()]
+    if (alternativa && alternativa !== clave) {
+      salida[alternativa] = fila[clave]
+      cambiada = true
+    } else {
+      salida[clave] = fila[clave]
+    }
+  }
+  return cambiada ? salida : fila
+}
+
+function normalizarFilas(filas) {
+  if (!Array.isArray(filas)) return filas
+  return filas.map(normalizarFila)
+}
+
 // ─────────────────────────────────────────────────────
 // SQLITE — desarrollo local y suite de pruebas (sin cambios de comportamiento)
 // ─────────────────────────────────────────────────────
@@ -133,8 +170,8 @@ class ClientePostgres {
   prepare(sql) {
     const texto = convertirMarcadores(sql)
     return {
-      all: async (...p) => (await this._ejecutar(texto, p)).rows,
-      get: async (...p) => (await this._ejecutar(texto, p)).rows[0],
+      all: async (...p) => normalizarFilas((await this._ejecutar(texto, p)).rows),
+      get: async (...p) => normalizarFila((await this._ejecutar(texto, p)).rows[0]),
       run: async (...p) => {
         const r = await this._ejecutar(texto, p)
         return { changes: r.rowCount, lastInsertRowid: null }
@@ -179,10 +216,12 @@ class ClientePostgres {
 }
 
 // Elige motor: DATABASE_URL (Supabase/Vercel) → Postgres; si no → SQLite local.
+// Se recortan espacios: `set DATABASE_URL= &&` de cmd deja " " y sería truthy.
 function crearCliente() {
-  if (process.env.DATABASE_URL) return ClientePostgres.desdeUrl(process.env.DATABASE_URL)
+  const url = (process.env.DATABASE_URL || '').trim()
+  if (url) return ClientePostgres.desdeUrl(url)
   const ruta = process.env.DATABASE_PATH || path.resolve(__dirname, '../../prisma/dev.db')
   return new ClienteSQLite(ruta)
 }
 
-module.exports = { crearCliente, ClienteSQLite, ClientePostgres, convertirMarcadores }
+module.exports = { crearCliente, ClienteSQLite, ClientePostgres, convertirMarcadores, normalizarFilas, normalizarFila }

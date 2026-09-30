@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "test": "set DATABASE_URL= && node --test \"test/*.test.js\"",
+    "test": "set DATABASE_URL=&& node --test \"test/*.test.js\"",
     "test:watch": "node --test --watch \"test/*.test.js\""
   },
   "keywords": [],
