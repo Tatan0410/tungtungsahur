@@ -67,8 +67,26 @@ function mejorNombre(variantes) {
 }
 
 async function main() {
-  const db = crearCliente()
-  const contraPg = db.motor === 'postgres'
+  let db = crearCliente()
+  let contraPg = db.motor === 'postgres'
+
+  if (APLICAR && contraPg) {
+    // La fusión en una transacción hace ~100 consultas por el pooler de
+    // Supavisor: con el statement_timeout de 20 s del pool de producción, un
+    // solo candado o lentitud cancela TODO. En --aplicar usamos un pool
+    // propio con 60 s de margen.
+    db.close()
+    const { ClientePostgres } = require('../src/db/cliente')
+    const { Pool } = require('pg')
+    const pool = new Pool({
+      connectionString: process.env.DATABASE_URL.trim(),
+      max: 10,
+      prepare: false,
+      statement_timeout: 60000,
+      idleTimeoutMillis: 30000,
+    })
+    db = new ClientePostgres(pool, { esPoolPg: true })
+  }
 
   if (APLICAR && contraPg && !CONFIRMO_BACKUP) {
     console.error('✖ Contra Postgres el modo --aplicar exige además el flag --confirmo-backup')
