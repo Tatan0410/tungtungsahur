@@ -214,30 +214,48 @@ async function main() {
     process.exit(1)
   }
 
+  // Aplicación por PASOS: una sentencia batcheada por transacción (auto-commit
+  // atómico por paso, en orden lógico). Una transacción única con ~7 sentencias
+  // por el pooler de Supavisor (puerto 6543) se topaba con el statement_timeout.
+  // El reapunte va primero, así el DELETE satisface las FKs incluso sin
+  // session_replication_role.
+  const expresa = v => "'" + String(v).replace(/'/g, "''") + "'"
+  const pasos = []
+
+  // 1. Reapuntar materiaId a la canónica (una sentencia por tabla)
+  for (const t of tablasConMateriaId) {
+    const entradas = [...idsDuplicados.entries()].map(([dup, canon]) =>
+      `WHEN ${expresa(dup)} THEN ${expresa(canon)}`).join(' ')
+    const ins = [...idsDuplicados.keys()].map(expresa).join(',')
+    pasos.push(['reapuntar ' + t,
+      `UPDATE ${t} SET materiaId = CASE materiaId ${entradas} ELSE materiaId END WHERE materiaId IN (${ins})`])
+  }
+
+  // 2. Nombres finales (mejor escrita) + nombre_norm de TODAS las filas
+  // (solo si hay algo que actualizar: un CASE vacío sería SQL inválido)
+  const caseNombre = fusiones.map(f => `WHEN ${expresa(f.canonicaId)} THEN ${expresa(f.nombreFinal)}`).join(' ')
+  const caseNorm = materias.map(m => `WHEN ${expresa(m.id)} THEN ${expresa(normalizar(m.nombre))}`).join(' ')
+  const sets = []
+  if (caseNombre) sets.push(`nombre = CASE id ${caseNombre} ELSE nombre END`)
+  if (caseNorm) sets.push(`nombre_norm = CASE id ${caseNorm} ELSE nombre_norm END`)
+  if (sets.length) pasos.push(['nombres finales + nombre_norm',
+    `UPDATE materias SET ${sets.join(', ')}`])
+
+  // 3. Eliminar duplicadas (después de reapuntar todo)
+  if (idsDuplicados.size) pasos.push(['eliminar duplicadas',
+    `DELETE FROM materias WHERE id IN (${[...idsDuplicados.keys()].map(expresa).join(',')})`])
+
+  for (const [nombre, sql] of pasos) {
+    const t = Date.now()
+    await db.transaction(async () => { await db.prepare(sql).run() })()
+    console.log(`  ✓ ${nombre} (${Date.now() - t}ms)`)
+  }
+  // 4. Índice UNIQUE (ya no hay duplicados)
+  const t = Date.now()
   await db.transaction(async () => {
-    // La fusión en ~7 sentencias batcheadas (CASE/IN generados en JS): una
-    // transacción de ~100 consultas individuales por el pooler de Supavisor
-    // se topaba con el statement_timeout; con batches tarda ~2-3 s.
-    const expresa = v => "'" + String(v).replace(/'/g, "''") + "'"
-
-    // 1-3. Reapuntar materiaId a la canónica (una sentencia por tabla)
-    for (const t of tablasConMateriaId) {
-      const entradas = [...idsDuplicados.entries()].map(([dup, canon]) =>
-        `WHEN ${expresa(dup)} THEN ${expresa(canon)}`).join(' ')
-      await db.prepare(`UPDATE ${t} SET materiaId = CASE materiaId ${entradas} ELSE materiaId END WHERE materiaId IN (${[...idsDuplicados.keys()].map(expresa).join(',')})`).run()
-    }
-
-    // 4. Nombres finales (mejor escrita) + nombre_norm de TODAS las filas
-    const caseNombre = fusiones.map(f => `WHEN ${expresa(f.canonicaId)} THEN ${expresa(f.nombreFinal)}`).join(' ')
-    const caseNorm = materias.map(m => `WHEN ${expresa(m.id)} THEN ${expresa(normalizar(m.nombre))}`).join(' ')
-    await db.prepare(`UPDATE materias SET nombre = CASE id ${caseNombre} ELSE nombre END, nombre_norm = CASE id ${caseNorm} ELSE nombre_norm END`).run()
-
-    // 5. Eliminar duplicadas (después de reapuntar todo)
-    await db.prepare(`DELETE FROM materias WHERE id IN (${[...idsDuplicados.keys()].map(expresa).join(',')})`).run()
-
-    // 6. Índice UNIQUE (ya no hay duplicados)
     await db.exec('CREATE UNIQUE INDEX IF NOT EXISTS materias_nombre_norm_key ON materias (nombre_norm)')
   })()
+  console.log(`  ✓ índice único (${Date.now() - t}ms)`)
 
   // ─── Estado después ───
   const despues = {}
