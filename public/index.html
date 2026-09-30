@@ -419,6 +419,7 @@ body::before {
 <div class="toolbar">
     <select class="sel" id="sel-curso"><option value="">Seleccionar curso</option></select>
     <select class="sel" id="sel-materia"><option value="">Seleccionar materia</option></select>
+    <button class="btn-sm" id="btn-docente-crear-materia" style="font-weight:600;" onclick="docenteCrearMateriaUI()">➕ Crear materia</button>
     <button class="btn-sm success" id="btn-save-all" style="margin-left: auto; font-weight: 600; padding: 8px 14px;" onclick="guardarGrid()">💾 Guardar todos los cambios</button>
     <button class="btn-sm" onclick="abrirMiCuenta()" style="font-weight:600;">⚙️ Mi cuenta</button>
     <button class="btn-sm" id="btn-director-obs" style="display:none;font-weight:600;" onclick="mostrarObservacionesCursoDirector()">👁️ Observaciones de mi curso</button>
@@ -1258,6 +1259,36 @@ async function onCursoChange() {
 async function onMateriaChange() {
   selectedMateria = document.getElementById('sel-materia').value
   if (selectedCurso && selectedMateria) cargarGrupo()
+}
+
+// Crear materia nueva (o reutilizar existente por nombre) desde el panel docente
+function docenteCrearMateriaUI() {
+  pedirTexto('Nombre de la materia nueva:', '', async (nombre) => {
+    if (!nombre || !nombre.trim()) return
+    try {
+      const res = await fetch(API + '/api/docente/materias', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + currentToken, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre: nombre.trim(), curso: selectedCurso })
+      })
+      const data = await res.json()
+      if (res.ok) {
+        mostrarToast('ok', data.mensaje || 'Materia lista')
+        await cargarAsignaciones()
+        // Seleccionar la materia nueva en el desplegable
+        if (data.materiaId) {
+          selectedMateria = data.materiaId
+          const matSel = document.getElementById('sel-materia')
+          if (matSel) matSel.value = data.materiaId
+          cargarGrupo()
+        }
+      } else {
+        mostrarToast('error', data.error || 'No se pudo crear la materia')
+      }
+    } catch (e) {
+      mostrarToast('error', 'Error de conexión')
+    }
+  })
 }
 
 async function cargarGrupo() {
