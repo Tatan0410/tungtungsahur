@@ -223,12 +223,14 @@ async function main() {
   const pasos = []
 
   // 1. Reapuntar materiaId a la canónica (una sentencia por tabla)
-  for (const t of tablasConMateriaId) {
-    const entradas = [...idsDuplicados.entries()].map(([dup, canon]) =>
-      `WHEN ${expresa(dup)} THEN ${expresa(canon)}`).join(' ')
-    const ins = [...idsDuplicados.keys()].map(expresa).join(',')
-    pasos.push(['reapuntar ' + t,
-      `UPDATE ${t} SET materiaId = CASE materiaId ${entradas} ELSE materiaId END WHERE materiaId IN (${ins})`])
+  if (idsDuplicados.size) {
+    for (const t of tablasConMateriaId) {
+      const entradas = [...idsDuplicados.entries()].map(([dup, canon]) =>
+        `WHEN ${expresa(dup)} THEN ${expresa(canon)}`).join(' ')
+      const ins = [...idsDuplicados.keys()].map(expresa).join(',')
+      pasos.push(['reapuntar ' + t,
+        `UPDATE ${t} SET materiaId = CASE materiaId ${entradas} ELSE materiaId END WHERE materiaId IN (${ins})`])
+    }
   }
 
   // 2. Nombres finales (mejor escrita) + nombre_norm de TODAS las filas
