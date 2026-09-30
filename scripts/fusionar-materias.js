@@ -83,9 +83,9 @@ async function main() {
   const tablasConMateriaId = ['docente_materias', 'calificaciones', 'observaciones', 'columnas']
   const antes = {}
   for (const t of tablasConMateriaId) {
-    antes[t] = (await db.prepare(`SELECT COUNT(*) AS c FROM ${t}`).get()).c
+    antes[t] = Number((await db.prepare(`SELECT COUNT(*) AS c FROM ${t}`).get()).c)
   }
-  antes.materias = (await db.prepare('SELECT COUNT(*) AS c FROM materias').get()).c
+  antes.materias = Number((await db.prepare('SELECT COUNT(*) AS c FROM materias').get()).c)
   console.log('Conteos ANTES:', JSON.stringify(antes))
 
   // ─── Cargar materias y llenar/calcular nombre_norm ───
@@ -135,7 +135,7 @@ async function main() {
     let n = 0
     for (const [dup, canon] of idsDuplicados) {
       const r = await db.prepare(`SELECT COUNT(*) AS c FROM ${t} WHERE materiaId = ?`).get(dup)
-      n += r.c
+      n += Number(r.c)
     }
     if (n > 0) reapuntes.push({ tabla: t, filas: n })
   }
@@ -223,9 +223,9 @@ async function main() {
   // ─── Estado después ───
   const despues = {}
   for (const t of tablasConMateriaId) {
-    despues[t] = (await db.prepare(`SELECT COUNT(*) AS c FROM ${t}`).get()).c
+    despues[t] = Number((await db.prepare(`SELECT COUNT(*) AS c FROM ${t}`).get()).c)
   }
-  despues.materias = (await db.prepare('SELECT COUNT(*) AS c FROM materias').get()).c
+  despues.materias = Number((await db.prepare('SELECT COUNT(*) AS c FROM materias').get()).c)
   console.log('')
   console.log('Conteos DESPUÉS:', JSON.stringify(despues))
   console.log('✓ Fusión aplicada (transacción todo-o-nada)')
