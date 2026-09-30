@@ -578,14 +578,12 @@ body::before {
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:16px;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px;">
       <div><div class="lbl">Nombre de la materia</div><input class="inp" id="admin-input-materia-nombre" placeholder="Ej: Matemáticas" style="width:220px;"></div>
-      <div><div class="lbl">Grado</div><select class="sel" id="admin-sel-materia-grado"><option value="6">6°</option><option value="7">7°</option><option value="8">8°</option><option value="9">9°</option><option value="10">10°</option><option value="11">11°</option></select></div>
       <div><button class="btn-sm success" onclick="adminCrearMateria()" style="font-weight:600;padding:8px 16px;">➕ Crear materia</button></div>
     </div>
     <div style="overflow-x:auto;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);">
       <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:400px;">
         <thead><tr style="background:var(--cream-100);">
           <th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);">Nombre</th>
-          <th style="padding:10px 12px;text-align:center;border-bottom:1px solid var(--line);">Grado</th>
         </tr></thead>
         <tbody id="admin-tb-materias"></tbody>
       </table>
@@ -1105,6 +1103,8 @@ async function refrescarPanelDocente() {
     if (res.ok) {
       const data = await res.json()
       const cursos = data.cursos || []
+      // Orden numérico (1, 2, 3, 301… no 1, 1001, 1002, 2…)
+      cursos.sort((a, b) => String(a.curso).localeCompare(String(b.curso), undefined, { numeric: true }))
       const cursoSigueValido = cursos.some(c => c.curso === selectedCurso && c.materias.some(m => m.materiaId === selectedMateria))
       if (!cursoSigueValido && cursos.length > 0) {
         await cargarAsignaciones()
@@ -1159,6 +1159,8 @@ async function cargarAsignaciones() {
       matSel.innerHTML = '<option value="">Seleccionar materia</option>'
 
       const cursos = data.cursos || []
+      // Orden numérico (1, 2, 3, 301… no 1, 1001, 1002, 2…)
+      cursos.sort((a, b) => String(a.curso).localeCompare(String(b.curso), undefined, { numeric: true }))
 
       if (cursos.length > 0) {
         for (const c of cursos) {
@@ -1844,10 +1846,16 @@ async function cargarAdminAsignaciones() {
     const cursos = curRes.ok ? await curRes.json() : []
     const profSel = document.getElementById('admin-sel-profesor')
     profSel.innerHTML = '<option value="">Sin maestro</option>' + profes.map(p => '<option value="' + p.docenteId + '">' + esc(p.nombre) + ' (' + esc(p.documento) + ')</option>').join('')
+    // Materias: solo nombre, sin grado, orden alfabético (la exclusión de las
+    // ya asignadas al curso se hace en cargarAsignacionesCurso)
     const matSel = document.getElementById('admin-sel-materia')
-    matSel.innerHTML = '<option value="">Seleccionar materia</option>' + materias.map(m => '<option value="' + m.id + '">' + esc(m.nombre) + ' (' + m.grado + '°)</option>').join('')
+    const materiasOrdenadas = [...materias].sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), 'es'))
+    matSel.innerHTML = '<option value="">Seleccionar materia</option>' + materiasOrdenadas.map(m => '<option value="' + m.id + '">' + esc(m.nombre) + '</option>').join('')
+    window._adminMaterias = materiasOrdenadas
     const cursoSel = document.getElementById('admin-sel-curso-asign')
-    cursoSel.innerHTML = '<option value="">Todos los cursos</option>' + cursos.map(c => '<option value="' + c + '">' + c + '</option>').join('')
+    // Cursos ordenados numéricamente (1, 2, 3, 301, 401… no 1, 1001, 1002, 2…)
+    const cursosOrdenados = [...cursos].sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }))
+    cursoSel.innerHTML = '<option value="">Todos los cursos</option>' + cursosOrdenados.map(c => '<option value="' + c + '">' + c + '</option>').join('')
     cargarAsignacionesCurso()
   } catch (e) {
     document.getElementById('admin-tb-asignaciones').innerHTML = '<tr><td colspan="3" style="padding:24px;text-align:center;color:#A32D2D;">Error al cargar</td></tr>'
@@ -1876,11 +1884,21 @@ async function cargarAsignacionesCurso() {
     return
   }
   const profes = window._adminProfes || []
+  // El desplegable "Agregar materia" excluye las que el curso ya tiene
+  // (comparación normalizada: sin acentos, sin mayúsculas)
+  const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim()
+  const yaAsignadas = new Set(asignaciones.map(a => norm(a.materia)))
+  const todas = window._adminMaterias || []
+  const disponibles = todas.filter(m => !yaAsignadas.has(norm(m.nombre)))
+  const matSel = document.getElementById('admin-sel-materia')
+  matSel.innerHTML = '<option value="">Seleccionar materia</option>' + disponibles.map(m => '<option value="' + m.id + '">' + esc(m.nombre) + '</option>').join('')
+  if (!disponibles.length && !asignaciones.length) matSel.innerHTML = '<option value="">(no hay materias creadas)</option>'
+  else if (!disponibles.length) matSel.innerHTML = '<option value="">(este curso ya tiene todas las materias)</option>'
   tb.innerHTML = asignaciones.map(a => {
     const opciones = profes.map(p => '<option value="' + p.docenteId + '"' + (a.docenteId === p.docenteId ? ' selected' : '') + '>' + esc(p.nombre) + '</option>').join('')
     const selMaestro = '<select class="sel" style="min-width:200px;font-size:12px;" onchange="adminAsignarMaestro(\'' + a.id + '\', this)"><option value=""' + (!a.docenteId ? ' selected' : '') + '>Sin maestro</option>' + opciones + '</select>'
     return '<tr>' +
-      '<td style="padding:10px 12px;border-bottom:1px solid var(--line);font-weight:600;">' + esc(a.materia) + ' <span style="color:var(--ink-400);font-weight:400;font-size:11px;">(' + a.materia_grado + '°)</span></td>' +
+      '<td style="padding:10px 12px;border-bottom:1px solid var(--line);font-weight:600;">' + esc(a.materia) + '</td>' +
       '<td style="padding:10px 12px;border-bottom:1px solid var(--line);">' + selMaestro + '</td>' +
       '<td style="padding:10px 12px;border-bottom:1px solid var(--line);text-align:center;"><button class="btn-sm" onclick="adminEliminarAsignacion(\'' + a.id + '\')" style="font-size:11px;color:#A32D2D;">Quitar del curso</button></td>' +
       '</tr>'
@@ -1947,32 +1965,32 @@ async function cargarAdminMaterias() {
   document.getElementById('admin-directores-section').style.display = 'none'
   actualizarNavActivo('nav-materias')
   const tb = document.getElementById('admin-tb-materias')
-  tb.innerHTML = '<tr><td colspan="2" style="padding:24px;text-align:center;color:var(--ink-400);">Cargando...</td></tr>'
+  tb.innerHTML = '<tr><td colspan="1" style="padding:24px;text-align:center;color:var(--ink-400);">Cargando...</td></tr>'
   try {
     const res = await fetch(API + '/api/admin/materias', { headers: { 'Authorization': 'Bearer ' + currentToken } })
     if (!res.ok) return
     const materias = await res.json()
+    // Orden alfabético en el cliente (la ruta ordena por nombre_norm)
+    materias.sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), 'es'))
     tb.innerHTML = materias.map(m => {
       return '<tr>' +
         '<td style="padding:10px 12px;border-bottom:1px solid var(--line);font-weight:600;">' + esc(m.nombre) + '</td>' +
-        '<td style="padding:10px 12px;border-bottom:1px solid var(--line);text-align:center;">' + m.grado + '°</td>' +
         '</tr>'
     }).join('')
-    if (!materias.length) tb.innerHTML = '<tr><td colspan="2" style="padding:24px;text-align:center;color:var(--ink-400);">No hay materias. Crea la primera arriba.</td></tr>'
+    if (!materias.length) tb.innerHTML = '<tr><td colspan="1" style="padding:24px;text-align:center;color:var(--ink-400);">No hay materias. Crea la primera arriba.</td></tr>'
   } catch (e) {
-    tb.innerHTML = '<tr><td colspan="2" style="padding:24px;text-align:center;color:#A32D2D;">Error al cargar</td></tr>'
+    tb.innerHTML = '<tr><td colspan="1" style="padding:24px;text-align:center;color:#A32D2D;">Error al cargar</td></tr>'
   }
 }
 
 async function adminCrearMateria() {
   const nombre = document.getElementById('admin-input-materia-nombre').value.trim()
-  const grado = document.getElementById('admin-sel-materia-grado').value
   if (!nombre) { mostrarToast('error', 'Ingresa el nombre de la materia'); return }
   try {
     const res = await fetch(API + '/api/admin/materias', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + currentToken, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nombre, grado })
+      body: JSON.stringify({ nombre })
     })
     const data = await res.json()
     if (res.ok) {
@@ -2879,8 +2897,13 @@ async function cargarAdminObservaciones(pagina) {
     }
     if (matsRes.ok) {
       const mats = await matsRes.json()
+      // Nombres únicos (ya sin grado): una fila por materia
+      const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim()
+      const vistos = new Set()
+      const unicas = mats.filter(m => { const k = norm(m.nombre); if (vistos.has(k)) return false; vistos.add(k); return true })
+      unicas.sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), 'es'))
       const selMat = document.getElementById('admin-obs-materia')
-      selMat.innerHTML = '<option value="">Todas</option>' + mats.map(m => '<option value="' + m.id + '">' + esc(m.nombre) + ' (' + m.grado + '°)</option>').join('')
+      selMat.innerHTML = '<option value="">Todas</option>' + unicas.map(m => '<option value="' + m.id + '">' + esc(m.nombre) + '</option>').join('')
     }
   } catch (e) {}
 

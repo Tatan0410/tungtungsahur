@@ -172,7 +172,7 @@ router.put('/profesores/:id/correo', async (req, res) => {
 
 router.get('/materias', async (req, res) => {
   try {
-    const rows = await prisma._db.prepare('SELECT * FROM materias ORDER BY grado, nombre').all()
+    const rows = await prisma._db.prepare('SELECT * FROM materias ORDER BY nombre_norm ASC, nombre ASC').all()
     res.json(rows)
   } catch (error) {
     console.error('Error GET /materias:', error)
@@ -180,13 +180,26 @@ router.get('/materias', async (req, res) => {
   }
 })
 
+// Normaliza un nombre de materia: minúsculas, sin acentos, sin espacios repetidos
+function normalizarNombre(s) {
+  return (s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 router.post('/materias', async (req, res) => {
   try {
     const { nombre, grado } = req.body
-    if (!nombre || !grado) return res.status(400).json({ error: 'nombre y grado son requeridos' })
+    if (!nombre) return res.status(400).json({ error: 'nombre es requerido' })
+    const norm = normalizarNombre(nombre)
+    const existente = await prisma._db.prepare('SELECT id, nombre FROM materias WHERE nombre_norm = ?').get(norm)
+    if (existente) return res.status(409).json({ error: `La materia "${existente.nombre}" ya existe (los nombres se comparan sin acentos ni mayúsculas)` })
     const id = require('crypto').randomUUID()
-    await prisma._db.prepare('INSERT INTO materias (id, nombre, grado) VALUES (?, ?, ?)').run(id, nombre, parseInt(grado))
-    res.status(201).json({ mensaje: 'Materia creada', id, nombre, grado: parseInt(grado) })
+    await prisma._db.prepare('INSERT INTO materias (id, nombre, grado, nombre_norm) VALUES (?, ?, ?, ?)').run(id, String(nombre).trim(), grado ? parseInt(grado) : null, norm)
+    res.status(201).json({ mensaje: 'Materia creada', id, nombre: String(nombre).trim(), grado: grado ? parseInt(grado) : null })
   } catch (error) {
     console.error('Error POST /materias:', error)
     res.status(500).json({ error: 'Error interno' })
