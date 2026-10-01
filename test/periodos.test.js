@@ -13,9 +13,10 @@ before(async () => {
   tokenAdmin = await login(api, ADMIN.documento, ADMIN.password)
   tokenDocente = await login(api, DOCENTE.documento, DOCENTE.password)
 
-  // Período abierto + estudiante de esa sede + una materia cualquiera
-  const p = db.prepare('SELECT sede, periodo, anio FROM periodos_config WHERE abierto = 1 ORDER BY periodo LIMIT 1').get()
-  const est = db.prepare('SELECT id FROM estudiantes WHERE sede = ? LIMIT 1').get(p.sede)
+  // Período abierto de la SEDE de un estudiante real + una materia cualquiera
+  // (después del podado solo hay estudiantes en algunas sedes)
+  const est = db.prepare('SELECT id, sede FROM estudiantes LIMIT 1').get()
+  const p = db.prepare('SELECT sede, periodo, anio FROM periodos_config WHERE abierto = 1 AND sede = ? ORDER BY periodo LIMIT 1').get(est.sede)
   const mat = db.prepare('SELECT id FROM materias LIMIT 1').get()
   objetivo = { sede: p.sede, periodo: p.periodo, anio: p.anio, estudianteId: est.id, materiaId: mat.id }
 })

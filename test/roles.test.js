@@ -27,6 +27,16 @@ before(async () => {
   const doc = db.prepare('SELECT id FROM docentes WHERE usuarioId = ?').get(usu.id)
   const dirige = db.prepare('SELECT curso FROM directores_grupo WHERE docenteId = ?').all(doc.id)
   cursoDirector = dirige.length ? dirige[0].curso : null
+
+  // Autosuficiente: si el docente no tiene asignaciones (podado de cursos),
+  // el admin le crea una en un curso vigente
+  const tieneAsignaciones = db.prepare('SELECT COUNT(*) c FROM docente_materias WHERE docenteId = ?').get(doc.id).c
+  if (!tieneAsignaciones) {
+    const materias = (await api.get('/api/admin/materias', { token: tokenAdmin })).data
+    const cursos = db.prepare('SELECT DISTINCT curso FROM estudiantes ORDER BY curso').all().map(r => r.curso)
+    await api.post('/api/admin/asignaciones', { token: tokenAdmin, body: { docenteId: doc.id, materiaId: materias[0].id, curso: cursos[0] } })
+  }
+
   const todos = db.prepare('SELECT DISTINCT curso FROM estudiantes').all().map(r => r.curso)
   cursoAjeno = todos.find(c => !dirige.some(d => d.curso === c)) || todos[0]
 })

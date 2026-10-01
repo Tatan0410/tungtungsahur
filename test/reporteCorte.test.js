@@ -22,6 +22,23 @@ before(async () => {
   ;({ calcularReporteCorte } = require('../src/services/reporteCorte'))
   db = new Database(ruta)
 
+  // Autosuficiente: si no hay asignaciones (podado de cursos), crea dos en el
+  // curso con más estudiantes
+  let asignaciones = db.prepare('SELECT COUNT(*) c FROM docente_materias').get().c
+  if (!asignaciones) {
+    const D2 = require('../src/db/cliente')
+    const dbAdapt = new D2.ClienteSQLite(ruta)
+    const docentes = db.prepare('SELECT id FROM docentes LIMIT 2').all()
+    const materias = db.prepare('SELECT id FROM materias LIMIT 2').all()
+    const cursoTop = db.prepare('SELECT curso, COUNT(*) n FROM estudiantes GROUP BY curso ORDER BY COUNT(*) DESC LIMIT 1').get()
+    assert.ok(docentes.length >= 2 && materias.length >= 2 && cursoTop, 'hacen falta docentes, materias y estudiantes de ejemplo')
+    for (let i = 0; i < 2; i++) {
+      await dbAdapt.prepare('INSERT INTO docente_materias (id, docenteId, materiaId, curso) VALUES (?, ?, ?, ?)').run(
+        'test-asig-' + i, docentes[i].id, materias[i].id, cursoTop.curso)
+    }
+    await dbAdapt.close()
+  }
+
   // Curso con más asignaciones, para que haya materias y estudiantes
   curso = db.prepare(
     'SELECT curso FROM docente_materias GROUP BY curso ORDER BY COUNT(*) DESC LIMIT 1'

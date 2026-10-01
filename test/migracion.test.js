@@ -127,7 +127,7 @@ test('sobre la BD actual solo aplica la migración 3, sin tocar datos', async ()
   const db = new ClienteSQLite(ruta)
   try {
     const antes = await db.prepare('SELECT COUNT(*) c FROM usuarios').get()
-    assert.ok(antes.c >= 1000, 'la BD de prueba debe traer la matrícula real')
+    assert.ok(antes.c >= 700, 'la BD de prueba debe traer la matrícula real')
 
     // Determinista: quita los registros de las migraciones 3 y 4 para forzar su re-aplicación
     await db.prepare('DELETE FROM _prisma_migrations WHERE migration_name = ?').run(MIGRACION_3)

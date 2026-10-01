@@ -14,8 +14,19 @@ before(async () => {
   tokenDocente = await login(api, DOCENTE.documento, DOCENTE.password)
   const materias = (await api.get('/api/admin/materias', { token: tokenAdmin })).data
   materiaId = materias[0].id
-  // Se toma un curso que ya tenga asignaciones, para poder filtrar por él
-  const todas = (await api.get('/api/admin/asignaciones', { token: tokenAdmin })).data
+
+  // Autosuficiente: si no hay asignaciones (podado de cursos), crea una del
+  // docente de prueba en un curso vigente
+  let todas = (await api.get('/api/admin/asignaciones', { token: tokenAdmin })).data
+  if (!todas.length) {
+    const profes = (await api.get('/api/admin/profesores', { token: tokenAdmin })).data
+    const d = profes.find(p => p.nombre === DOCENTE.documento) || profes.find(p => p.docenteId)
+    assert.ok(d && d.docenteId, 'hace falta un docente para la asignación de prueba')
+    const cursos = (await api.get('/api/admin/cursos', { token: tokenAdmin })).data
+    assert.ok(cursos.length >= 1, 'hace falta un curso vigente')
+    await api.post('/api/admin/asignaciones', { token: tokenAdmin, body: { docenteId: d.docenteId, materiaId, curso: cursos[0] } })
+    todas = (await api.get('/api/admin/asignaciones', { token: tokenAdmin })).data
+  }
   assert.ok(todas.length >= 1, 'la BD debe traer asignaciones de ejemplo')
   curso = todas[0].curso
 })
@@ -25,7 +36,7 @@ test('GET /api/admin/cursos devuelve los cursos con estudiantes', async () => {
   const r = await api.get('/api/admin/cursos', { token: tokenAdmin })
   assert.equal(r.status, 200)
   assert.ok(Array.isArray(r.data))
-  assert.ok(r.data.length >= 30, `esperaba ≥30 cursos, llegaron ${r.data.length}`)
+  assert.ok(r.data.length >= 15, `esperaba ≥15 cursos (601-1104), llegaron ${r.data.length}`)
   assert.ok(r.data.every(c => typeof c === 'string'))
 })
 

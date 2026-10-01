@@ -37,7 +37,7 @@ test('respaldar.js exporta las 15 tablas con los conteos correctos', () => {
     assert.ok(Array.isArray(paquete.datos[t]), `la tabla ${t} debe venir en el paquete`)
     assert.equal(paquete.datos[t].length, paquete.conteos[t], `el conteo de ${t} debe coincidir`)
   }
-  assert.ok(paquete.conteos.usuarios >= 1000, 'debe traer la matrícula real')
+  assert.ok(paquete.conteos.usuarios >= 700, 'debe traer la matrícula real')
   fs.unlinkSync(path.join(RAIZ, archivo))
 })
 
@@ -55,7 +55,7 @@ test('restaurar.js sin --confirmo es dry-run: no modifica nada', () => {
   // La copia sigue intacta
   const D = require('better-sqlite3')
   const db = new D(rutaCopia, { readonly: true })
-  assert.ok(db.prepare('SELECT COUNT(*) c FROM usuarios').get().c >= 1000, 'la BD no se tocó')
+  assert.ok(db.prepare('SELECT COUNT(*) c FROM usuarios').get().c >= 700, 'la BD no se tocó')
   db.close()
   fs.unlinkSync(rutaTest)
 })

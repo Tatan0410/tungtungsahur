@@ -11,9 +11,21 @@ before(async () => {
   tokenAdmin = await login(api, ADMIN.documento, ADMIN.password)
   tokenDocente = await login(api, DOCENTE.documento, DOCENTE.password)
 
-  // Cursos del docente de prueba (30010001 tiene 11 asignaciones)
-  const r = await api.get('/api/docente/mis-cursos', { token: tokenDocente })
-  const cursos = r.data.cursos || []
+  // Autosuficiente: si el docente de prueba no tiene asignaciones (podado de
+  // cursos), el admin le crea una en un curso vigente
+  let r = await api.get('/api/docente/mis-cursos', { token: tokenDocente })
+  let cursos = r.data.cursos || []
+  if (!cursos.length) {
+    const materias = (await api.get('/api/admin/materias', { token: tokenAdmin })).data
+    const profes = (await api.get('/api/admin/profesores', { token: tokenAdmin })).data
+    const d = profes.find(p => p.nombre === DOCENTE.documento) || profes.find(p => p.docenteId)
+    assert.ok(d && d.docenteId, 'hace falta un docente para la asignación de prueba')
+    const adminCursos = (await api.get('/api/admin/cursos', { token: tokenAdmin })).data
+    assert.ok(adminCursos.length >= 1, 'hace falta un curso vigente')
+    await api.post('/api/admin/asignaciones', { token: tokenAdmin, body: { docenteId: d.docenteId, materiaId: materias[0].id, curso: adminCursos[0] } })
+    r = await api.get('/api/docente/mis-cursos', { token: tokenDocente })
+    cursos = r.data.cursos || []
+  }
   assert.ok(cursos.length >= 1, 'el docente de prueba debe tener asignaciones')
   curso = cursos[0].curso
   // Un curso donde el docente NO tiene asignaciones

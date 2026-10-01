@@ -106,6 +106,13 @@ async function main() {
   const expresa = v => "'" + String(v).replace(/'/g, "''") + "'"
   const insCursos = podados.map(expresa).join(',')
 
+  // Capturar los ids de usuario de los estudiantes a podar ANTES de borrar:
+  // estudiantes.usuarioId y password_resets.usuarioId tienen FK a usuarios
+  // (RESTRICT), así que se borra por este orden:
+  //   password_resets → estudiantes → usuarios (con la lista capturada)
+  const idsUsuarios = (await db.prepare(`SELECT DISTINCT usuarioId FROM estudiantes WHERE curso IN (${insCursos}) AND usuarioId IS NOT NULL`).all()).map(r => expresa(r.usuarioId))
+  const insUsuarios = idsUsuarios.length ? idsUsuarios.join(',') : 'NULL'
+
   const pasos = [
     ['notas_items (vía calificacionId)',
       `DELETE FROM notas_items WHERE calificacionId IN (SELECT ca.id FROM calificaciones ca JOIN estudiantes e ON e.id = ca.estudianteId WHERE e.curso IN (${insCursos}))`],
@@ -121,10 +128,12 @@ async function main() {
       `DELETE FROM docente_materias WHERE curso IN (${insCursos})`],
     ['directores_grupo',
       `DELETE FROM directores_grupo WHERE curso IN (${insCursos})`],
-    ['usuarios (login de los estudiantes)',
-      `DELETE FROM usuarios WHERE id IN (SELECT usuarioId FROM estudiantes WHERE curso IN (${insCursos}) AND usuarioId IS NOT NULL)`],
+    ['password_resets',
+      `DELETE FROM password_resets WHERE usuarioId IN (${insUsuarios})`],
     ['estudiantes',
       `DELETE FROM estudiantes WHERE curso IN (${insCursos})`],
+    ['usuarios (login de los estudiantes)',
+      `DELETE FROM usuarios WHERE id IN (${insUsuarios})`],
   ]
 
   let t0 = Date.now()
