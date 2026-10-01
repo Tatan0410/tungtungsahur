@@ -51,7 +51,7 @@ test('están los elementos clave del panel', () => {
   const ids = [
     'modal-prompt', 'prompt-input', 'prompt-titulo',
     'btn-mi-cuenta', 'admin-asignaciones-section', 'admin-sel-curso-asign',
-    'sec-informes-titulo', 'recuperar-link',
+    'recuperar-link',
   ]
   for (const id of ids) {
     assert.ok(HTML.includes(`id="${id}"`), `falta el elemento #${id}`)

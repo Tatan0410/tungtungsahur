@@ -214,18 +214,6 @@ body::before {
 .prom-card .prom-label { font-size:12px; color: var(--ink-400); margin-bottom:4px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; }
 .prom-card .prom-val { font-family: var(--font-d); font-size: 30px; font-weight:600; color: var(--green-700); }
 
-.informe-row {
-  background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-md);
-  padding: 13px 16px; display:flex; align-items:center; gap:13px; margin-bottom:9px; box-shadow: var(--shadow-card);
-}
-.dl-btn {
-  margin-left:auto; padding:7px 16px; border-radius: var(--r-sm);
-  border:1px solid var(--burgundy-700); color: var(--burgundy-700); background:#fff;
-  font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap; transition: background .12s ease;
-}
-.dl-btn:hover:not(:disabled) { background: var(--rose-50); }
-.dl-btn:disabled { border-color: var(--line); color: var(--ink-400); cursor:default; }
-
 .sel {
   padding: 9px 13px; border-radius: var(--r-sm); border:1px solid var(--line);
   background: #fff; font-size:13px; color: var(--ink-900); font-weight:500;
@@ -393,17 +381,6 @@ body::before {
     <div style="color:var(--ink-400);font-size:13px;padding:20px;text-align:center;">Selecciona un período y consulta</div>
   </div>
   <div id="stu-corte-status" style="display:none;margin-top:16px;"></div>
-  <div class="sec-label" style="margin-top:24px;display:none;" id="sec-informes-titulo">Informes finales</div>
-  <div class="informe-row" id="informe-row-1" style="display:none;">
-    <div style="width:38px;height:38px;background:var(--rose-50);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">📄</div>
-    <div><div style="font-size:13px;font-weight:600;" id="stu-informe1-titulo">Informe final · Período 1</div><div style="font-size:11px;color:var(--ink-400);margin-top:2px;">PDF generado automáticamente al cerrar el período</div></div>
-    <button class="dl-btn">Descargar PDF</button>
-  </div>
-  <div class="informe-row" id="informe-row-2" style="display:none;">
-    <div style="width:38px;height:38px;background:var(--rose-50);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">📄</div>
-    <div><div style="font-size:13px;font-weight:600;" id="stu-informe2-titulo">Informe final · Período 2</div><div style="font-size:11px;color:var(--ink-400);margin-top:2px;">Se generará al cerrar el período académico</div></div>
-    <button class="dl-btn" disabled>No disponible</button>
-  </div>
   <div class="sec-label" style="margin-top:24px;">Observaciones</div>
   <div id="stu-observaciones" style="padding:8px 0;">
     <div style="color:var(--ink-400);font-size:13px;">Cargando...</div>
@@ -462,15 +439,6 @@ body::before {
     <button id="scroll-right" class="scroll-btn">❯</button>
   </div>
 </div>
-  <div class="upload-zone" style="border:1px dashed var(--gold-300);border-radius:var(--r-lg);padding:1.6rem;text-align:center;color:var(--ink-600);font-size:13px;margin-top:18px;background:var(--cream-100);">
-    <div style="font-size:20px;margin-bottom:6px;">📤</div>
-    <div style="font-weight:600;color:var(--ink-900);margin-bottom:3px;font-family:var(--font-d);font-size:15px;">Generación del informe final</div>
-    <div style="font-size:12px;">El sistema calcula el promedio definitivo y genera el PDF automáticamente al cerrar el período</div>
-    <div style="margin-top:12px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
-      <button style="padding:8px 18px;border-radius:8px;border:1px solid var(--burgundy-700);color:var(--burgundy-700);background:#fff;font-size:12px;font-weight:600;cursor:pointer;">Previsualizar informe</button>
-      <button style="padding:8px 18px;border-radius:8px;background:linear-gradient(120deg,var(--burgundy-700),var(--burgundy-800));color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 6px 16px -8px rgba(123,28,46,0.55);">Cerrar período y generar PDF</button>
-    </div>
-  </div>
 </div>
 
 <div class="screen" id="sc-admin">
@@ -1028,6 +996,8 @@ function doLogin() {
     if (data.token && data.usuario) {
       currentToken = data.token
       currentUser = data.usuario
+      guardarSesionLocal(data.token, data.usuario)
+      restaurarCambiosLocal()
       if (data.usuario.rol === 'ADMIN') {
         showAdminPortal(data.usuario)
       } else if (data.usuario.rol === 'DOCENTE') {
@@ -1056,8 +1026,6 @@ function showStudentPortal(user) {
   document.getElementById('stu-name').textContent = user.nombre || 'Estudiante';
   document.getElementById('stu-info').textContent = (user.curso ? user.curso : '') + (user.grado ? ' · ' + user.grado + '°' : '');
   document.getElementById('stu-period-pill').textContent = 'Período ' + currentPeriodo + ' · ' + new Date().getFullYear();
-  document.getElementById('stu-informe1-titulo').textContent = 'Informe final · Período 1 · ' + new Date().getFullYear();
-  document.getElementById('stu-informe2-titulo').textContent = 'Informe final · Período 2 · ' + new Date().getFullYear();
   // Load student grades for the selected period
   cargarNotasEstudiante();
   cargarEstadoCorte();
@@ -1117,6 +1085,9 @@ async function refrescarPanelDocente() {
 function doLogout() {
   document.getElementById('app').classList.remove('wide-mode')
   if (_refrescoDocenteTimer) { clearInterval(_refrescoDocenteTimer); _refrescoDocenteTimer = null }
+  // Los cambios pendientes se QUEDAN en localStorage (por si fue un logout
+  // accidental); la sesión sí se borra
+  borrarSesionLocal()
   currentToken = null
   currentUser = null
   studentsData = []
@@ -1458,6 +1429,8 @@ function renderGrid() {
   })
 
    renderGridHeaders(colsPorTipo);
+   // Restaurar visualmente los cambios pendientes (autoguardado)
+   aplicarCambiosPendientesAlGrid();
    // Scroll button handlers
    const wrap = document.querySelector('.t-wrap');
    const leftBtn = document.getElementById('scroll-left');
@@ -1574,10 +1547,12 @@ function marcarCambio(studentIdx, tipo, titulo, valor) {
   if (isNaN(v) || v < 1) {
     if (valor === '' || valor === null || valor === undefined) {
       cambiosGrid[key] = { estudianteId: s.estudianteId, materiaId: selectedMateria, periodo: currentPeriodo, anio: new Date().getFullYear(), tipo, titulo, valor: null, _delete: true }
+      guardarCambiosLocal()
     }
     return
   }
   cambiosGrid[key] = { estudianteId: s.estudianteId, materiaId: selectedMateria, periodo: currentPeriodo, anio: new Date().getFullYear(), tipo, titulo, valor: v }
+  guardarCambiosLocal()
 }
 
 async function agregarColumna(tipo) {
@@ -1603,16 +1578,15 @@ async function agregarColumna(tipo) {
   })
 }
 
-async function guardarGrid() {
+async function guardarGrid(silencioso) {
   const items = Object.values(cambiosGrid)
   if (items.length === 0) {
-    mostrarToast('error', 'No hay cambios para guardar')
+    if (!silencioso) mostrarToast('error', 'No hay cambios para guardar')
     return
   }
 
   const btn = document.getElementById('btn-save-all')
-  btn.disabled = true
-  btn.textContent = 'Guardando...'
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando...' }
 
   try {
     const res = await fetch(API + '/api/notas/guardar-grid', {
@@ -1620,29 +1594,31 @@ async function guardarGrid() {
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + currentToken },
       body: JSON.stringify({ items })
     })
-      if (res.ok) {
-        const data = await res.json()
-        cambiosGrid = {}
-        if (data.advertencia) {
-          mostrarToast('ok', data.advertencia)
-        } else {
-          mostrarToast('ok', 'Todos los cambios guardados')
-        }
-        cargarGrupo();
-        if (currentUser && currentUser.rol === 'ESTUDIANTE') {
-          cargarNotasEstudiante();
-          cargarEstadoCorte();
-        }
-      } else {
-        const data = await res.json()
-        mostrarToast('error', data.error || 'Error de conexión')
+    if (res.ok) {
+      const data = await res.json()
+      cambiosGrid = {}
+      guardarCambiosLocal()
+      if (!silencioso) {
+        mostrarToast('ok', data.advertencia || 'Todos los cambios guardados')
       }
-
+      cargarGrupo()
+      if (currentUser && currentUser.rol === 'ESTUDIANTE') {
+        cargarNotasEstudiante()
+        cargarEstadoCorte()
+      }
+    } else {
+      const data = await res.json().catch(() => ({}))
+      if (!silencioso) mostrarToast('error', data.error || 'Error de conexión')
+    }
   } catch (e) {
-    mostrarToast('error', 'Error de conexión')
+    // Sin internet: la pantalla de conexión perdida aparece y los cambios
+    // pendientes quedan en localStorage (se reenvían al reconectar)
+    mostrarSinConexion()
   } finally {
-    btn.disabled = false
-    btn.textContent = '💾 Guardar todos los cambios'
+    if (btn) {
+      btn.disabled = false
+      btn.textContent = '💾 Guardar todos los cambios'
+    }
   }
 }
 
@@ -3223,6 +3199,133 @@ async function modalObsGuardarEdicion(id) {
     mostrarToast('error', 'Error de conexión')
   }
 }
+
+// ─────────────────────────────────────────────────────
+// AUTOGUARDADO: los cambios pendientes viven en localStorage, así que si el
+// docente pierde internet o cierra la pestaña sin guardar, no se pierden:
+// al volver se restauran en la tabla y se reenvían solos.
+// ─────────────────────────────────────────────────────
+const CLAVE_SESION = 'sc-sesion'
+const CLAVE_CAMBIOS = 'sc-cambios-pendientes'
+
+function guardarCambiosLocal() {
+  try { localStorage.setItem(CLAVE_CAMBIOS, JSON.stringify(cambiosGrid)) } catch (e) { /* lleno o bloqueado */ }
+}
+
+function cargarCambiosLocal() {
+  try { return JSON.parse(localStorage.getItem(CLAVE_CAMBIOS) || '{}') } catch (e) { return {} }
+}
+
+// Al cargar la página: recupera los cambios pendientes del último docente
+function restaurarCambiosLocal() {
+  const pendientes = cargarCambiosLocal()
+  if (pendientes && Object.keys(pendientes).length) cambiosGrid = pendientes
+}
+
+// Aplica visualmente los cambios pendientes sobre la tabla recién renderizada
+function aplicarCambiosPendientesAlGrid() {
+  const pendientes = Object.values(cambiosGrid)
+  if (!pendientes.length) return
+  const inputs = document.querySelectorAll('#gtbody input.cell-input')
+  for (const inp of inputs) {
+    const oc = inp.getAttribute('onchange') || ''
+    const m = oc.match(/marcarCambio\((\d+),'([A-Z]+)','(.*)',/)
+    if (!m) continue
+    const est = studentsData[Number(m[1])]
+    if (!est) continue
+    const pend = pendientes.find(p => p.estudianteId === est.estudianteId && p.tipo === m[2] && p.titulo === m[3])
+    if (pend) inp.value = pend._delete ? '' : pend.valor
+  }
+}
+
+// ─────────────────────────────────────────────────────
+// CONEXIÓN PERDIDA: overlay con la imagen 404 + botón "Intentar de nuevo".
+// Se activa con el evento offline del navegador y cuando una petición de
+// guardado falla por red; se quita sola al reconectar. No desloguea.
+// ─────────────────────────────────────────────────────
+function mostrarSinConexion() {
+  const p = document.getElementById('pantalla-sin-conexion')
+  if (p) p.style.display = 'flex'
+}
+
+function ocultarSinConexion() {
+  const p = document.getElementById('pantalla-sin-conexion')
+  if (p) p.style.display = 'none'
+}
+
+function intentarDeNuevo() {
+  if (navigator.onLine) {
+    ocultarSinConexion()
+    reintentarPendientes()
+  } else {
+    mostrarToast('error', 'Sigue sin conexión. Revisa tu internet.')
+  }
+}
+
+// Reintenta enviar los cambios pendientes (llamado al reconectar)
+async function reintentarPendientes() {
+  if (currentToken && Object.keys(cambiosGrid).length > 0) {
+    await guardarGrid(true)
+  }
+}
+
+// Autoenvío: cada 20 s, si hay cambios pendientes y hay conexión, se envían
+// solos. Lo que se envió queda en la BD para siempre aunque luego se caiga.
+let _autoenvioTimer = null
+function iniciarAutoenvio() {
+  if (_autoenvioTimer) return
+  _autoenvioTimer = setInterval(() => {
+    if (navigator.onLine && currentToken && Object.keys(cambiosGrid).length > 0) {
+      guardarGrid(true)
+    }
+  }, 20000)
+}
+
+window.addEventListener('offline', mostrarSinConexion)
+window.addEventListener('online', () => { ocultarSinConexion(); reintentarPendientes() })
+
+// ─────────────────────────────────────────────────────
+// SESIÓN PERSISTENTE: el token vive en localStorage, así que refrescar la
+// página NO devuelve al login. Se valida con /api/auth/yo (datos frescos) y
+// se restaura el portal del rol correspondiente.
+// ─────────────────────────────────────────────────────
+function guardarSesionLocal(token, usuario) {
+  try { localStorage.setItem(CLAVE_SESION, JSON.stringify({ token, usuario })) } catch (e) {}
+}
+
+function borrarSesionLocal() {
+  try { localStorage.removeItem(CLAVE_SESION) } catch (e) {}
+}
+
+async function restaurarSesion() {
+  let s = null
+  try { s = JSON.parse(localStorage.getItem(CLAVE_SESION) || 'null') } catch (e) {}
+  if (!s || !s.token) return
+  try {
+    const res = await fetch(API + '/api/auth/yo', { headers: { 'Authorization': 'Bearer ' + s.token } })
+    if (!res.ok) { borrarSesionLocal(); return }
+    const data = await res.json()
+    currentToken = s.token
+    currentUser = data.usuario
+    restaurarCambiosLocal()
+    if (data.usuario.rol === 'ADMIN') showAdminPortal(data.usuario)
+    else if (data.usuario.rol === 'DOCENTE') showTeacherPortal(data.usuario)
+    else showStudentPortal(data.usuario)
+  } catch (e) {
+    mostrarSinConexion()
+  }
+}
+
+restaurarSesion()
+iniciarAutoenvio()
 </script>
+
+<!-- Pantalla de conexión perdida -->
+<div id="pantalla-sin-conexion" style="display:none;position:fixed;inset:0;z-index:9999;background:var(--paper);flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;">
+  <img src="imagenparapage404.png" style="max-width:280px;width:60%;margin-bottom:18px;" alt="Sin conexión">
+  <div style="font-size:20px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);margin-bottom:8px;">Ups... has perdido la conexión</div>
+  <div style="font-size:13px;color:var(--ink-500);margin-bottom:18px;max-width:420px;">Revisa tu internet. Tus cambios pendientes están guardados y no se perderán.</div>
+  <button class="btn-sm primary" style="padding:10px 22px;font-weight:600;" onclick="intentarDeNuevo()">Intentar de nuevo</button>
+</div>
 </body>
 </html>
