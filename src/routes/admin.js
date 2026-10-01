@@ -168,6 +168,65 @@ router.put('/profesores/:id/correo', async (req, res) => {
   }
 })
 
+// ─── ADMINISTRADORES ───
+// Los admins pueden crear y eliminar otros admins. Regla de seguridad: el
+// admin LOGUEADO nunca puede eliminarse a sí mismo ("el actual", pase lo que
+// pase); el resto de admins sí puede ser eliminado por otro admin logueado.
+
+router.get('/administradores', async (req, res) => {
+  try {
+    const rows = await prisma._db.prepare(`
+      SELECT id, nombre, documento, correo, activo, creadoEn
+      FROM usuarios WHERE rol = 'ADMIN'
+      ORDER BY nombre ASC
+    `).all()
+    res.json(rows)
+  } catch (error) {
+    console.error('Error GET /administradores:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+router.post('/administradores', async (req, res) => {
+  try {
+    const { documento, nombre, password } = req.body
+    if (!documento || !nombre || !password) {
+      return res.status(400).json({ error: 'documento, nombre y password son requeridos' })
+    }
+    if (!/^\d+$/.test(String(documento))) {
+      return res.status(400).json({ error: 'El documento debe ser numérico' })
+    }
+    if (String(password).length < 6) {
+      return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' })
+    }
+    const existente = await prisma._db.prepare('SELECT id FROM usuarios WHERE documento = ?').get(String(documento))
+    if (existente) return res.status(409).json({ error: 'Ya existe un usuario con ese documento' })
+    const hash = bcrypt.hashSync(String(password), 10)
+    const id = require('crypto').randomUUID()
+    await prisma._db.prepare('INSERT INTO usuarios (id, correo, password, rol, nombre, documento, activo) VALUES (?, NULL, ?, ?, ?, ?, 1)').run(id, hash, 'ADMIN', String(nombre).trim(), String(documento))
+    res.status(201).json({ mensaje: 'Administrador creado', id, nombre: String(nombre).trim(), documento: String(documento) })
+  } catch (error) {
+    console.error('Error POST /administradores:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+router.delete('/administradores/:id', async (req, res) => {
+  try {
+    if (req.params.id === req.usuario.id) {
+      return res.status(409).json({ error: 'No puedes eliminar tu propio administrador' })
+    }
+    const admin = await prisma._db.prepare("SELECT id FROM usuarios WHERE id = ? AND rol = 'ADMIN'").get(req.params.id)
+    if (!admin) return res.status(404).json({ error: 'Administrador no encontrado' })
+    await prisma._db.prepare('DELETE FROM password_resets WHERE usuarioId = ?').run(req.params.id)
+    await prisma._db.prepare('DELETE FROM usuarios WHERE id = ?').run(req.params.id)
+    res.json({ mensaje: 'Administrador eliminado' })
+  } catch (error) {
+    console.error('Error DELETE /administradores:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
 // ─── MATERIAS ───
 
 router.get('/materias', async (req, res) => {

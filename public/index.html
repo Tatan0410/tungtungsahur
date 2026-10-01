@@ -460,6 +460,7 @@ body::before {
         Menu
       </div>
       <button class="btn-sm" onclick="cargarAdminProfesores()" style="width:100%;text-align:left;justify-content:flex-start;margin-bottom:6px;font-size:12px;padding:9px 10px;" id="nav-profesores">👤 Profesores</button>
+      <button class="btn-sm" onclick="cargarAdminAdmins()" style="width:100%;text-align:left;justify-content:flex-start;margin-bottom:6px;font-size:12px;padding:9px 10px;" id="nav-admins">🛡️ Admins</button>
       <button class="btn-sm" onclick="cargarAdminMaterias()" style="width:100%;text-align:left;justify-content:flex-start;margin-bottom:6px;font-size:12px;padding:9px 10px;" id="nav-materias">📚 Materias</button>
       <button class="btn-sm" onclick="cargarAdminAsignaciones()" style="width:100%;text-align:left;justify-content:flex-start;margin-bottom:6px;font-size:12px;padding:9px 10px;" id="nav-asignaciones">📋 Asignaciones</button>
       <button class="btn-sm" onclick="cargarAdminPeriodos()" style="width:100%;text-align:left;justify-content:flex-start;margin-bottom:6px;font-size:12px;padding:9px 10px;" id="nav-periodos">📅 Períodos</button>
@@ -538,6 +539,25 @@ body::before {
         <tbody id="admin-tb-profesores"></tbody>
       </table>
     </div>
+  </div>
+
+  <div id="admin-admins-section" style="display:none;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+      <div style="font-size:15px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);">Administradores</div>
+      <button class="btn-sm success" onclick="mostrarModalAdmin()" style="font-weight:600;">➕ Crear administrador</button>
+    </div>
+    <div style="overflow-x:auto;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:600px;">
+        <thead><tr style="background:var(--cream-100);">
+          <th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);">Nombre</th>
+          <th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);">Documento</th>
+          <th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);">Correo de recuperación</th>
+          <th style="padding:10px 12px;text-align:center;border-bottom:1px solid var(--line);">Acciones</th>
+        </tr></thead>
+        <tbody id="admin-tb-admins"></tbody>
+      </table>
+    </div>
+    <div style="font-size:11px;color:var(--ink-400);margin-top:10px;">El administrador con sesión iniciada no puede eliminarse a sí mismo. Cada admin cambia su contraseña, documento y correo desde ⚙️ Mi cuenta (con código de verificación).</div>
   </div>
 
   <div id="admin-materias-section" style="display:none;">
@@ -784,19 +804,43 @@ body::before {
     <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:18px;">
       <div>
         <div style="font-size:15px;font-weight:700;color:var(--ink-900);">⚙️ Mi cuenta</div>
-        <div class="sub-label">Cambia tu contraseña o correo. Se requiere la contraseña actual.</div>
+        <div class="sub-label" id="mi-cuenta-sub">Cambia tu contraseña o correo. Se requiere la contraseña actual.</div>
       </div>
       <button onclick="cerrarModalMiCuenta()" style="border:none;background:none;font-size:20px;cursor:pointer;color:var(--ink-400);line-height:1;padding:0;">✕</button>
     </div>
 
-    <div class="inp-g"><label class="lbl">Contraseña actual *</label><input class="inp" id="mi-cuenta-password-actual" type="password" placeholder="Tu contraseña actual" style="width:100%;"></div>
+    <!-- Flujo DOCENTE: contraseña actual -->
+    <div id="mi-cuenta-doc-flow">
+      <div class="inp-g"><label class="lbl">Contraseña actual *</label><input class="inp" id="mi-cuenta-password-actual" type="password" placeholder="Tu contraseña actual" style="width:100%;"></div>
+      <hr style="margin:16px 0;border:none;border-top:1px solid var(--line);">
+      <div style="font-size:10px;color:var(--ink-400);margin-bottom:10px;">Si dejas ambos vacíos, no hace nada.</div>
+    </div>
 
-    <hr style="margin:16px 0;border:none;border-top:1px solid var(--line);">
+    <!-- Flujo ADMIN: código de verificación -->
+    <div id="mi-cuenta-admin-flow" style="display:none;">
+      <div style="display:flex;gap:8px;align-items:end;margin-bottom:12px;">
+        <div class="inp-g" style="flex:1;"><label class="lbl">Código de verificación *</label><input class="inp" id="mi-cuenta-codigo" type="text" inputmode="numeric" maxlength="6" placeholder="6 dígitos" style="width:100%;"></div>
+        <div><button class="btn-sm" id="btn-pedir-codigo" onclick="pedirCodigoVerificacion()" style="font-weight:600;white-space:nowrap;">📧 Pedir código</button></div>
+      </div>
+      <div style="font-size:11px;color:var(--ink-400);margin-bottom:12px;">El código llega a tu correo de recuperación y expira en 15 minutos. Para el PRIMER correo usa el botón de abajo.</div>
+      <button class="btn-sm" onclick="mostrarSeccionCorreoPrimeraVez()" style="font-size:11px;">Aún no tengo correo de recuperación</button>
+      <hr style="margin:16px 0;border:none;border-top:1px solid var(--line);">
+    </div>
+
+    <!-- Primer correo (admin sin correo): con contraseña actual -->
+    <div id="mi-cuenta-correo-primero" style="display:none;">
+      <div style="font-size:12px;color:var(--ink-500);margin-bottom:10px;">Agrega tu correo de recuperación. Se requiere la contraseña actual. Después podrás cambiar lo demás con código.</div>
+      <div class="inp-g"><label class="lbl">Correo de recuperación *</label><input class="inp" id="mi-cuenta-correo-primero-input" type="email" placeholder="tucorreo@ejemplo.com" style="width:100%;"></div>
+      <div class="inp-g"><label class="lbl">Contraseña actual *</label><input class="inp" id="mi-cuenta-primero-password" type="password" placeholder="Tu contraseña actual" style="width:100%;"></div>
+      <div style="margin-bottom:12px;"><button class="btn-sm primary" onclick="guardarCorreoPrimeraVez()" style="font-weight:600;">📧 Agregar correo</button></div>
+    </div>
+
+    <div class="inp-g" id="mi-cuenta-doc-input-g"><label class="lbl">Nuevo número de documento</label><input class="inp" id="mi-cuenta-documento" type="text" inputmode="numeric" placeholder="dejar vacío si no lo cambias" style="width:100%;"></div>
 
     <div class="inp-g"><label class="lbl">Nuevo correo electrónico</label><input class="inp" id="mi-cuenta-correo" type="email" placeholder="dejar vacío si no lo cambias" style="width:100%;"></div>
 
     <div class="inp-g"><label class="lbl">Nueva contraseña</label><input class="inp" id="mi-cuenta-nueva-password" type="password" placeholder="dejar vacío si no la cambias" style="width:100%;"></div>
-    <div style="font-size:10px;color:var(--ink-400);margin-top:-6px;margin-bottom:10px;">Si llenas la nueva contraseña: mínimo 6 caracteres. Si dejas ambos vacíos, no hace nada.</div>
+    <div style="font-size:10px;color:var(--ink-400);margin-top:-6px;margin-bottom:10px;">Si llenas la nueva contraseña: mínimo 6 caracteres.</div>
 
     <div class="error-msg" id="mi-cuenta-error"></div>
     <div id="mi-cuenta-success" style="display:none;font-size:13px;color:#2E7D32;background:#E8F5E9;padding:10px;border-radius:var(--r-md);margin-bottom:10px;"></div>
@@ -1742,7 +1786,7 @@ function mostrarToast(tipo, msg) {
 // ---- ADMIN PANEL ----
 
 function actualizarNavActivo(idActivo) {
-  const botones = ['nav-profesores','nav-materias','nav-asignaciones','nav-periodos','nav-reporte','nav-estudiantes','nav-directores','nav-obs']
+  const botones = ['nav-profesores','nav-admins','nav-materias','nav-asignaciones','nav-periodos','nav-reporte','nav-estudiantes','nav-directores','nav-obs']
   botones.forEach(id => {
     const b = document.getElementById(id)
     if (b) {
@@ -1766,6 +1810,7 @@ async function cargarAdminProfesores() {
   document.getElementById('admin-profesores-section').style.display = 'block'
   document.getElementById('admin-asignaciones-section').style.display = 'none'
   document.getElementById('admin-materias-section').style.display = 'none'
+  document.getElementById('admin-admins-section').style.display = 'none'
   document.getElementById('admin-periodos-section').style.display = 'none'
   document.getElementById('admin-obs-section').style.display = 'none'
   document.getElementById('admin-estudiantes-section').style.display = 'none'
@@ -2171,6 +2216,94 @@ function cerrarModalProfesor() {
   document.getElementById('modal-profesor').style.display = 'none'
 }
 
+// ─── ADMINISTRADORES (sección 🛡️ Admins) ───
+
+async function cargarAdminAdmins() {
+  document.getElementById('admin-profesores-section').style.display = 'none'
+  document.getElementById('admin-materias-section').style.display = 'none'
+  document.getElementById('admin-admins-section').style.display = 'block'
+  document.getElementById('admin-asignaciones-section').style.display = 'none'
+  document.getElementById('admin-periodos-section').style.display = 'none'
+  document.getElementById('admin-obs-section').style.display = 'none'
+  document.getElementById('admin-reporte-corte-section').style.display = 'none'
+  document.getElementById('admin-estudiantes-section').style.display = 'none'
+  document.getElementById('admin-directores-section').style.display = 'none'
+  actualizarNavActivo('nav-admins')
+  const tb = document.getElementById('admin-tb-admins')
+  tb.innerHTML = '<tr><td colspan="4" style="padding:24px;text-align:center;color:var(--ink-400);">Cargando...</td></tr>'
+  try {
+    const res = await fetch(API + '/api/admin/administradores', { headers: { 'Authorization': 'Bearer ' + currentToken } })
+    if (!res.ok) return
+    const admins = await res.json()
+    tb.innerHTML = admins.map(a => {
+      const soyYo = currentUser && a.id === currentUser.id
+      const badge = soyYo ? '<span style="background:#EAF3DE;color:#3B6D11;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">Tú</span>' : ''
+      const acciones = soyYo
+        ? '<span style="color:var(--ink-400);font-size:11px;">No puedes eliminarte a ti mismo</span>'
+        : '<button class="btn-sm" onclick="adminEliminarAdmin(\'' + a.id + '\',\'' + escArg(a.nombre) + '\')" style="font-size:11px;color:#A32D2D;">Eliminar</button>'
+      return '<tr>' +
+        '<td style="padding:10px 12px;border-bottom:1px solid var(--line);font-weight:600;">' + esc(a.nombre) + ' ' + badge + '</td>' +
+        '<td style="padding:10px 12px;border-bottom:1px solid var(--line);">' + esc(a.documento) + '</td>' +
+        '<td style="padding:10px 12px;border-bottom:1px solid var(--line);">' + (a.correo ? esc(a.correo) : '<span style="color:var(--ink-400);font-size:11px;">Sin correo</span>') + '</td>' +
+        '<td style="padding:10px 12px;border-bottom:1px solid var(--line);text-align:center;">' + acciones + '</td>' +
+        '</tr>'
+    }).join('')
+    if (!admins.length) tb.innerHTML = '<tr><td colspan="4" style="padding:24px;text-align:center;color:var(--ink-400);">No hay administradores</td></tr>'
+  } catch (e) {
+    tb.innerHTML = '<tr><td colspan="4" style="padding:24px;text-align:center;color:#A32D2D;">Error al cargar</td></tr>'
+  }
+}
+
+function mostrarModalAdmin() {
+  pedirTexto('Documento del nuevo administrador:', '', async (doc) => {
+    if (!doc || !doc.trim()) return
+    if (!/^\d+$/.test(doc.trim())) { mostrarToast('error', 'El documento debe ser numérico'); return }
+    pedirTexto('Nombre del nuevo administrador:', '', async (nombre) => {
+      if (!nombre || !nombre.trim()) return
+      pedirTexto('Contraseña (mínimo 6 caracteres):', '', async (password) => {
+        if (!password || String(password).length < 6) { mostrarToast('error', 'La contraseña debe tener al menos 6 caracteres'); return }
+        try {
+          const res = await fetch(API + '/api/admin/administradores', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + currentToken, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ documento: doc.trim(), nombre: nombre.trim(), password })
+          })
+          const data = await res.json()
+          if (res.ok) {
+            mostrarToast('ok', 'Administrador creado: ' + nombre.trim())
+            cargarAdminAdmins()
+          } else {
+            mostrarToast('error', data.error || 'Error al crear')
+          }
+        } catch (e) {
+          mostrarToast('error', 'Error de conexión')
+        }
+      })
+    })
+  })
+}
+
+async function adminEliminarAdmin(id, nombre) {
+  confirmarAccion('¿Eliminar al administrador ' + nombre + '?\nYa no podrá iniciar sesión.', async (ok) => {
+    if (!ok) return
+    try {
+      const res = await fetch(API + '/api/admin/administradores/' + id, {
+        method: 'DELETE',
+        headers: { 'Authorization': 'Bearer ' + currentToken }
+      })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok) {
+        mostrarToast('ok', 'Administrador eliminado')
+        cargarAdminAdmins()
+      } else {
+        mostrarToast('error', data.error || 'Error al eliminar')
+      }
+    } catch (e) {
+      mostrarToast('error', 'Error de conexión')
+    }
+  })
+}
+
 async function adminGuardarProfesor() {
   const doc = document.getElementById('modal-prof-doc').value.trim()
   const nombre = document.getElementById('modal-prof-nombre').value.trim()
@@ -2203,6 +2336,7 @@ async function cargarAdminPeriodos() {
   document.getElementById('admin-profesores-section').style.display = 'none'
   document.getElementById('admin-asignaciones-section').style.display = 'none'
   document.getElementById('admin-materias-section').style.display = 'none'
+  document.getElementById('admin-admins-section').style.display = 'none'
   document.getElementById('admin-periodos-section').style.display = 'block'
   document.getElementById('admin-reporte-corte-section').style.display = 'none'
   document.getElementById('admin-estudiantes-section').style.display = 'none'
@@ -2365,10 +2499,15 @@ async function enviarSolicitudRecuperacion() {
       body: JSON.stringify({ correo })
     })
     const data = await res.json()
-    if (res.ok) {
+    if (res.ok && data.existe) {
+      // El correo existe: sí se muestra el menú del código de verificación
       mostrarModalVerificar(correo)
       document.getElementById('recuperar-success').textContent = data.mensaje || ''
       document.getElementById('recuperar-success').style.display = 'block'
+    } else if (res.ok && data.existe === false) {
+      // El correo no existe: NO se muestra el menú del código
+      document.getElementById('recuperar-error').textContent = data.mensaje || 'No se puede atender tu solicitud'
+      document.getElementById('recuperar-error').style.display = 'block'
     } else {
       document.getElementById('recuperar-error').textContent = data.error || 'Error'
       document.getElementById('recuperar-error').style.display = 'block'
@@ -2413,14 +2552,24 @@ async function verificarCambiarPassword() {
   btn.textContent = '✅ Cambiar contraseña'
 }
 
-// ─── MI CUENTA (docente) ───
+// ─── MI CUENTA (docente: contraseña actual · admin: código de verificación) ───
 
 function abrirMiCuenta() {
-  document.getElementById('mi-cuenta-password-actual').value = ''
   document.getElementById('mi-cuenta-correo').value = ''
   document.getElementById('mi-cuenta-nueva-password').value = ''
+  document.getElementById('mi-cuenta-documento').value = ''
   document.getElementById('mi-cuenta-error').style.display = 'none'
   document.getElementById('mi-cuenta-success').style.display = 'none'
+  const esAdmin = currentUser && currentUser.rol === 'ADMIN'
+  document.getElementById('mi-cuenta-doc-flow').style.display = esAdmin ? 'none' : 'block'
+  document.getElementById('mi-cuenta-admin-flow').style.display = esAdmin ? 'block' : 'none'
+  document.getElementById('mi-cuenta-correo-primero').style.display = 'none'
+  document.getElementById('mi-cuenta-doc-input-g').style.display = esAdmin ? 'block' : 'none'
+  document.getElementById('mi-cuenta-sub').textContent = esAdmin
+    ? 'Cambia tu documento, contraseña o correo. Se requiere un código de verificación.'
+    : 'Cambia tu contraseña o correo. Se requiere la contraseña actual.'
+  document.getElementById('mi-cuenta-password-actual').value = ''
+  document.getElementById('mi-cuenta-codigo').value = ''
   document.getElementById('modal-mi-cuenta').style.display = 'flex'
 }
 
@@ -2428,12 +2577,110 @@ function cerrarModalMiCuenta() {
   document.getElementById('modal-mi-cuenta').style.display = 'none'
 }
 
+// El admin pide su código de verificación (llega a su correo de recuperación)
+async function pedirCodigoVerificacion() {
+  const btn = document.getElementById('btn-pedir-codigo')
+  btn.disabled = true
+  try {
+    const res = await fetch(API + '/api/auth/codigo', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + currentToken }
+    })
+    const data = await res.json()
+    if (res.ok) {
+      mostrarToast('ok', data.mensaje || 'Código enviado')
+    } else {
+      mostrarToast('error', data.error || 'No se pudo enviar el código')
+    }
+  } catch (e) {
+    mostrarToast('error', 'Error de conexión')
+  }
+  btn.disabled = false
+}
+
+// Primer correo de recuperación del admin (sin código, con contraseña actual)
+function mostrarSeccionCorreoPrimeraVez() {
+  document.getElementById('mi-cuenta-correo-primero').style.display = 'block'
+}
+
+async function guardarCorreoPrimeraVez() {
+  const correo = document.getElementById('mi-cuenta-correo-primero-input').value.trim()
+  const passwordActual = document.getElementById('mi-cuenta-primero-password').value
+  const err = document.getElementById('mi-cuenta-error')
+  if (!correo) { err.textContent = 'Ingresa tu correo'; err.style.display = 'block'; return }
+  if (!passwordActual) { err.textContent = 'La contraseña actual es requerida'; err.style.display = 'block'; return }
+  try {
+    const res = await fetch(API + '/api/auth/mi-perfil', {
+      method: 'PUT',
+      headers: { 'Authorization': 'Bearer ' + currentToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ passwordActual, nuevoCorreo: correo })
+    })
+    const data = await res.json()
+    if (res.ok) {
+      err.style.display = 'none'
+      document.getElementById('mi-cuenta-correo-primero').style.display = 'none'
+      document.getElementById('mi-cuenta-primero-password').value = ''
+      mostrarToast('ok', 'Correo de recuperación agregado')
+    } else {
+      err.textContent = data.error || 'Error'
+      err.style.display = 'block'
+    }
+  } catch (e) {
+    err.textContent = 'Error de conexión'
+    err.style.display = 'block'
+  }
+}
+
 async function guardarMiCuenta() {
+  const err = document.getElementById('mi-cuenta-error')
+  const btn = document.getElementById('btn-mi-cuenta')
+  const esAdmin = currentUser && currentUser.rol === 'ADMIN'
+
+  if (esAdmin) {
+    // ADMIN: código de verificación + documento/contraseña/correo opcionales
+    const codigo = document.getElementById('mi-cuenta-codigo').value.trim()
+    const nuevoDocumento = document.getElementById('mi-cuenta-documento').value.trim()
+    const nuevaPassword = document.getElementById('mi-cuenta-nueva-password').value
+    const nuevoCorreo = document.getElementById('mi-cuenta-correo').value.trim()
+    if (!codigo) { err.textContent = 'Pide e ingresa el código de verificación'; err.style.display = 'block'; return }
+    if (!nuevoDocumento && !nuevaPassword && !nuevoCorreo) { err.textContent = 'Llena el documento, la nueva contraseña o el nuevo correo'; err.style.display = 'block'; return }
+    btn.disabled = true
+    btn.textContent = 'Guardando...'
+    try {
+      const res = await fetch(API + '/api/auth/admin/mi-datos', {
+        method: 'PUT',
+        headers: { 'Authorization': 'Bearer ' + currentToken, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          codigo,
+          ...(nuevoDocumento && { nuevoDocumento }),
+          ...(nuevaPassword && { nuevaPassword }),
+          ...(nuevoCorreo && { nuevoCorreo })
+        })
+      })
+      const data = await res.json()
+      if (res.ok) {
+        document.getElementById('mi-cuenta-success').textContent = data.mensaje + (data.documento ? ' (nuevo documento: ' + data.documento + ')' : '')
+        document.getElementById('mi-cuenta-success').style.display = 'block'
+        err.style.display = 'none'
+        if (data.documento) guardarSesionLocal(currentToken, Object.assign({}, currentUser, { documento: data.documento }))
+        setTimeout(() => { cerrarModalMiCuenta() }, 2000)
+      } else {
+        err.textContent = data.error || 'Error'
+        err.style.display = 'block'
+      }
+    } catch (e) {
+      err.textContent = 'Error de conexión'
+      err.style.display = 'block'
+    }
+    btn.disabled = false
+    btn.textContent = '💾 Guardar cambios'
+    return
+  }
+
+  // DOCENTE: contraseña actual + correo/contraseña nuevos
   const passwordActual = document.getElementById('mi-cuenta-password-actual').value
   const nuevoCorreo = document.getElementById('mi-cuenta-correo').value.trim()
   const nuevaPassword = document.getElementById('mi-cuenta-nueva-password').value
-  const err = document.getElementById('mi-cuenta-error')
-  const btn = document.getElementById('btn-mi-cuenta')
   if (!passwordActual) { err.textContent = 'La contraseña actual es requerida'; err.style.display = 'block'; return }
   btn.disabled = true
   btn.textContent = 'Guardando...'
@@ -2515,6 +2762,7 @@ async function cargarAdminReporteCorte() {
   document.getElementById('admin-obs-section').style.display = 'none'
   document.getElementById('admin-asignaciones-section').style.display = 'none'
   document.getElementById('admin-materias-section').style.display = 'none'
+  document.getElementById('admin-admins-section').style.display = 'none'
   document.getElementById('admin-estudiantes-section').style.display = 'none'
   document.getElementById('admin-directores-section').style.display = 'none'
   document.getElementById('admin-reporte-corte-section').style.display = 'block'
@@ -2594,6 +2842,7 @@ async function cargarAdminEstudiantes() {
   document.getElementById('admin-profesores-section').style.display = 'none'
   document.getElementById('admin-asignaciones-section').style.display = 'none'
   document.getElementById('admin-materias-section').style.display = 'none'
+  document.getElementById('admin-admins-section').style.display = 'none'
   document.getElementById('admin-periodos-section').style.display = 'none'
   document.getElementById('admin-obs-section').style.display = 'none'
   document.getElementById('admin-directores-section').style.display = 'none'
@@ -2761,6 +3010,7 @@ async function cargarAdminDirectores() {
   document.getElementById('admin-profesores-section').style.display = 'none'
   document.getElementById('admin-asignaciones-section').style.display = 'none'
   document.getElementById('admin-materias-section').style.display = 'none'
+  document.getElementById('admin-admins-section').style.display = 'none'
   document.getElementById('admin-periodos-section').style.display = 'none'
   document.getElementById('admin-obs-section').style.display = 'none'
   document.getElementById('admin-estudiantes-section').style.display = 'none'
@@ -2852,6 +3102,7 @@ async function cargarAdminObservaciones(pagina) {
   document.getElementById('admin-profesores-section').style.display = 'none'
   document.getElementById('admin-asignaciones-section').style.display = 'none'
   document.getElementById('admin-materias-section').style.display = 'none'
+  document.getElementById('admin-admins-section').style.display = 'none'
   document.getElementById('admin-periodos-section').style.display = 'none'
   document.getElementById('admin-estudiantes-section').style.display = 'none'
   document.getElementById('admin-directores-section').style.display = 'none'

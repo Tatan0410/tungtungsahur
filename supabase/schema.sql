@@ -19,7 +19,7 @@
 
 CREATE TABLE IF NOT EXISTS usuarios (
     id TEXT PRIMARY KEY,
-    correo TEXT NOT NULL,
+    correo TEXT,
     password TEXT NOT NULL,
     rol TEXT NOT NULL,
     nombre TEXT NOT NULL,
@@ -223,3 +223,7 @@ DELETE FROM docente_materias a USING docente_materias b
 ALTER TABLE materias ADD COLUMN IF NOT EXISTS nombre_norm TEXT;
 UPDATE materias SET nombre_norm = LOWER(nombre) WHERE nombre_norm IS NULL;
 ALTER TABLE materias ALTER COLUMN grado DROP NOT NULL;
+
+-- ─── Actualización idempotente (BD ya existentes): correo opcional ───
+-- Los administradores nacen solo con usuario y contraseña (sin correo).
+ALTER TABLE usuarios ALTER COLUMN correo DROP NOT NULL;

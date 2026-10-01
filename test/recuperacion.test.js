@@ -1,7 +1,7 @@
 const { test, before, after } = require('node:test')
 const assert = require('node:assert/strict')
 const { arrancarServidor } = require('./helpers/servidor')
-const { crearApi, login, DOCENTE } = require('./helpers/api')
+const { crearApi, login, ADMIN, DOCENTE } = require('./helpers/api')
 
 let srv, api, db
 
@@ -20,10 +20,14 @@ function ultimoCodigoReal() {
   ).get(idDocente())
 }
 
-test('correo inexistente → 200 con mensaje genérico (no revela si existe)', async () => {
+test('correo inexistente → 200 con existe:false y NO se muestra el menú del código', async () => {
   const r = await api.post('/api/auth/recuperar', { body: { correo: 'nadie@inexistente.com' } })
   assert.equal(r.status, 200)
-  assert.match(r.data.mensaje, /Si el correo existe/)
+  assert.equal(r.data.existe, false, 'debe indicar que el correo no existe')
+  assert.match(r.data.mensaje, /No se puede atender tu solicitud/)
+  // Y no se crea ningún código para ese correo
+  const codigos = db.prepare('SELECT COUNT(*) c FROM password_resets pr JOIN usuarios u ON u.id = pr.usuarioId WHERE u.correo = ?').all('nadie@inexistente.com')
+  assert.equal(codigos[0].c, 0, 'no debe crearse código para un correo inexistente')
 })
 
 test('los códigos INVALID- no bloquean la recuperación (regresión del DoS)', async () => {
@@ -88,10 +92,17 @@ test('validaciones de /recuperar y /verificar', async () => {
   const sinCorreo = await api.post('/api/auth/recuperar', { body: {} })
   assert.equal(sinCorreo.status, 400)
 
-  // Un admin no puede usar la recuperación (es solo docentes) y no se filtra
+  // Un correo de admin inexistente también recibe "No se puede atender tu solicitud"
   const admin = await api.post('/api/auth/recuperar', { body: { correo: 'admin@ejemplo.edu.co' } })
   assert.equal(admin.status, 200)
-  assert.match(admin.data.mensaje, /Si el correo existe/)
+  assert.equal(admin.data.existe, false)
+  assert.match(admin.data.mensaje, /No se puede atender tu solicitud/)
+
+  // El correo REAL del admin sí existe → existe:true (la recuperación ya acepta admins)
+  const correoAdmin = db.prepare("SELECT correo FROM usuarios WHERE documento = ? AND rol = 'ADMIN'").get(ADMIN.documento).correo
+  const adminReal = await api.post('/api/auth/recuperar', { body: { correo: correoAdmin } })
+  assert.equal(adminReal.status, 200)
+  assert.equal(adminReal.data.existe, true, 'el correo real del admin debe existir')
 
   const sinCampos = await api.post('/api/auth/recuperar/verificar', { body: { correo: 'x@y.co' } })
   assert.equal(sinCampos.status, 400)
