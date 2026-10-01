@@ -1,4 +1,4 @@
--- =====================================================
+    -- =====================================================
 -- MIGRACIÓN: materias únicas por nombre (sin grado)
 -- Pegar en el SQL Editor de Supabase.
 -- SECCIÓN 1: idempotente y ADITIVA — se puede ejecutar ya; el código viejo
