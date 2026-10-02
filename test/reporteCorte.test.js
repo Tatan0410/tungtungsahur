@@ -45,7 +45,7 @@ before(async () => {
   ).get().curso
   estudiantes = db.prepare('SELECT id, documento FROM estudiantes WHERE curso = ?').all(curso)
   materias = db.prepare('SELECT materiaId, docenteId FROM docente_materias WHERE curso = ?').all(curso)
-  assert.ok(estudiantes.length >= 2, 'hacen falta ≥2 estudiantes en el curso')
+  assert.ok(estudiantes.length >= 3, 'hacen falta ≥3 estudiantes en el curso')
   assert.ok(materias.length >= 2, 'hacen falta ≥2 materias en el curso')
 
   // Nota deficiente (2.5) y nota aprobada (4.0) para la misma alumna
@@ -55,6 +55,29 @@ before(async () => {
   )
   ins.run('test-riesgo', estudiantes[0].id, materias[0].materiaId, materias[0].docenteId, ANIO_PRUEBA, 2.5)
   ins.run('test-aprobada', estudiantes[0].id, materias[1].materiaId, materias[1].docenteId, ANIO_PRUEBA, 4.0)
+
+  // Notas "a medias" (PERIODO 2, para no tocar las assertions de p1):
+  // - items que promedian 1.2 (< 3.0): debe salir RIESGO con nota parcial
+  // - items que promedian 3.0 (≥ 3.0): va aprobando, no debe aparecer
+  // - fila sin definitiva ni items: debe salir PENDIENTE
+  const insSinDef = db.prepare(
+    `INSERT INTO calificaciones (id, estudianteId, materiaId, docenteId, periodo, anio, definitiva, actualizadoEn)
+     VALUES (?, ?, ?, ?, 2, ?, NULL, datetime('now'))`
+  )
+  const insItem = db.prepare(
+    `INSERT INTO notas_items (id, calificacionId, tipo, valor, descripcion, creadoEn)
+     VALUES (?, ?, ?, ?, 'test', datetime('now'))`
+  )
+  // 2º estudiante, materia 1: 2.0*0.35 + 2.0*0.25 = 1.2 < 3.0 → RIESGO parcial
+  insSinDef.run('test-parcial-mala', estudiantes[1].id, materias[0].materiaId, materias[0].docenteId, ANIO_PRUEBA)
+  insItem.run('test-it-1', 'test-parcial-mala', 'ACTIVIDAD', 2.0)
+  insItem.run('test-it-2', 'test-parcial-mala', 'RESPONSABILIDAD', 2.0)
+  // 2º estudiante, materia 2: 5.0*0.35 + 5.0*0.25 = 3.0 (≥ 3.0) → no aparece
+  insSinDef.run('test-parcial-buena', estudiantes[1].id, materias[1].materiaId, materias[1].docenteId, ANIO_PRUEBA)
+  insItem.run('test-it-3', 'test-parcial-buena', 'ACTIVIDAD', 5.0)
+  insItem.run('test-it-4', 'test-parcial-buena', 'RESPONSABILIDAD', 5.0)
+  // 3º estudiante, materia 1: fila vacía (sin items ni definitiva) → PENDIENTE
+  insSinDef.run('test-fila-vacia', estudiantes[2].id, materias[0].materiaId, materias[0].docenteId, ANIO_PRUEBA)
 })
 
 after(() => {
@@ -92,4 +115,32 @@ test('otro año no toca las notas insertadas', async () => {
   const rep = await calcularReporteCorte(curso, 1, 1998)
   assert.equal(rep.filter(r => r.estado === 'RIESGO').length, 0)
   assert.equal(rep.length, estudiantes.length * materias.length, 'todo queda PENDIENTE en ese año')
+})
+
+test('items sin definitiva y promedio < 3.0 salen como RIESGO con la nota parcial', async () => {
+  const rep = await calcularReporteCorte(curso, 2, ANIO_PRUEBA)
+  const riesgo = rep.filter(r => r.estado === 'RIESGO')
+  assert.equal(riesgo.length, 1, 'solo el 2º estudiante en la materia 1 queda en riesgo')
+  const fila = riesgo[0]
+  assert.equal(fila.estudianteId, estudiantes[1].id)
+  assert.equal(fila.materiaId, materias[0].materiaId)
+  assert.equal(fila.definitiva, 1.2, 'la nota parcial debe calcularse desde los items (2.0*0.35 + 2.0*0.25)')
+  assert.equal(fila.provisional, true, 'la nota no está cerrada: es provisional')
+})
+
+test('items con promedio ≥ 3.0 no aparecen (va aprobando)', async () => {
+  const rep = await calcularReporteCorte(curso, 2, ANIO_PRUEBA)
+  assert.ok(
+    !rep.some(r => r.estudianteId === estudiantes[1].id && r.materiaId === materias[1].materiaId),
+    'la materia con parcial 3.0 no debe salir en el reporte'
+  )
+})
+
+test('una fila de calificación vacía (sin items ni definitiva) sale como PENDIENTE', async () => {
+  const rep = await calcularReporteCorte(curso, 2, ANIO_PRUEBA)
+  const fila = rep.find(r => r.estudianteId === estudiantes[2].id && r.materiaId === materias[0].materiaId)
+  assert.ok(fila, 'el 3º estudiante debe aparecer por la fila vacía')
+  assert.equal(fila.estado, 'PENDIENTE')
+  assert.equal(fila.definitiva, null)
+  assert.equal(fila.provisional, false)
 })

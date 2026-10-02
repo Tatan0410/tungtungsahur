@@ -449,6 +449,7 @@ body::before {
 
 /* Modales con entrada suave (los 12) */
 #modal-cambiar-curso > div,
+#modal-notas-estudiante > div,
 #modal-observaciones > div,
 #modal-reporte-corte > div,
 #modal-fechas > div,
@@ -765,7 +766,7 @@ body::before {
   <div id="admin-estudiantes-section" style="display:none;">
     <div style="font-size:15px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);margin-bottom:12px;">👥 Estudiantes</div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:16px;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px;">
-      <div><div class="lbl">Sede</div><select class="sel" id="admin-est-sede"><option value="">Todas</option></select></div>
+      <div><div class="lbl">Nombre</div><input class="inp" id="admin-est-nombre" placeholder="Buscar por nombre" style="width:170px;"></div>
       <div><div class="lbl">Curso</div><input class="inp" id="admin-est-curso" placeholder="Ej: 301" style="width:80px;"></div>
       <div><div class="lbl">Grado</div><select class="sel" id="admin-est-grado"><option value="">Todos</option></select></div>
       <div><button class="btn-sm primary" onclick="cargarAdminEstudiantes()" style="font-weight:600;">Filtrar</button></div>
@@ -777,7 +778,6 @@ body::before {
           <th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);">Documento</th>
           <th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);">Curso</th>
           <th style="padding:10px 12px;text-align:center;border-bottom:1px solid var(--line);">Grado</th>
-          <th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);">Sede</th>
           <th style="padding:10px 12px;text-align:center;border-bottom:1px solid var(--line);">Jornada</th>
           <th style="padding:10px 12px;text-align:center;border-bottom:1px solid var(--line);">Acción</th>
         </tr></thead>
@@ -823,6 +823,21 @@ body::before {
     </div>
   </div>
     </div>
+  </div>
+</div>
+
+<!-- Modal Ver Notas del Estudiante (admin) -->
+<div id="modal-notas-estudiante" style="display:none;position:fixed;inset:0;z-index:100;background:rgba(0,0,0,0.4);align-items:center;justify-content:center;" onclick="if(event.target===this)cerrarModalNotasEstudiante()">
+  <div style="background:var(--paper);border-radius:var(--r-lg);padding:24px;max-width:480px;width:92%;max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+    <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:14px;">
+      <div>
+        <div style="font-size:15px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);" id="modal-notas-titulo">Notas del estudiante</div>
+        <div style="font-size:12px;color:var(--ink-500);margin-top:2px;" id="modal-notas-info"></div>
+      </div>
+      <button class="btn-sm" onclick="cerrarModalNotasEstudiante()">✕</button>
+    </div>
+    <div class="inp-g" style="margin-bottom:12px;"><label class="lbl">Materia</label><select class="sel" id="modal-notas-select" style="width:100%;" onchange="renderNotasMateria(this.value)"></select></div>
+    <div id="modal-notas-tabla" style="overflow-x:auto;"></div>
   </div>
 </div>
 
@@ -1873,7 +1888,7 @@ async function cargarEstadoCorte() {
     if (riesgo.length) {
       html += '<div style="font-size:12px;font-weight:600;color:var(--red-700);margin-bottom:4px;">Materias en riesgo (definitiva &lt; 3.0):</div>'
       for (const r of riesgo) {
-        html += '<div style="font-size:12px;padding:3px 0;display:flex;justify-content:space-between;"><span>' + esc(r.materiaNombre) + '</span><span style="background:var(--red-100);color:var(--red-700);padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;">' + (r.definitiva !== null ? r.definitiva.toFixed(2) : '—') + '</span></div>'
+        html += '<div style="font-size:12px;padding:3px 0;display:flex;justify-content:space-between;"><span>' + esc(r.materiaNombre) + '</span><span style="background:var(--red-100);color:var(--red-700);padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;">' + (r.definitiva !== null ? r.definitiva.toFixed(2) + (r.provisional ? ' (parcial)' : '') : '—') + '</span></div>'
       }
     }
     if (pendiente.length) {
@@ -2988,7 +3003,7 @@ async function ejecutarAdminReporteCorte() {
         const estadoBadge = r.estado === 'RIESGO'
           ? '<span style="background:var(--red-100);color:var(--red-700);padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;">RIESGO</span>'
           : '<span style="background:var(--cream-100);color:var(--ink-600);padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;">PENDIENTE</span>'
-        const notaDisplay = r.definitiva !== null ? r.definitiva.toFixed(2) : '—'
+        const notaDisplay = r.definitiva !== null ? r.definitiva.toFixed(2) + (r.provisional ? ' (parcial)' : '') : '—'
         html += '<tr><td style="padding:5px 8px;border-bottom:1px solid var(--line);">' + esc(r.curso || '') + '</td><td style="padding:5px 8px;border-bottom:1px solid var(--line);">' + esc(r.estudianteNombre) + '</td><td style="padding:5px 8px;border-bottom:1px solid var(--line);">' + esc(r.materiaNombre) + '</td><td style="padding:5px 8px;border-bottom:1px solid var(--line);text-align:center;">' + estadoBadge + '</td><td style="padding:5px 8px;border-bottom:1px solid var(--line);text-align:center;">' + notaDisplay + '</td></tr>'
       }
       html += '</tbody></table>'
@@ -3032,16 +3047,6 @@ async function cargarAdminEstudiantes() {
   document.getElementById('admin-estudiantes-section').style.display = 'block'
   actualizarNavActivo('nav-estudiantes')
 
-  // Populate sede filter
-  try {
-    const sedesRes = await fetch(API + '/api/admin/sedes', { headers: { 'Authorization': 'Bearer ' + currentToken } })
-    if (sedesRes.ok) {
-      const sedes = await sedesRes.json()
-      const selSede = document.getElementById('admin-est-sede')
-      selSede.innerHTML = '<option value="">Todas</option>' + sedes.map(s => '<option value="' + s + '">' + s + '</option>').join('')
-    }
-  } catch (e) {}
-
   // Populate grado filter
   const selGrado = document.getElementById('admin-est-grado')
   selGrado.innerHTML = '<option value="">Todos</option>' + Array.from({length: 9}, (_, i) => i + 3).map(g => '<option value="' + g + '">' + g + '°</option>').join('')
@@ -3053,24 +3058,24 @@ async function cargarAdminEstudiantes() {
 async function cargarTablaEstudiantes() {
   const tb = document.getElementById('admin-tb-estudiantes')
   const pagEl = document.getElementById('admin-est-pagination')
-  tb.innerHTML = '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--ink-400);">Cargando...</td></tr>'
+  tb.innerHTML = '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--ink-400);">Cargando...</td></tr>'
 
-  const sede = document.getElementById('admin-est-sede').value
+  const nombre = document.getElementById('admin-est-nombre').value.trim()
   const curso = document.getElementById('admin-est-curso').value.trim()
   const grado = document.getElementById('admin-est-grado').value
   let url = API + '/api/admin/estudiantes?pagina=' + currentEstPage
-  if (sede) url += '&sede=' + encodeURIComponent(sede)
+  if (nombre) url += '&nombre=' + encodeURIComponent(nombre)
   if (curso) url += '&curso=' + encodeURIComponent(curso)
   if (grado) url += '&grado=' + encodeURIComponent(grado)
 
   try {
     const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + currentToken } })
-    if (!res.ok) { tb.innerHTML = '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--red-700);">Error al cargar</td></tr>'; return }
+    if (!res.ok) { tb.innerHTML = '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--red-700);">Error al cargar</td></tr>'; return }
     const data = await res.json()
     const rows = data.estudiantes || []
 
     if (!rows.length) {
-      tb.innerHTML = '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--ink-400);">Sin resultados</td></tr>'
+      tb.innerHTML = '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--ink-400);">Sin resultados</td></tr>'
     } else {
       tb.innerHTML = rows.map(e => {
         const jornadaBadge = e.jornada === 'MAÑANA'
@@ -3083,9 +3088,8 @@ async function cargarTablaEstudiantes() {
           '<td style="padding:8px 10px;border-bottom:1px solid var(--line);">' + esc(e.documento) + '</td>' +
           '<td style="padding:8px 10px;border-bottom:1px solid var(--line);">' + esc(e.curso) + '</td>' +
           '<td style="padding:8px 10px;border-bottom:1px solid var(--line);text-align:center;">' + e.grado + '°</td>' +
-          '<td style="padding:8px 10px;border-bottom:1px solid var(--line);">' + esc(e.sede) + '</td>' +
           '<td style="padding:8px 10px;border-bottom:1px solid var(--line);text-align:center;">' + jornadaBadge + '</td>' +
-          '<td style="padding:8px 10px;border-bottom:1px solid var(--line);text-align:center;"><button class="btn-sm" onclick="adminMostrarModalCambioCurso(\'' + e.id + '\',\'' + escArg(e.nombre) + '\',\'' + escArg(e.curso) + '\')" style="font-size:11px;">📄 Cambiar curso</button></td>' +
+          '<td style="padding:8px 10px;border-bottom:1px solid var(--line);text-align:center;white-space:nowrap;"><button class="btn-sm" onclick="adminVerNotas(\'' + e.id + '\',\'' + escArg(e.nombre) + '\')" style="font-size:11px;">👁 Ver notas</button> <button class="btn-sm" onclick="adminMostrarModalCambioCurso(\'' + e.id + '\',\'' + escArg(e.nombre) + '\',\'' + escArg(e.curso) + '\')" style="font-size:11px;">📄 Cambiar curso</button></td>' +
           '</tr>'
       }).join('')
     }
@@ -3101,7 +3105,7 @@ async function cargarTablaEstudiantes() {
       pagEl.innerHTML = ''
     }
   } catch (e) {
-    tb.innerHTML = '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--red-700);">Error de conexión</td></tr>'
+    tb.innerHTML = '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--red-700);">Error de conexión</td></tr>'
   }
 }
 
@@ -3154,6 +3158,64 @@ function adminMostrarModalCambioCurso(id, nombre, cursoActual) {
 function cerrarModalCambiarCurso() {
   document.getElementById('modal-cambiar-curso').style.display = 'none'
   currentCambioCursoId = null
+}
+
+// ─── Ver notas de un estudiante (panel admin) ───
+let _notasEstudianteActual = null
+
+function cerrarModalNotasEstudiante() {
+  document.getElementById('modal-notas-estudiante').style.display = 'none'
+  _notasEstudianteActual = null
+}
+
+async function adminVerNotas(id, nombre) {
+  document.getElementById('modal-notas-titulo').textContent = 'Notas de ' + nombre
+  document.getElementById('modal-notas-info').textContent = 'Cargando...'
+  document.getElementById('modal-notas-select').innerHTML = '<option value="">Cargando materias...</option>'
+  document.getElementById('modal-notas-tabla').innerHTML = ''
+  document.getElementById('modal-notas-estudiante').style.display = 'flex'
+  try {
+    const res = await fetch(API + '/api/admin/estudiantes/' + id + '/notas', { headers: { 'Authorization': 'Bearer ' + currentToken } })
+    if (!res.ok) {
+      document.getElementById('modal-notas-tabla').innerHTML = '<div style="color:var(--red-700);font-size:13px;padding:12px;">Error al cargar las notas</div>'
+      return
+    }
+    const data = await res.json()
+    _notasEstudianteActual = data
+    const est = data.estudiante
+    document.getElementById('modal-notas-info').innerHTML = 'Curso: <b>' + esc(est.curso) + '</b> · Grado: <b>' + esc(est.grado) + '°</b> · Documento: <b>' + esc(est.documento) + '</b> · Año: <b>' + data.anio + '</b>'
+    const sel = document.getElementById('modal-notas-select')
+    if (!data.materias.length) {
+      sel.innerHTML = '<option value="">(sin materias)</option>'
+      document.getElementById('modal-notas-tabla').innerHTML = '<div style="color:var(--ink-400);font-size:13px;padding:12px;">El curso ' + esc(est.curso) + ' no tiene materias asignadas todavía.</div>'
+      return
+    }
+    sel.innerHTML = data.materias.map(m => '<option value="' + esc(m.materiaId) + '">' + esc(m.materiaNombre) + '</option>').join('')
+    renderNotasMateria(data.materias[0].materiaId)
+  } catch (e) {
+    document.getElementById('modal-notas-tabla').innerHTML = '<div style="color:var(--red-700);font-size:13px;padding:12px;">Error de conexión</div>'
+  }
+}
+
+function renderNotasMateria(materiaId) {
+  const data = _notasEstudianteActual
+  if (!data) return
+  const mat = data.materias.find(m => m.materiaId === materiaId)
+  if (!mat) return
+  let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="background:var(--cream-100);"><th style="padding:8px 10px;text-align:left;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--ink-400);">Periodo</th><th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--ink-400);">Nota</th><th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--ink-400);">Estado</th></tr></thead><tbody>'
+  for (const p of mat.periodos) {
+    const badge = p.estado === 'RIESGO'
+      ? '<span style="background:var(--red-100);color:var(--red-700);padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">En riesgo</span>'
+      : p.estado === 'APROBADO'
+      ? '<span style="background:var(--green-100);color:var(--green-700);padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">Aprobado</span>'
+      : '<span style="background:var(--cream-100);color:var(--ink-600);padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">Sin nota</span>'
+    const nota = p.definitiva !== null
+      ? '<b style="color:' + (p.definitiva < 3.0 ? 'var(--red-700)' : 'var(--ink-900)') + ';">' + p.definitiva.toFixed(2) + '</b>' + (p.provisional ? ' <span style="font-size:10px;color:var(--amber-700);">(parcial)</span>' : '')
+      : '—'
+    html += '<tr><td style="padding:8px 10px;border-bottom:1px solid var(--line-soft);">Periodo ' + p.periodo + '</td><td style="padding:8px 10px;border-bottom:1px solid var(--line-soft);text-align:center;">' + nota + '</td><td style="padding:8px 10px;border-bottom:1px solid var(--line-soft);text-align:center;">' + badge + '</td></tr>'
+  }
+  html += '</tbody></table>'
+  document.getElementById('modal-notas-tabla').innerHTML = html
 }
 
 async function adminGuardarCambioCurso() {
@@ -3478,7 +3540,7 @@ async function cargarReporteCorte(curso) {
         const estadoBadge = r.estado === 'RIESGO'
           ? '<span style="background:var(--red-100);color:var(--red-700);padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;">RIESGO</span>'
           : '<span style="background:var(--cream-100);color:var(--ink-600);padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;">PENDIENTE</span>'
-        const notaDisplay = r.definitiva !== null ? r.definitiva.toFixed(2) : '—'
+        const notaDisplay = r.definitiva !== null ? r.definitiva.toFixed(2) + (r.provisional ? ' (parcial)' : '') : '—'
         html += '<tr><td style="padding:5px 8px;border-bottom:1px solid var(--line);">' + esc(r.estudianteNombre) + '</td><td style="padding:5px 8px;border-bottom:1px solid var(--line);">' + esc(r.materiaNombre) + '</td><td style="padding:5px 8px;border-bottom:1px solid var(--line);text-align:center;">' + estadoBadge + '</td><td style="padding:5px 8px;border-bottom:1px solid var(--line);text-align:center;">' + notaDisplay + '</td></tr>'
       }
       html += '</tbody></table>'

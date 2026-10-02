@@ -3,6 +3,7 @@ const bcrypt  = require('bcryptjs')
 const jwt     = require('jsonwebtoken')
 const prisma  = require('../prisma')
 const { calcularReporteCorte } = require('../services/reporteCorte')
+const { calcularDefinitiva } = require('../services/calculoNotas')
 
 const router = express.Router()
 
@@ -267,12 +268,47 @@ router.post('/materias', async (req, res) => {
 
 // ─── ASIGNACIONES ───
 
+// Lista FIJA de cursos vigentes. Los cursos existan o no estudiantes
+// matriculados (p. ej. 604/704/804 vacíos) deben aparecer como opción
+// en los dropdowns del panel para poder asignarles materias y mover
+// estudiantes allí.
+const CURSOS_VIGENTES = [
+  '601', '602', '603', '604',
+  '701', '702', '703', '704',
+  '801', '802', '803', '804',
+  '901', '902', '903', '904',
+  '1001', '1002', '1003', '1004',
+  '1101', '1102', '1103', '1104',
+]
+
+// Deriva grado/jornada/sede de un código de curso:
+// 6xx→6° … 11xx→11° · sufijo 01/02→MAÑANA, 03/04→TARDE
+function derivarCurso(curso) {
+  const codigo = String(curso)
+  const grado = parseInt(codigo.slice(0, codigo.length - 2), 10)
+  const sufijo = codigo.slice(-2)
+  let jornada = 'MAÑANA'
+  if (sufijo === '03' || sufijo === '04') jornada = 'TARDE'
+  return { grado, jornada, sede: 'PPAL - TRIUNFO' }
+}
+
 router.get('/cursos', async (req, res) => {
   try {
     const rows = await prisma._db.prepare(
-      "SELECT DISTINCT e.curso FROM estudiantes e JOIN usuarios u ON u.id = e.usuarioId WHERE u.activo = 1 AND e.curso != '' ORDER BY e.curso"
+      "SELECT DISTINCT e.curso, e.grado, e.sede, e.jornada FROM estudiantes e WHERE e.curso != ''"
     ).all()
-    res.json(rows.map(r => r.curso))
+    const vistos = new Map()
+    // Cursos reales de la BD (mantienen su grado/jornada/sede reales)
+    for (const r of rows) vistos.set(String(r.curso), { curso: String(r.curso), grado: r.grado, sede: r.sede, jornada: r.jornada })
+    // Los vigentes fijos siempre presentes, aunque no tengan estudiantes
+    for (const c of CURSOS_VIGENTES) {
+      if (!vistos.has(c)) {
+        const d = derivarCurso(c)
+        vistos.set(c, { curso: c, grado: d.grado, sede: d.sede, jornada: d.jornada })
+      }
+    }
+    const cursos = [...vistos.values()].sort((a, b) => a.curso.localeCompare(b.curso, undefined, { numeric: true }))
+    res.json(cursos.map(c => c.curso))
   } catch (error) {
     console.error('Error GET /cursos:', error)
     res.status(500).json({ error: 'Error interno' })
@@ -582,7 +618,7 @@ router.get('/observaciones', async (req, res) => {
 
 router.get('/estudiantes', async (req, res) => {
   try {
-    const { curso, sede, grado, pagina = 1 } = req.query
+    const { curso, sede, grado, nombre, pagina = 1 } = req.query
     const limite = 100
     const offset = (parseInt(pagina) - 1) * limite
     const where = []
@@ -590,6 +626,7 @@ router.get('/estudiantes', async (req, res) => {
     if (curso) { where.push('e.curso = ?'); params.push(curso) }
     if (sede) { where.push('e.sede = ?'); params.push(sede) }
     if (grado) { where.push('e.grado = ?'); params.push(parseInt(grado)) }
+    if (nombre) { where.push('u.nombre LIKE ?'); params.push('%' + String(nombre).trim() + '%') }
     const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : ''
 
     let total = { total: 0 }
@@ -617,6 +654,62 @@ router.get('/estudiantes', async (req, res) => {
   }
 })
 
+// Notas de un estudiante en las materias de su curso, para el visor del
+// panel de admin. Por materia trae los 4 periodos del año con la
+// definitiva cerrada o, si aún no está cerrada, la parcial calculada
+// en vivo desde las notas guardadas ("hasta el momento").
+router.get('/estudiantes/:id/notas', async (req, res) => {
+  try {
+    const estudiante = await prisma._db.prepare(`
+      SELECT e.id, u.nombre, e.documento, e.curso, e.grado, e.sede, e.jornada
+      FROM estudiantes e JOIN usuarios u ON u.id = e.usuarioId
+      WHERE e.id = ?
+    `).get(req.params.id)
+    if (!estudiante) return res.status(404).json({ error: 'Estudiante no encontrado' })
+
+    const materias = await prisma._db.prepare(`
+      SELECT dm.materiaId, m.nombre AS "materiaNombre"
+      FROM docente_materias dm
+      JOIN materias m ON m.id = dm.materiaId
+      WHERE dm.curso = ?
+      ORDER BY m.nombre ASC
+    `).all(estudiante.curso)
+
+    const anio = parseInt(req.query.anio) || new Date().getFullYear()
+    const resultado = []
+    for (const mat of materias) {
+      const periodos = []
+      for (const p of [1, 2, 3, 4]) {
+        const cal = await prisma._db.prepare(
+          'SELECT id, definitiva FROM calificaciones WHERE estudianteId = ? AND materiaId = ? AND periodo = ? AND anio = ?'
+        ).get(estudiante.id, mat.materiaId, p, anio)
+        let definitiva = cal ? cal.definitiva : null
+        let provisional = false
+        if (cal && definitiva === null) {
+          const items = await prisma._db.prepare(
+            'SELECT tipo, valor FROM notas_items WHERE calificacionId = ?'
+          ).all(cal.id)
+          if (items.length) {
+            definitiva = calcularDefinitiva(items)
+            provisional = definitiva !== null
+          }
+        }
+        periodos.push({
+          periodo: p,
+          definitiva,
+          provisional,
+          estado: definitiva === null ? 'SIN_NOTA' : (definitiva < 3.0 ? 'RIESGO' : 'APROBADO'),
+        })
+      }
+      resultado.push({ materiaId: mat.materiaId, materiaNombre: mat.materiaNombre, periodos })
+    }
+    res.json({ estudiante, anio, materias: resultado })
+  } catch (error) {
+    console.error('Error GET /admin/estudiantes/notas:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
 router.get('/cursos-disponibles', async (req, res) => {
   try {
     const { sede } = req.query
@@ -631,14 +724,21 @@ router.get('/cursos-disponibles', async (req, res) => {
       ORDER BY curso ASC
     `).all(...params)
 
-    const cursos = rows.map(r => {
-      const sufijo = r.curso.slice(-2)
-      let jornada = 'DESCONOCIDA'
+    const vistos = new Map()
+    const agregar = r => {
+      const sufijo = String(r.curso).slice(-2)
+      let jornada = 'MAÑANA'
       if (sufijo === '01' || sufijo === '02') jornada = 'MAÑANA'
       else if (sufijo === '03' || sufijo === '04') jornada = 'TARDE'
-      return { curso: r.curso, grado: r.grado, sede: r.sede, jornada }
-    })
+      vistos.set(String(r.curso), { curso: r.curso, grado: r.grado, sede: r.sede, jornada })
+    }
+    for (const r of rows) agregar(r)
+    // Los vigentes fijos siempre disponibles aunque no tengan estudiantes
+    for (const c of CURSOS_VIGENTES) {
+      if (!vistos.has(c)) agregar({ curso: c, ...derivarCurso(c) })
+    }
 
+    const cursos = [...vistos.values()].sort((a, b) => String(a.curso).localeCompare(String(b.curso), undefined, { numeric: true }))
     res.json({ cursos })
   } catch (error) {
     console.error('Error GET /admin/cursos-disponibles:', error)
