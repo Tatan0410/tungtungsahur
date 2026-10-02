@@ -2345,7 +2345,7 @@ function showAdminPortal(user) {
 }
 
 async function cargarAdminProfesores() {
-  document.mostrarSeccion('admin-profesores-section')
+  mostrarSeccion('admin-profesores-section')
   document.getElementById('admin-asignaciones-section').style.display = 'none'
   document.getElementById('admin-materias-section').style.display = 'none'
   document.getElementById('admin-admins-section').style.display = 'none'
@@ -2385,7 +2385,7 @@ async function cargarAdminProfesores() {
 
 async function cargarAdminAsignaciones() {
   document.getElementById('admin-profesores-section').style.display = 'none'
-  document.mostrarSeccion('admin-asignaciones-section')
+  mostrarSeccion('admin-asignaciones-section')
   document.getElementById('admin-periodos-section').style.display = 'none'
   document.getElementById('admin-obs-section').style.display = 'none'
   document.getElementById('admin-reporte-corte-section').style.display = 'none'
@@ -2515,7 +2515,7 @@ async function adminCrearAsignacion() {
 
 async function cargarAdminMaterias() {
   document.getElementById('admin-profesores-section').style.display = 'none'
-  document.mostrarSeccion('admin-materias-section')
+  mostrarSeccion('admin-materias-section')
   document.getElementById('admin-asignaciones-section').style.display = 'none'
   document.getElementById('admin-periodos-section').style.display = 'none'
   document.getElementById('admin-obs-section').style.display = 'none'
@@ -2759,7 +2759,7 @@ function cerrarModalProfesor() {
 async function cargarAdminAdmins() {
   document.getElementById('admin-profesores-section').style.display = 'none'
   document.getElementById('admin-materias-section').style.display = 'none'
-  document.mostrarSeccion('admin-admins-section')
+  mostrarSeccion('admin-admins-section')
   document.getElementById('admin-asignaciones-section').style.display = 'none'
   document.getElementById('admin-periodos-section').style.display = 'none'
   document.getElementById('admin-obs-section').style.display = 'none'
@@ -2875,7 +2875,7 @@ async function cargarAdminPeriodos() {
   document.getElementById('admin-asignaciones-section').style.display = 'none'
   document.getElementById('admin-materias-section').style.display = 'none'
   document.getElementById('admin-admins-section').style.display = 'none'
-  document.mostrarSeccion('admin-periodos-section')
+  mostrarSeccion('admin-periodos-section')
   document.getElementById('admin-reporte-corte-section').style.display = 'none'
   document.getElementById('admin-estudiantes-section').style.display = 'none'
   document.getElementById('admin-directores-section').style.display = 'none'
@@ -3303,7 +3303,7 @@ async function cargarAdminReporteCorte() {
   document.getElementById('admin-admins-section').style.display = 'none'
   document.getElementById('admin-estudiantes-section').style.display = 'none'
   document.getElementById('admin-directores-section').style.display = 'none'
-  document.mostrarSeccion('admin-reporte-corte-section')
+  mostrarSeccion('admin-reporte-corte-section')
   actualizarNavActivo('nav-reporte')
   try {
     const sedesRes = await fetch(API + '/api/admin/sedes', { headers: { 'Authorization': 'Bearer ' + currentToken } })
@@ -3494,7 +3494,7 @@ async function cargarAdminEstudiantes() {
   document.getElementById('admin-obs-section').style.display = 'none'
   document.getElementById('admin-directores-section').style.display = 'none'
   document.getElementById('admin-reporte-corte-section').style.display = 'none'
-  document.mostrarSeccion('admin-estudiantes-section')
+  mostrarSeccion('admin-estudiantes-section')
   actualizarNavActivo('nav-estudiantes')
 
   // Populate grado filter
@@ -3709,7 +3709,7 @@ async function cargarAdminDirectores() {
   document.getElementById('admin-obs-section').style.display = 'none'
   document.getElementById('admin-estudiantes-section').style.display = 'none'
   document.getElementById('admin-reporte-corte-section').style.display = 'none'
-  document.mostrarSeccion('admin-directores-section')
+  mostrarSeccion('admin-directores-section')
   actualizarNavActivo('nav-directores')
 
   // Load profesores for the select
@@ -3801,7 +3801,7 @@ async function cargarAdminObservaciones(pagina) {
   document.getElementById('admin-estudiantes-section').style.display = 'none'
   document.getElementById('admin-directores-section').style.display = 'none'
   document.getElementById('admin-reporte-corte-section').style.display = 'none'
-  document.mostrarSeccion('admin-obs-section')
+  mostrarSeccion('admin-obs-section')
   actualizarNavActivo('nav-obs')
 
   // Load sedes and materias into filters
