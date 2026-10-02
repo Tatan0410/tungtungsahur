@@ -616,17 +616,46 @@ router.get('/observaciones', async (req, res) => {
 
 // ─── ESTUDIANTES ───
 
+// Plegado de tildes para la búsqueda por nombre insensible a acentos.
+// Funciona igual en SQLite y Postgres (cadena de REPLACE, sin extensiones
+// como unaccent que puede no estar habilitada). "sebastián" ≡ "sebastian",
+// "MUÑOZ" ≡ "munoz", en ambas direcciones.
+const PLEGADO_MAPA = [
+  ['á', 'a'], ['é', 'e'], ['í', 'i'], ['ó', 'o'], ['ú', 'u'], ['ü', 'u'],
+  ['Á', 'a'], ['É', 'e'], ['Í', 'i'], ['Ó', 'o'], ['Ú', 'u'], ['Ü', 'u'],
+  ['ñ', 'n'], ['Ñ', 'n'],
+  ['à', 'a'], ['è', 'e'], ['ì', 'i'], ['ò', 'o'], ['ù', 'u'],
+]
+
+// Pliega el término buscado (JS): minúsculas + acentos fuera
+function plegarTermino(s) {
+  let r = String(s).toLowerCase()
+  for (const [de, a] of PLEGADO_MAPA) r = r.split(de).join(a)
+  return r
+}
+
+// Pliega la COLUMNA en SQL: los REPLACE van antes del LOWER (así las
+// mayúsculas con tilde también se pliegan). El término va por parámetro (?).
+function sqlNombrePlegado(expr) {
+  let sql = expr
+  for (const [de, a] of PLEGADO_MAPA) sql = `REPLACE(${sql}, '${de}', '${a}')`
+  return `LOWER(${sql})`
+}
+
 router.get('/estudiantes', async (req, res) => {
   try {
     const { curso, sede, grado, nombre, pagina = 1 } = req.query
-    const limite = 100
+    const limite = Math.min(Math.max(parseInt(req.query.limite) || 100, 1), 100)
     const offset = (parseInt(pagina) - 1) * limite
     const where = []
     const params = []
     if (curso) { where.push('e.curso = ?'); params.push(curso) }
     if (sede) { where.push('e.sede = ?'); params.push(sede) }
     if (grado) { where.push('e.grado = ?'); params.push(parseInt(grado)) }
-    if (nombre) { where.push('u.nombre LIKE ?'); params.push('%' + String(nombre).trim() + '%') }
+    if (nombre) {
+      where.push(sqlNombrePlegado('u.nombre') + ' LIKE ?')
+      params.push('%' + plegarTermino(nombre) + '%')
+    }
     const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : ''
 
     let total = { total: 0 }

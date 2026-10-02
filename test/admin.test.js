@@ -32,13 +32,52 @@ before(async () => {
 })
 after(async () => { await srv.cerrar() })
 
-test('GET /api/admin/cursos devuelve los cursos con estudiantes', async () => {
+test('GET /api/admin/cursos devuelve los 24 vigentes (con o sin estudiantes)', async () => {
   const r = await api.get('/api/admin/cursos', { token: tokenAdmin })
   assert.equal(r.status, 200)
   assert.ok(Array.isArray(r.data))
-  assert.ok(r.data.length >= 15, `esperaba ≥15 cursos (601-1104), llegaron ${r.data.length}`)
+  assert.ok(r.data.length >= 24, `esperaba ≥24 cursos (601-1104), llegaron ${r.data.length}`)
   assert.ok(r.data.every(c => typeof c === 'string'))
+  // Los cursos vacíos también deben aparecer
+  for (const vacio of ['604', '704', '804', '803']) {
+    assert.ok(r.data.includes(vacio), `el curso vacío ${vacio} debe aparecer`)
+  }
 })
+
+test('la búsqueda por nombre ignora tildes y ñ (ambas direcciones)', async () => {
+  // Estudiante real de la BD con Ñ en el apellido (la matrícula trae 58)
+  const r = await api.get('/api/admin/estudiantes?limite=100', { token: tokenAdmin })
+  assert.equal(r.status, 200)
+  const conEnie = r.data.estudiantes.find(e => /[\u00d1\u00f1\u00c1\u00e1\u00c9\u00e9\u00cd\u00ed\u00d3\u00f3\u00da\u00fa]/.test(e.nombre))
+  assert.ok(conEnie, 'la BD de prueba debe traer al menos un nombre con ñ o tilde')
+
+  // La palabra del nombre que tiene la tilde/ñ (puede ser el apellido:
+  // la matrícula trae p. ej. "ABEL ANDRES CARREÑO BALLESTEROS")
+  const palabras = conEnie.nombre.split(' ')
+  const conAcento = palabras.find(p => /[\u00d1\u00f1\u00c1\u00e1\u00c9\u00e9\u00cd\u00ed\u00d3\u00f3\u00da\u00fa]/.test(p))
+  assert.ok(conAcento, 'la palabra encontrada debe contener el carácter acentuado')
+
+  // Término SIN acento encuentra al nombre CON acento
+  const plegado = plegarEnPrueba(conAcento)
+  const sinTilde = await api.get('/api/admin/estudiantes?nombre=' + encodeURIComponent(plegado), { token: tokenAdmin })
+  assert.equal(sinTilde.status, 200)
+  assert.ok(sinTilde.data.estudiantes.some(e => e.id === conEnie.id),
+    `"${plegado}" (sin tilde) debe encontrar a "${conEnie.nombre}"`)
+
+  // Y el término CON acento original también lo encuentra
+  const conTilde = await api.get('/api/admin/estudiantes?nombre=' + encodeURIComponent(conAcento), { token: tokenAdmin })
+  assert.equal(conTilde.status, 200)
+  assert.ok(conTilde.data.estudiantes.some(e => e.id === conEnie.id),
+    `"${conAcento}" (original) también debe encontrarlo`)
+})
+
+// Plega un término igual que lo hace el backend (para armar la búsqueda sin tildes)
+function plegarEnPrueba(s) {
+  return String(s).toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\u00f1/g, 'n').replace(/\u00d1/g, 'n')
+}
 
 test('GET /api/admin/asignaciones filtra por curso y expone profesor/materia', async () => {
   const r = await api.get('/api/admin/asignaciones?curso=' + encodeURIComponent(curso), { token: tokenAdmin })
