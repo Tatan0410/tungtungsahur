@@ -549,9 +549,11 @@ body::before {
 .toolbar { display:flex; align-items:center; gap:10px; margin-bottom:16px; flex-wrap:wrap; }
 .def-val { font-size:16px; font-weight:600; }
 .saved-toast {
-  display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:600;
+  position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+  z-index:500; display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:600;
   color: var(--green-700); background: var(--green-100); border-radius: 20px; padding:6px 14px;
-  opacity:0; transition: opacity .3s var(--ease);
+  box-shadow: var(--shadow-md);
+  opacity:0; transition: opacity .3s var(--ease); pointer-events:none;
 }
 .saved-toast.show { opacity:1; }
 .expand-icon { font-size:10px; color: var(--ink-400); margin-right:4px; }
@@ -607,8 +609,8 @@ body::before {
   to { opacity: 1; transform: scale(1) translateY(0); }
 }
 @keyframes toastSlide {
-  from { opacity: 0; transform: translateY(-8px) scale(0.95); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+  from { opacity: 0; transform: translate(-50%, -8px) scale(0.95); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
 }
 @keyframes shieldGlow {
   0%, 100% { box-shadow: 0 0 0 0 rgba(176,141,62,0.35); }
@@ -781,7 +783,6 @@ body::before {
     <button class="btn-sm" onclick="abrirMiCuenta()" style="font-weight:600;"><span class="icon" data-icon="engranaje"></span> Mi cuenta</button>
     <button class="btn-sm" id="btn-director-obs" style="display:none;font-weight:600;" onclick="mostrarObservacionesCursoDirector()"><span class="icon" data-icon="ojo"></span> Observaciones de mi curso</button>
     <button class="btn-sm" id="btn-director-reporte" style="display:none;font-weight:600;" onclick="mostrarReporteCorte()"><span class="icon" data-icon="advertencia"></span> Reporte de corte</button>
-    <span class="saved-toast" id="toast"><span class="icon" data-icon="check"></span> Guardado correctamente</span>
   </div>
   <div class="period-tabs" id="period-tabs"><div class="period-indicador" id="period-indicador" style="opacity:0;"></div>
     <div class="period-tab active" data-p="1" onclick="selPeriodo(1)">P1<span class="weight">20%</span></div>
@@ -4794,5 +4795,8 @@ iniciarAutoenvio()
   <div style="font-size:13px;color:var(--ink-500);margin-bottom:18px;max-width:420px;">Revisa tu internet. Tus cambios pendientes están guardados y no se perderán.</div>
   <button class="btn-sm primary" style="padding:10px 22px;font-weight:600;" onclick="intentarDeNuevo()">Intentar de nuevo</button>
 </div>
+
+<!-- Toast global (fuera de las pantallas: visible en estudiante, docente y admin) -->
+<span class="saved-toast" id="toast"><span class="icon" data-icon="check"></span> Guardado correctamente</span>
 </body>
 </html>

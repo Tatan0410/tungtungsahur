@@ -1190,17 +1190,17 @@ router.get('/mis-areas', async (req, res) => {
 
     const areas = await prisma._db.prepare(`
       SELECT a.id AS "areaId", a.nombre
-      FROM area_cursos ac JOIN areas a ON a.id = ac.areaId
+      FROM area_cursos ac JOIN areas a ON a.id = ac.areaid
       WHERE ac.curso = ?
-      ORDER BY a.nombre ASC, a.creadoEn ASC
+      ORDER BY a.nombre ASC, a.creadoen ASC
     `).all(cursoRow.curso)
 
     const resultado = []
     for (const a of areas) {
       const materias = await prisma._db.prepare(`
-        SELECT am.materiaId, am.porcentaje, m.nombre AS "materiaNombre"
+        SELECT am.materiaid AS "materiaId", am.porcentaje, m.nombre AS "materiaNombre"
         FROM area_materias am JOIN materias m ON m.id = am.materiaId
-        WHERE am.areaId = ?
+        WHERE am.areaid = ?
         ORDER BY am.porcentaje DESC, m.nombre ASC
       `).all(a.areaId)
 

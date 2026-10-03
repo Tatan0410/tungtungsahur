@@ -873,13 +873,16 @@ router.delete('/directores/:id', async (req, res) => {
 
 router.get('/areas', async (req, res) => {
   try {
-    const areas = await prisma._db.prepare('SELECT id, nombre, creadoEn FROM areas ORDER BY nombre ASC, creadoEn ASC').all()
+    // Postgres guarda las columnas en minúscula: los alias camelCase de
+    // salida restauran las claves que el frontend espera (mismo patrón de
+    // normalizarFila en el resto del sistema). Funciona igual en SQLite.
+    const areas = await prisma._db.prepare('SELECT id, nombre, creadoen AS "creadoEn" FROM areas ORDER BY nombre ASC, creadoen ASC').all()
     const materias = await prisma._db.prepare(`
-      SELECT am.areaId, am.materiaId, am.porcentaje, m.nombre AS "materiaNombre"
-      FROM area_materias am JOIN materias m ON m.id = am.materiaId
+      SELECT am.areaid AS "areaId", am.materiaid AS "materiaId", am.porcentaje, m.nombre AS "materiaNombre"
+      FROM area_materias am JOIN materias m ON m.id = am.materiaid
       ORDER BY am.porcentaje DESC, m.nombre ASC
     `).all()
-    const cursos = await prisma._db.prepare('SELECT areaId, curso FROM area_cursos').all()
+    const cursos = await prisma._db.prepare('SELECT areaid AS "areaId", curso FROM area_cursos').all()
     res.json(areas.map(a => ({
       ...a,
       materias: materias.filter(m => m.areaId === a.id),
@@ -921,7 +924,7 @@ router.post('/areas', async (req, res) => {
     await prisma._db.transaction(async () => {
       await prisma._db.prepare('INSERT INTO areas (id, nombre) VALUES (?, ?)').run(id, String(nombre).trim())
       for (const m of listaLimpia) {
-        await prisma._db.prepare('INSERT INTO area_materias (id, areaId, materiaId, porcentaje) VALUES (?, ?, ?, ?)').run(require('crypto').randomUUID(), id, m.materiaId, parseFloat(m.porcentaje))
+        await prisma._db.prepare('INSERT INTO area_materias (id, areaid, materiaid, porcentaje) VALUES (?, ?, ?, ?)').run(require('crypto').randomUUID(), id, m.materiaId, parseFloat(m.porcentaje))
       }
     })()
     res.status(201).json({ mensaje: 'Área creada', id, nombre: String(nombre).trim() })
@@ -939,9 +942,9 @@ router.put('/areas/:id/materias', async (req, res) => {
     const errorMaterias = validarMateriasArea(materias)
     if (errorMaterias) return res.status(400).json({ error: errorMaterias })
     await prisma._db.transaction(async () => {
-      await prisma._db.prepare('DELETE FROM area_materias WHERE areaId = ?').run(req.params.id)
+      await prisma._db.prepare('DELETE FROM area_materias WHERE areaid = ?').run(req.params.id)
       for (const m of materias) {
-        await prisma._db.prepare('INSERT INTO area_materias (id, areaId, materiaId, porcentaje) VALUES (?, ?, ?, ?)').run(require('crypto').randomUUID(), req.params.id, m.materiaId, parseFloat(m.porcentaje))
+        await prisma._db.prepare('INSERT INTO area_materias (id, areaid, materiaid, porcentaje) VALUES (?, ?, ?, ?)').run(require('crypto').randomUUID(), req.params.id, m.materiaId, parseFloat(m.porcentaje))
       }
     })()
     res.json({ mensaje: 'Materias del área actualizadas' })
@@ -955,8 +958,8 @@ router.delete('/areas/:id', async (req, res) => {
   try {
     const area = await prisma._db.prepare('SELECT id FROM areas WHERE id = ?').get(req.params.id)
     if (!area) return res.status(404).json({ error: 'Área no encontrada' })
-    await prisma._db.prepare('DELETE FROM area_cursos WHERE areaId = ?').run(req.params.id)
-    await prisma._db.prepare('DELETE FROM area_materias WHERE areaId = ?').run(req.params.id)
+    await prisma._db.prepare('DELETE FROM area_cursos WHERE areaid = ?').run(req.params.id)
+    await prisma._db.prepare('DELETE FROM area_materias WHERE areaid = ?').run(req.params.id)
     await prisma._db.prepare('DELETE FROM areas WHERE id = ?').run(req.params.id)
     res.json({ mensaje: 'Área eliminada' })
   } catch (error) {
@@ -972,18 +975,18 @@ router.post('/areas/:id/cursos', async (req, res) => {
     const area = await prisma._db.prepare('SELECT id, nombre FROM areas WHERE id = ?').get(req.params.id)
     if (!area) return res.status(404).json({ error: 'Área no encontrada' })
     // La misma área no puede repetirse en el curso
-    const repetida = await prisma._db.prepare('SELECT id FROM area_cursos WHERE areaId = ? AND curso = ?').get(req.params.id, String(curso))
+    const repetida = await prisma._db.prepare('SELECT id FROM area_cursos WHERE areaid = ? AND curso = ?').get(req.params.id, String(curso))
     if (repetida) return res.status(409).json({ error: 'Esa área ya está asignada a ese curso' })
     // Regla A: dos áreas con el MISMO nombre no pueden convivir en el mismo
     // curso (comparación sin tildes ni mayúsculas)
     const mismoNombre = await prisma._db.prepare(`
       SELECT ac.id FROM area_cursos ac
-      JOIN areas a2 ON a2.id = ac.areaId
+      JOIN areas a2 ON a2.id = ac.areaid
       WHERE ac.curso = ? AND ${sqlNombrePlegado('a2.nombre')} = ?
     `).get(String(curso), plegarTermino(area.nombre))
     if (mismoNombre) return res.status(409).json({ error: `Ya existe un área "${area.nombre}" en el curso ${curso} (dos áreas con el mismo nombre no pueden convivir en el mismo curso)` })
     const id = require('crypto').randomUUID()
-    await prisma._db.prepare('INSERT INTO area_cursos (id, areaId, curso) VALUES (?, ?, ?)').run(id, req.params.id, String(curso))
+    await prisma._db.prepare('INSERT INTO area_cursos (id, areaid, curso) VALUES (?, ?, ?)').run(id, req.params.id, String(curso))
     res.status(201).json({ mensaje: 'Área asignada al curso', id })
   } catch (error) {
     console.error('Error POST /areas/cursos:', error)
@@ -993,7 +996,7 @@ router.post('/areas/:id/cursos', async (req, res) => {
 
 router.delete('/areas/:id/cursos/:curso', async (req, res) => {
   try {
-    const r = await prisma._db.prepare('DELETE FROM area_cursos WHERE areaId = ? AND curso = ?').run(req.params.id, req.params.curso)
+    const r = await prisma._db.prepare('DELETE FROM area_cursos WHERE areaid = ? AND curso = ?').run(req.params.id, req.params.curso)
     if (r.changes === 0) return res.status(404).json({ error: 'Asignación de área no encontrada' })
     res.json({ mensaje: 'Área desasignada del curso' })
   } catch (error) {

@@ -233,24 +233,25 @@ ALTER TABLE usuarios ALTER COLUMN correo DROP NOT NULL;
 -- cursos. Un área puede compartir nombre con otra (porcentajes distintos
 -- por curso), pero: ni la misma materia dos veces en un área, ni la misma
 -- área dos veces en un curso. La regla del mismo nombre en el mismo curso
--- se valida a nivel de API (admin.js).
+-- se valida a nivel de API (admin.js). Columnas en minúscula (consistente
+-- con el resto del esquema); las salidas de la API usan alias camelCase.
 CREATE TABLE IF NOT EXISTS areas (
-    "id" TEXT NOT NULL PRIMARY KEY,
-    "nombre" TEXT NOT NULL,
-    "creadoEn" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    id TEXT NOT NULL PRIMARY KEY,
+    nombre TEXT NOT NULL,
+    creadoen TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS area_materias (
-    "id" TEXT NOT NULL PRIMARY KEY,
-    "areaId" TEXT NOT NULL REFERENCES areas("id") ON DELETE CASCADE,
-    "materiaId" TEXT NOT NULL REFERENCES materias("id"),
-    "porcentaje" REAL NOT NULL,
-    UNIQUE ("areaId", "materiaId")
+    id TEXT NOT NULL PRIMARY KEY,
+    areaid TEXT NOT NULL REFERENCES areas(id) ON DELETE CASCADE,
+    materiaid TEXT NOT NULL REFERENCES materias(id),
+    porcentaje REAL NOT NULL,
+    UNIQUE (areaid, materiaid)
 );
 
 CREATE TABLE IF NOT EXISTS area_cursos (
-    "id" TEXT NOT NULL PRIMARY KEY,
-    "areaId" TEXT NOT NULL REFERENCES areas("id") ON DELETE CASCADE,
-    "curso" TEXT NOT NULL,
-    UNIQUE ("areaId", "curso")
+    id TEXT NOT NULL PRIMARY KEY,
+    areaid TEXT NOT NULL REFERENCES areas(id) ON DELETE CASCADE,
+    curso TEXT NOT NULL,
+    UNIQUE (areaid, curso)
 );
