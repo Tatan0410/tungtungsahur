@@ -278,6 +278,28 @@ body::before {
   animation: seccionFade .25s var(--ease-out);
 }
 [data-theme="dark"] #pantalla-carga { background: rgba(38,32,26,0.85); }
+/* Escudo al centro con la línea girando alrededor */
+.carga-escudo { position:relative; width:128px; height:128px; margin-bottom:22px; }
+.carga-arco { position:absolute; inset:0; width:100%; height:100%; animation: girar 1.1s linear infinite; }
+.carga-arco circle { stroke: var(--gold-600); }
+.carga-img {
+  position:absolute; inset:0; margin:auto;
+  width:78px; height:78px; border-radius:50%; object-fit:cover;
+  border:2px solid var(--gold-300);
+  box-shadow: var(--shadow-gold);
+  background:#fff;
+}
+/* Barra de progreso 1 → 100% */
+.carga-barra { width:220px; max-width:70vw; height:6px; border-radius:6px; background:var(--line); overflow:hidden; margin-bottom:16px; }
+.carga-progreso {
+  height:100%; width:1%; border-radius:6px;
+  background:linear-gradient(90deg, var(--gold-600), var(--burgundy-600));
+  animation: cargaLlena 3.5s var(--ease-out) forwards;
+}
+@keyframes cargaLlena { from { width:1%; } to { width:100%; } }
+/* Mensajes rotativos */
+.carga-mensaje { font-size:13.5px; color:var(--ink-600); transition: opacity .3s var(--ease); min-height:20px; }
+.carga-mensaje.saliendo { opacity:0; }
 
 /* ---------- Letterhead / brand bar ---------- */
 .brand-bar {
@@ -4270,14 +4292,48 @@ async function restaurarSesion() {
 
 // ─────────────────────────────────────────────────────
 // PANTALLA DE CARGA GLOBAL: cuando el servidor tarda (internet lento),
-// un spinner a pantalla completa aparece a los 600ms de peticiones
-// pendientes continuas y desaparece al terminar. Cargas rápidas nunca
-// la muestran. Si queda sin internet, la pantalla de conexión perdida
-// (z-9999) la tapa: cada una para su caso.
+// aparece a los 600ms de peticiones pendientes continuas y desaparece al
+// terminar. Escudo al centro + línea girando alrededor + barra 1→100% +
+// mensajes rotativos. Cargas rápidas nunca la muestran. Si queda sin
+// internet, la pantalla de conexión perdida (z-9999) la tapa.
 // ─────────────────────────────────────────────────────
+const MENSAJES_CARGA = ['Verificando información…', 'Puliendo detalles…', 'Ey, ¡qué buen trabajo haces!']
+let _mensajeCargaTimer = null
+let _indiceMensajeCarga = 0
+
 function mostrarPantallaCarga(mostrar) {
   const p = document.getElementById('pantalla-carga')
   if (p) p.style.display = mostrar ? 'flex' : 'none'
+  if (mostrar) {
+    // Reiniciar barra y mensajes en cada aparición
+    const prog = document.querySelector('.carga-progreso')
+    if (prog) { prog.style.animation = 'none'; void prog.offsetWidth; prog.style.animation = '' }
+    _indiceMensajeCarga = 0
+    const m = document.getElementById('carga-mensaje')
+    if (m) { m.classList.remove('saliendo'); m.textContent = MENSAJES_CARGA[0] }
+    // El escudo: reutiliza la imagen del sello del login (sin duplicar 51KB)
+    const img = document.querySelector('.carga-img')
+    if (img && !img.getAttribute('src')) {
+      const sello = document.querySelector('.seal-wrap img')
+      if (sello) img.src = sello.src
+    }
+    clearInterval(_mensajeCargaTimer)
+    _mensajeCargaTimer = setInterval(ciclarMensajeCarga, 2000)
+  } else {
+    clearInterval(_mensajeCargaTimer)
+    _mensajeCargaTimer = null
+  }
+}
+
+function ciclarMensajeCarga() {
+  const m = document.getElementById('carga-mensaje')
+  if (!m) return
+  m.classList.add('saliendo')
+  setTimeout(() => {
+    _indiceMensajeCarga = (_indiceMensajeCarga + 1) % MENSAJES_CARGA.length
+    m.textContent = MENSAJES_CARGA[_indiceMensajeCarga]
+    m.classList.remove('saliendo')
+  }, 300)
 }
 
 const _fetchOriginal = window.fetch
@@ -4327,9 +4383,12 @@ iniciarAutoenvio()
 
 <!-- Pantalla de carga (servidor lento) -->
 <div id="pantalla-carga">
-  <div style="width:52px;height:52px;border:4px solid var(--gold-300);border-top-color:var(--burgundy-700);border-radius:50%;animation:girar .8s linear infinite;margin-bottom:18px;"></div>
-  <div style="font-size:17px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);margin-bottom:4px;">Cargando…</div>
-  <div style="font-size:12.5px;color:var(--ink-500);">El servidor está tardando en responder</div>
+  <div class="carga-escudo">
+    <svg class="carga-arco" viewBox="0 0 128 128" fill="none"><circle cx="64" cy="64" r="60" stroke-width="4" stroke-linecap="round" stroke-dasharray="120 258"/></svg>
+    <img class="carga-img" alt="Escudo Sagrado Corazón">
+  </div>
+  <div class="carga-barra"><div class="carga-progreso"></div></div>
+  <div class="carga-mensaje" id="carga-mensaje">Verificando información…</div>
 </div>
 
 <!-- Pantalla de conexión perdida -->
