@@ -268,6 +268,17 @@ body::before {
 }
 .cerrando > div { animation: modalOut .15s var(--ease) both !important; }
 
+/* Pantalla de carga global (servidor lento) */
+#pantalla-carga {
+  display:none; position:fixed; inset:0; z-index:9998;
+  background: rgba(250,247,241,0.85);
+  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+  flex-direction:column; align-items:center; justify-content:center;
+  text-align:center; padding:24px;
+  animation: seccionFade .25s var(--ease-out);
+}
+[data-theme="dark"] #pantalla-carga { background: rgba(38,32,26,0.85); }
+
 /* ---------- Letterhead / brand bar ---------- */
 .brand-bar {
   background: linear-gradient(120deg, var(--burgundy-800) 0%, var(--burgundy-700) 55%, var(--burgundy-900) 100%);
@@ -2111,7 +2122,10 @@ async function guardarGrid(silencioso) {
       if (!silencioso) {
         mostrarToast('ok', data.advertencia || 'Todos los cambios guardados')
       }
-      cargarGrupo()
+      // En el autosave silencioso: si el docente está escribiendo en una
+      // celda, no recargar la grid (perdería el foco a mitad de escritura)
+      const escribiendoCelda = silencioso && document.activeElement && document.activeElement.classList && document.activeElement.classList.contains('cell-input')
+      if (!escribiendoCelda) cargarGrupo()
       if (currentUser && currentUser.rol === 'ESTUDIANTE') {
         cargarNotasEstudiante()
         cargarEstadoCorte()
@@ -4254,9 +4268,69 @@ async function restaurarSesion() {
   }
 }
 
+// ─────────────────────────────────────────────────────
+// PANTALLA DE CARGA GLOBAL: cuando el servidor tarda (internet lento),
+// un spinner a pantalla completa aparece a los 600ms de peticiones
+// pendientes continuas y desaparece al terminar. Cargas rápidas nunca
+// la muestran. Si queda sin internet, la pantalla de conexión perdida
+// (z-9999) la tapa: cada una para su caso.
+// ─────────────────────────────────────────────────────
+function mostrarPantallaCarga(mostrar) {
+  const p = document.getElementById('pantalla-carga')
+  if (p) p.style.display = mostrar ? 'flex' : 'none'
+}
+
+const _fetchOriginal = window.fetch
+let _peticionesActivas = 0
+let _pantallaCargaTimer = null
+window.fetch = function (...args) {
+  const primera = _peticionesActivas === 0
+  _peticionesActivas++
+  if (primera) {
+    clearTimeout(_pantallaCargaTimer)
+    _pantallaCargaTimer = setTimeout(() => {
+      if (_peticionesActivas > 0) mostrarPantallaCarga(true)
+    }, 600)
+  }
+  return _fetchOriginal.apply(this, args).finally(() => {
+    _peticionesActivas--
+    if (_peticionesActivas <= 0) {
+      _peticionesActivas = 0
+      clearTimeout(_pantallaCargaTimer)
+      mostrarPantallaCarga(false)
+    }
+  })
+}
+
+// Al salir/refrescar con cambios pendientes: se envían al servidor ANTES
+// de descargar la página (fetch keepalive funciona durante el unload).
+// El autoenvío de 20s cubre el resto de casos; esto cubre el refresh inmediato.
+let _pendientesEnviadosAlSalir = false
+function enviarPendientesAlSalir() {
+  if (_pendientesEnviadosAlSalir || !currentToken || Object.keys(cambiosGrid).length === 0) return
+  _pendientesEnviadosAlSalir = true
+  try {
+    fetch(API + '/api/notas/guardar-grid', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + currentToken },
+      body: JSON.stringify({ items: Object.values(cambiosGrid) }),
+      keepalive: true
+    })
+  } catch (e) { /* el localStorage ya los tiene */ }
+}
+window.addEventListener('pagehide', enviarPendientesAlSalir)
+window.addEventListener('beforeunload', enviarPendientesAlSalir)
+
 restaurarSesion()
 iniciarAutoenvio()
 </script>
+
+<!-- Pantalla de carga (servidor lento) -->
+<div id="pantalla-carga">
+  <div style="width:52px;height:52px;border:4px solid var(--gold-300);border-top-color:var(--burgundy-700);border-radius:50%;animation:girar .8s linear infinite;margin-bottom:18px;"></div>
+  <div style="font-size:17px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);margin-bottom:4px;">Cargando…</div>
+  <div style="font-size:12.5px;color:var(--ink-500);">El servidor está tardando en responder</div>
+</div>
 
 <!-- Pantalla de conexión perdida -->
 <div id="pantalla-sin-conexion" style="display:none;position:fixed;inset:0;z-index:9999;background:var(--paper);flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;">
