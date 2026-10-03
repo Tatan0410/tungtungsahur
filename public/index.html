@@ -751,7 +751,7 @@ body::before {
     <div><div style="display:flex;gap:6px;margin-bottom:6px;" id="dots-container"></div><div style="font-size:11px;color:var(--ink-400);text-align:right;">accesos realizados</div></div>
   </div>
   <div class="prom-card">
-    <div><div class="prom-label">Promedio general · Período 2</div><div class="prom-val" id="promedio">--</div></div>
+    <div><div class="prom-label" id="prom-label">Promedio general · Período 2</div><div class="prom-val" id="promedio">--</div></div>
     <div style="flex:1;min-width:120px;"><div style="font-size:11px;color:var(--ink-400);margin-bottom:5px;text-align:right;font-weight:500;" id="promedio-porc">0% de 5.0</div><div style="height:7px;background:var(--line);border-radius:4px;overflow:hidden;"><div style="height:7px;background:linear-gradient(90deg,var(--green-500),var(--green-300));border-radius:4px;width:0%;" id="promedio-bar"></div></div></div>
   </div>
   <div class="sec-label" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">Calificaciones
@@ -1690,6 +1690,7 @@ function selPeriodoEstudiante(v) {
   if (!p || p < 1 || p > 4) return
   currentPeriodo = p
   document.getElementById('stu-period-pill').textContent = 'Período ' + p + ' · ' + new Date().getFullYear()
+  document.getElementById('prom-label').textContent = 'Promedio general · Período ' + p
   poblarSelectorPeriodoEstudiante()
   cargarNotasEstudiante()
   cargarEstadoCorte()
@@ -2306,6 +2307,12 @@ async function cargarNotasEstudiante(esReintento) {
   }
     // Update consultas UI (informational only)
     document.getElementById('consultas-restantes').textContent = (data.consultasUsadas || 0);
+    // El período real del que vienen estas notas (la respuesta lo trae):
+    // actualiza el label del promedio y el selector para que nunca queden
+    // desfasados del período que se está viendo
+    document.getElementById('prom-label').textContent = 'Promedio general · Período ' + data.periodo;
+    const selP = document.getElementById('stu-sel-periodo');
+    if (selP && selP.value != data.periodo) selP.value = data.periodo;
     // Update dots (green only – informational)
     const dotsContainer = document.getElementById('dots-container');
     if (dotsContainer) {
