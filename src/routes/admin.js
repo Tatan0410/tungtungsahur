@@ -911,12 +911,16 @@ router.post('/areas', async (req, res) => {
   try {
     const { nombre, materias } = req.body
     if (!nombre || !String(nombre).trim()) return res.status(400).json({ error: 'nombre es requerido' })
-    const errorMaterias = validarMateriasArea(materias)
+    // Se puede crear el área sin materias (el flujo: crear primero y
+    // agregarle las materias después con "Editar materias"). Si el array
+    // trae materias, se validan.
+    const errorMaterias = (Array.isArray(materias) && materias.length) ? validarMateriasArea(materias) : null
     if (errorMaterias) return res.status(400).json({ error: errorMaterias })
     const id = require('crypto').randomUUID()
+    const listaLimpia = (Array.isArray(materias) && materias.length) ? materias : []
     await prisma._db.transaction(async () => {
       await prisma._db.prepare('INSERT INTO areas (id, nombre) VALUES (?, ?)').run(id, String(nombre).trim())
-      for (const m of materias) {
+      for (const m of listaLimpia) {
         await prisma._db.prepare('INSERT INTO area_materias (id, areaId, materiaId, porcentaje) VALUES (?, ?, ?, ?)').run(require('crypto').randomUUID(), id, m.materiaId, parseFloat(m.porcentaje))
       }
     })()

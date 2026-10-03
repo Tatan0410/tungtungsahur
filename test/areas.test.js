@@ -66,7 +66,7 @@ test('listar áreas trae materias, porcentajes y cursos', async () => {
   assert.ok(a1.cursos.includes(curso))
 })
 
-test('validaciones: acumulado >100 → 400, materia repetida → 400, vacía → 400', async () => {
+test('validaciones: acumulado >100 → 400, materia repetida → 400; crear sin materias → 201', async () => {
   const materias = (await api.get('/api/admin/materias', { token: tokenAdmin })).data
   const excede = await api.post('/api/admin/areas', {
     token: tokenAdmin,
@@ -81,8 +81,20 @@ test('validaciones: acumulado >100 → 400, materia repetida → 400, vacía →
   })
   assert.equal(repetida.status, 400)
 
-  const vacia = await api.post('/api/admin/areas', { token: tokenAdmin, body: { nombre: 'X', materias: [] } })
-  assert.equal(vacia.status, 400)
+  // El flujo del panel: crear el área solo con nombre y agregarle las
+  // materias después con "Editar materias" → crear sin materias es 201
+  const vacia = await api.post('/api/admin/areas', { token: tokenAdmin, body: { nombre: 'Área Sin Materias Test', materias: [] } })
+  assert.equal(vacia.status, 201)
+
+  // Y guardar materias vacías en un área existente sigue siendo 400
+  const guardarVacias = await api.put('/api/admin/areas/' + vacia.data.id + '/materias', {
+    token: tokenAdmin, body: { materias: [] }
+  })
+  assert.equal(guardarVacias.status, 400)
+  assert.match(guardarVacias.data.error, /al menos una materia/)
+
+  // limpieza
+  await api.delete('/api/admin/areas/' + vacia.data.id, { token: tokenAdmin })
 })
 
 test('regla A: el mismo nombre no puede asignarse dos veces al mismo curso', async () => {
