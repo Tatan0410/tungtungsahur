@@ -89,23 +89,13 @@ router.get('/mis-notas', async (req, res) => {
     const periodo      = parseInt(req.query.periodo) || 1
     const anio         = parseInt(req.query.anio)    || new Date().getFullYear()
 
-    let consulta = await prisma.consultaEstudiante.findUnique({
-      where: {
-        estudianteId_periodo_anio: { estudianteId, periodo, anio }
-      }
-    })
-
-    if (!consulta) {
-      consulta = await prisma.consultaEstudiante.create({
-        data: { estudianteId, periodo, anio, cantidad: 0 }
-      })
-    }
-
-    await prisma.consultaEstudiante.update({
-      where: {
-        estudianteId_periodo_anio: { estudianteId, periodo, anio }
-      },
-      data: { cantidad: { increment: 1 } }
+    // Upsert ATOMICO: findUnique->create->update tenia carrera con refrescos
+    // rapidos (dos peticiones concurrentes creaban la consulta y una reventaba
+    // con UNIQUE -> 500 intermitente). El upsert es una sola operacion.
+    const consulta = await prisma.consultaEstudiante.upsert({
+      where: { estudianteId_periodo_anio: { estudianteId, periodo, anio } },
+      update: { cantidad: { increment: 1 } },
+      create: { estudianteId, periodo, anio, cantidad: 1 },
     })
 
     const calificaciones = await prisma.calificacion.findMany({
@@ -130,7 +120,7 @@ router.get('/mis-notas', async (req, res) => {
     res.json({
       periodo,
       anio,
-      consultasUsadas:   consulta.cantidad + 1,
+      consultasUsadas:   consulta.cantidad,
       promedio,
       calificaciones: calificaciones.map(c => {
         const grupos = agruparItems(c.notasItems)
@@ -266,8 +256,8 @@ router.post('/items', async (req, res) => {
       return res.status(400).json({ error: 'calificacionId, tipo y valor son requeridos' })
     }
 
-    if (valor < 1 || valor > 5) {
-      return res.status(400).json({ error: 'El valor debe estar entre 1.0 y 5.0' })
+    if (valor < 0 || valor > 5) {
+      return res.status(400).json({ error: 'La nota solo puede ir de 0 a 5' })
     }
 
     const tiposValidos = ['ACTITUDINAL', 'RESPONSABILIDAD', 'ACTIVIDAD', 'EVALUACION']
@@ -326,8 +316,8 @@ router.put('/items/:id', async (req, res) => {
     const { id } = req.params
     const { valor, descripcion } = req.body
 
-    if (valor !== undefined && (valor < 1 || valor > 5)) {
-      return res.status(400).json({ error: 'El valor debe estar entre 1.0 y 5.0' })
+    if (valor !== undefined && (valor < 0 || valor > 5)) {
+      return res.status(400).json({ error: 'La nota solo puede ir de 0 a 5' })
     }
 
     const updateData = {}
@@ -548,7 +538,7 @@ router.post('/bulk-update', async (req, res) => {
     for (const item of items) {
       const { calificacionId, tipo, valor } = item
       if (!calificacionId || !tipo || valor === undefined || valor === null) continue
-      if (valor < 1 || valor > 5) continue
+      if (valor < 0 || valor > 5) continue
 
       const tiposValidos = ['ACTITUDINAL', 'RESPONSABILIDAD', 'ACTIVIDAD', 'EVALUACION']
       if (!tiposValidos.includes(tipo)) continue
@@ -843,9 +833,17 @@ router.post('/guardar-grid', async (req, res) => {
             await prisma.notaItem.delete({ where: { id: existente.id } })
           }
         }
+        // Si la calificación quedó sin items y sin definitiva cerrada:
+        // borrar también la fila contenedora (la BD no acumula filas vacías).
+        // Si tiene definitiva cerrada, se queda (el docente la cerró).
+        const restantes = await prisma.notaItem.findMany({ where: { calificacionId: cal.id } })
+        if (restantes.length === 0 && cal.definitiva === null) {
+          await prisma.calificacion.delete({ where: { id: cal.id } })
+        }
       } else {
         if (valor === undefined || valor === null) continue
-        if (valor < 1 || valor > 5) continue
+        // El 0 es válido (rango 0-5, coherente con el frontend)
+        if (valor < 0 || valor > 5) continue
 
         if (tipo === 'EVALUACION') {
           const existente = await prisma.notaItem.findFirst({

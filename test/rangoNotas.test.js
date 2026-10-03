@@ -45,12 +45,15 @@ test('guardar-grid rechaza notas fuera de 0 a 5 con el mensaje exacto', async ()
   const decima = await api.post('/api/notas/guardar-grid', { token: tokenDocente, body: { items: [itemCon(5.1)] } })
   assert.equal(decima.status, 400)
 
-  // El 0 y el 5 SÍ son válidos (extremos del rango)
+  // El 0 y el 5 SÍ son válidos (extremos del rango) — verificando el
+  // guardado REAL (actualizados > 0), no solo el status
   const cero = await api.post('/api/notas/guardar-grid', { token: tokenDocente, body: { items: [itemCon(0)] } })
   assert.equal(cero.status, 200)
+  assert.ok((cero.data.actualizados || 0) >= 1, 'el 0 debe guardarse de verdad (el viejo valor < 1 lo ignoraba)')
 
   const cinco = await api.post('/api/notas/guardar-grid', { token: tokenDocente, body: { items: [itemCon(5)] } })
   assert.equal(cinco.status, 200)
+  assert.ok((cinco.data.actualizados || 0) >= 1, 'el 5 debe guardarse de verdad')
 
   // Limpieza del item de prueba
   const limpiar = await api.post('/api/notas/guardar-grid', { token: tokenDocente, body: { items: [{ estudianteId: estudiante, materiaId, periodo: 1, anio, tipo: 'ACTIVIDAD', titulo: 'Test Rango', valor: null, _delete: true }] } })
