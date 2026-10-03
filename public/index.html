@@ -1985,7 +1985,7 @@ function renderGrid() {
         const evalItem = cat.items && cat.items.length > 0 ? cat.items[0] : null
         const val = (evalItem && evalItem.valor !== null && evalItem.valor !== undefined) ? evalItem.valor : ''
         html += '<td class="cell-eval" data-cal-id="' + (calId || '') + '">'
-          html += '<input type="number" step="0.1" min="1" max="5" class="excel-input cell-input" value="' + val + '" placeholder="" onchange="marcarCambio(' + i + ',\'' + tipo + '\',\'\',this.value)">'
+          html += '<input type="number" step="0.1" min="0" max="5" class="excel-input cell-input" value="' + val + '" placeholder="" onchange="marcarCambio(' + i + ',\'' + tipo + '\',\'\',this.value,this)">'
         html += '</td>'
       } else {
         for (const col of colArray) {
@@ -1994,7 +1994,7 @@ function renderGrid() {
           const val = (raw !== null && raw !== undefined) ? raw : ''
           html += '<td class="cell-' + tipo.toLowerCase() + '" data-cal-id="' + (calId || '') + '" data-titulo="' + (col.titulo || '') + '">'
           if (col.titulo) {
-            html += '<input type="number" step="0.1" min="1" max="5" class="excel-input cell-input" value="' + val + '" placeholder="" onchange="marcarCambio(' + i + ',\'' + tipo + '\',\'' + escArg(col.titulo) + '\',this.value)">'
+            html += '<input type="number" step="0.1" min="0" max="5" class="excel-input cell-input" value="' + val + '" placeholder="" onchange="marcarCambio(' + i + ',\'' + tipo + '\',\'' + escArg(col.titulo) + '\',this.value,this)">'
           } else {
             html += '<span style="color:var(--ink-400);font-size:11px;">Sin notas</span>'
           }
@@ -2122,15 +2122,24 @@ async function eliminarColumna(tipo, titulo) {
   })
 }
 
-function marcarCambio(studentIdx, tipo, titulo, valor) {
+function marcarCambio(studentIdx, tipo, titulo, valor, input) {
   const s = studentsData[studentIdx]
   if (!s) return
   const key = s.estudianteId + '_' + tipo + '_' + titulo
+  // Vaciar la celda: marca el item para borrar
+  if (valor === '' || valor === null || valor === undefined) {
+    cambiosGrid[key] = { estudianteId: s.estudianteId, materiaId: selectedMateria, periodo: currentPeriodo, anio: new Date().getFullYear(), tipo, titulo, valor: null, _delete: true }
+    guardarCambiosLocal()
+    return
+  }
   const v = parseFloat(valor)
-  if (isNaN(v) || v < 1) {
-    if (valor === '' || valor === null || valor === undefined) {
-      cambiosGrid[key] = { estudianteId: s.estudianteId, materiaId: selectedMateria, periodo: currentPeriodo, anio: new Date().getFullYear(), tipo, titulo, valor: null, _delete: true }
-      guardarCambiosLocal()
+  // Restricción de rango: la nota solo puede ir de 0 a 5. Se revierte la
+  // celda al valor previo y se avisa con un mensaje.
+  if (isNaN(v) || v < 0 || v > 5) {
+    mostrarToast('error', 'La nota solo puede ir de 0 a 5')
+    if (input) {
+      const previo = (cambiosGrid[key] && cambiosGrid[key].valor !== null && cambiosGrid[key].valor !== undefined) ? cambiosGrid[key].valor : ''
+      input.value = previo
     }
     return
   }

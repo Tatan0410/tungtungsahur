@@ -779,6 +779,15 @@ router.post('/guardar-grid', async (req, res) => {
       const { estudianteId, materiaId, periodo, anio, tipo, titulo, valor, _delete } = item
       if (!estudianteId || !materiaId || !tipo) continue
 
+      // Defensa en profundidad: la nota solo puede ir de 0 a 5 (el frontend
+      // ya lo restringe con mensaje; esto evita que llegue cualquier otra cosa)
+      if (valor !== null && valor !== undefined && valor !== '') {
+        const vNota = parseFloat(valor)
+        if (isNaN(vNota) || vNota < 0 || vNota > 5) {
+          return res.status(400).json({ error: 'La nota solo puede ir de 0 a 5' })
+        }
+      }
+
       const p = parseInt(periodo) || 1
       const a = parseInt(anio) || new Date().getFullYear()
 
