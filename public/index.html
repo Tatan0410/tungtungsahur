@@ -214,6 +214,19 @@ body::before {
 .icono-tema svg { width:1em; height:1em; display:block; }
 .role-icon .icon svg { width:1.1em; height:1.1em; }
 
+/* Toggle de vista del estudiante: Materias | Áreas (pill deslizante) */
+.vista-row { display:grid; grid-template-columns:1fr 1fr; gap:8px; background: var(--cream-100); padding:4px; border-radius: 10px; position:relative; width:210px; }
+.vista-row::before {
+  content:''; position:absolute; top:4px; bottom:4px; left:4px;
+  width:calc(50% - 8px); border-radius:7px; background:var(--paper);
+  box-shadow: 0 2px 6px rgba(42,36,32,0.10);
+  transition: transform 250ms var(--ease);
+  pointer-events:none;
+}
+.vista-row.en-areas::before { transform: translateX(100%); }
+.vista-opt { padding: 7px 8px; border-radius: 7px; text-align:center; cursor:pointer; font-size:12px; color: var(--ink-600); transition: color .2s var(--ease), font-weight .2s var(--ease); font-weight:500; position:relative; z-index:1; }
+.vista-opt.sel { color: var(--burgundy-700); font-weight:600; }
+
 /* Ojito de mostrar/ocultar contraseña */
 .inp-con-ojo { position:relative; display:flex; align-items:center; width:100%; }
 .inp-con-ojo .inp { width:100%; padding-right:42px; }
@@ -739,7 +752,12 @@ body::before {
     <div><div class="prom-label">Promedio general · Período 2</div><div class="prom-val" id="promedio">--</div></div>
     <div style="flex:1;min-width:120px;"><div style="font-size:11px;color:var(--ink-400);margin-bottom:5px;text-align:right;font-weight:500;" id="promedio-porc">0% de 5.0</div><div style="height:7px;background:var(--line);border-radius:4px;overflow:hidden;"><div style="height:7px;background:linear-gradient(90deg,var(--green-500),var(--green-300));border-radius:4px;width:0%;" id="promedio-bar"></div></div></div>
   </div>
-  <div class="sec-label">Calificaciones</div>
+  <div class="sec-label" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">Calificaciones
+  <div class="vista-row" id="vista-notas-row">
+    <div class="vista-opt sel" id="vista-materias" onclick="selVistaNotas('materias')">Materias</div>
+    <div class="vista-opt" id="vista-areas" onclick="selVistaNotas('areas')">Áreas</div>
+  </div>
+</div>
   <div class="notas-grid" id="notas-grid">
     <div style="color:var(--ink-400);font-size:13px;padding:20px;text-align:center;">Selecciona un período y consulta</div>
   </div>
@@ -823,6 +841,7 @@ body::before {
         <button class="nav-item" onclick="conCarga(this, cargarAdminProfesores)" id="nav-profesores"><span class="icon" data-icon="usuarios"></span><span class="sidebar-txt"> Profesores</span></button>
         <button class="nav-item" onclick="conCarga(this, cargarAdminAdmins)" id="nav-admins"><span class="icon" data-icon="escudo"></span><span class="sidebar-txt"> Admins</span></button>
         <button class="nav-item" onclick="conCarga(this, cargarAdminMaterias)" id="nav-materias"><span class="icon" data-icon="libro"></span><span class="sidebar-txt"> Materias</span></button>
+        <button class="nav-item" onclick="conCarga(this, cargarAdminAreas)" id="nav-areas"><span class="icon" data-icon="areas"></span><span class="sidebar-txt"> Áreas</span></button>
         <button class="nav-item" onclick="conCarga(this, cargarAdminAsignaciones)" id="nav-asignaciones"><span class="icon" data-icon="docente"></span><span class="sidebar-txt"> Asignaciones</span></button>
         <button class="nav-item" onclick="conCarga(this, cargarAdminPeriodos)" id="nav-periodos"><span class="icon" data-icon="calendario"></span><span class="sidebar-txt"> Períodos</span></button>
         <button class="nav-item" onclick="conCarga(this, cargarAdminReporteCorte)" id="nav-reporte"><span class="icon" data-icon="advertencia"></span><span class="sidebar-txt"> Reporte</span></button>
@@ -943,6 +962,23 @@ body::before {
       </table>
     </div>
     <div style="font-size:11px;color:var(--ink-400);margin-top:10px;">Para asignar una materia a un curso y darle maestro, ve a la pestaña <span class="icon" data-icon="docente"></span> Asignaciones.</div>
+  </div>
+
+  <div id="admin-areas-section" style="display:none;">
+    <div style="font-size:15px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);margin-bottom:12px;"><span class="icon" data-icon="areas"></span> Áreas</div>
+
+    <!-- Crear área -->
+    <div style="background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px;margin-bottom:16px;">
+      <div style="font-size:13px;font-weight:600;color:var(--ink-900);margin-bottom:10px;">Crear área</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;">
+        <div><div class="lbl">Nombre del área</div><input class="inp" id="area-nombre" placeholder="Ej: Área de Matemáticas" style="width:220px;"></div>
+        <div><button class="btn-sm primary" onclick="conCarga(this, crearArea)" style="font-weight:600;"><span class="icon" data-icon="mas"></span> Crear área</button></div>
+      </div>
+      <div style="font-size:11px;color:var(--ink-400);margin-top:8px;">Después de crearla, agrégale las materias con sus porcentajes (el acumulado no puede pasar de 100%).</div>
+    </div>
+
+    <!-- Lista de áreas -->
+    <div id="admin-areas-lista" style="margin-bottom:20px;"></div>
   </div>
 
   <div id="admin-asignaciones-section" style="display:none;">
@@ -1317,6 +1353,8 @@ let studentsData = []
 let expandedStudent = null
 let ccolumnas = {}
 let cambiosGrid = {}
+let vistaNotasActual = 'materias'
+let _notasEstudianteCalificaciones = null
 
 const API = ''
 
@@ -1360,6 +1398,7 @@ const ICONS = {
   'horizonte': '<path d="M17 18a5 5 0 0 0-10 0"/><line x1="12" y1="3" x2="12" y2="9"/><line x1="4.22" y1="10.22" x2="5.64" y2="11.64"/><line x1="1" y1="18" x2="3" y2="18"/><line x1="21" y1="18" x2="23" y2="18"/><line x1="18.36" y1="11.64" x2="19.78" y2="10.22"/><line x1="23" y1="22" x2="1" y2="22"/>',
   'punto-estado': '<circle cx="12" cy="12" r="6" fill="currentColor" stroke="none"/>',
   'libro': '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>',
+  'areas': '<polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>',
   'engranaje': '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
 }
 
@@ -2196,7 +2235,9 @@ async function cargarNotasEstudiante() {
       dotsContainer.innerHTML = dotsHtml.join('');
     }
     // Render grades grid
-    renderStudentGrid(data.calificaciones || []);
+    _notasEstudianteCalificaciones = data.calificaciones || []
+    if (vistaNotasActual === 'areas') cargarNotasAreas()
+    else renderStudentGrid(_notasEstudianteCalificaciones)
     // Update promedio general
     document.getElementById('promedio').textContent = data.promedio ?? '--';
   } catch (e) {
@@ -2272,9 +2313,9 @@ function renderStudentGrid(calificaciones) {
     grid.innerHTML = '<div style="color:var(--ink-400);font-size:13px;padding:20px;text-align:center;">No hay notas disponibles.</div>';
     return;
   }
-  const cards = calificaciones.map(c => {
+  const cards = calificaciones.map((c, i) => {
     const g = c.grupos || {};
-    let html = '<div class="nota-card">';
+    let html = '<div class="nota-card" style="animation:filaEntra .25s var(--ease-out) both;animation-delay:' + (i * 25) + 'ms;">';
     html += '<div class="nota-mat">' + (c.materia || 'Materia') + '</div>';
     // Category averages
     const categories = [
@@ -2301,6 +2342,71 @@ function renderStudentGrid(calificaciones) {
   grid.innerHTML = cards;
 }
 
+// ─── Vista del estudiante por MATERIAS o por ÁREAS (pill deslizante) ───
+function selVistaNotas(v) {
+  vistaNotasActual = v
+  document.getElementById('vista-materias').classList.toggle('sel', v === 'materias')
+  document.getElementById('vista-areas').classList.toggle('sel', v === 'areas')
+  const fila = document.getElementById('vista-notas-row')
+  if (fila) fila.classList.toggle('en-areas', v === 'areas')
+  if (v === 'materias') {
+    renderStudentGrid(_notasEstudianteCalificaciones || [])
+  } else {
+    cargarNotasAreas()
+  }
+}
+
+async function cargarNotasAreas() {
+  const grid = document.getElementById('notas-grid')
+  if (!grid) return
+  grid.innerHTML = '<div class="skeleton" style="width:60%;height:16px;margin:10px 0;"></div><div class="skeleton" style="width:40%;height:16px;margin:10px 0;"></div>'
+  try {
+    const res = await fetch(API + '/api/notas/mis-areas?periodo=' + currentPeriodo + '&anio=' + new Date().getFullYear(), {
+      headers: { 'Authorization': 'Bearer ' + currentToken }
+    })
+    if (!res.ok) {
+      grid.innerHTML = '<div style="color:var(--red-700);font-size:13px;padding:20px;text-align:center;">Error al cargar las \u00e1reas <button class="btn-sm" onclick="cargarNotasAreas()" style="margin-left:8px;">Reintentar</button></div>'
+      return
+    }
+    const data = await res.json()
+    renderAreasEstudiante(data.areas || [])
+  } catch (e) {
+    grid.innerHTML = '<div style="color:var(--red-700);font-size:13px;padding:20px;text-align:center;">Error de conexi\u00f3n <button class="btn-sm" onclick="cargarNotasAreas()" style="margin-left:8px;">Reintentar</button></div>'
+  }
+}
+
+function renderAreasEstudiante(areas) {
+  const grid = document.getElementById('notas-grid')
+  if (!grid) return
+  if (!areas.length) {
+    grid.innerHTML = '<div style="color:var(--ink-400);font-size:13px;padding:20px;text-align:center;">Tu curso no tiene \u00e1reas asignadas.</div>'
+    return
+  }
+  grid.innerHTML = areas.map((a, i) => {
+    const badge = a.estado === 'RIESGO'
+      ? '<span style="background:var(--red-100);color:var(--red-700);padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">En riesgo</span>'
+      : a.estado === 'APROBADO'
+      ? '<span style="background:var(--green-100);color:var(--green-700);padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">Aprobado</span>'
+      : '<span style="background:var(--cream-100);color:var(--ink-600);padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">Sin nota</span>'
+    const materias = (a.materias || []).map(m => {
+      const color = m.definitiva !== null ? getColorDef(m.definitiva) : 'var(--ink-400)'
+      return '<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:11.5px;"><span style="color:var(--ink-600);">' + esc(m.materiaNombre) + ' (' + m.porcentaje + '%)</span><span style="font-weight:600;color:' + color + '">' + (m.definitiva !== null ? m.definitiva.toFixed(2) : '--') + '</span></div>'
+    }).join('')
+    return '<div class="nota-card" style="animation:filaEntra .25s var(--ease-out) both;animation-delay:' + (i * 25) + 'ms;">' +
+      '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px;gap:8px;">' +
+        '<div><div class="nota-mat">' + esc(a.nombre) + '</div>' +
+        (a.provisional ? '<div style="font-size:10px;color:var(--amber-700);">promedio parcial (faltan materias)</div>' : '') +
+        '</div>' + badge +
+      '</div>' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+        '<div style="font-size:11px;color:var(--ink-400);">Promedio del \u00e1rea</div>' +
+        '<div style="font-size:22px;font-weight:600;color:' + (a.promedio !== null ? getColorDef(a.promedio) : 'var(--ink-400)') + ';">' + (a.promedio !== null ? a.promedio.toFixed(2) : '--') + '</div>' +
+      '</div>' +
+      '<div style="border-top:1px solid var(--line-soft);padding-top:6px;">' + materias + '</div>' +
+    '</div>'
+  }).join('')
+}
+
 function mostrarToast(tipo, msg) {
   const t = document.getElementById('toast')
   if (tipo === 'ok') {
@@ -2320,7 +2426,7 @@ function mostrarToast(tipo, msg) {
 
 function actualizarNavActivo(idActivo) {
   _navActivoId = idActivo
-  const botones = ['nav-profesores','nav-admins','nav-materias','nav-asignaciones','nav-periodos','nav-reporte','nav-estudiantes','nav-directores','nav-obs']
+  const botones = ['nav-profesores','nav-admins','nav-materias','nav-areas','nav-asignaciones','nav-periodos','nav-reporte','nav-estudiantes','nav-directores','nav-obs']
   botones.forEach(id => {
     const b = document.getElementById(id)
     if (b) {
@@ -2384,6 +2490,283 @@ window.addEventListener('resize', () => {
   }
 })
 
+// ─── ÁREAS (panel admin) ───
+let _areasData = []
+let _materiasLista = []
+
+async function cargarAdminAreas() {
+  document.getElementById('admin-profesores-section').style.display = 'none'
+  document.getElementById('admin-asignaciones-section').style.display = 'none'
+  document.getElementById('admin-materias-section').style.display = 'none'
+  document.getElementById('admin-admins-section').style.display = 'none'
+  document.getElementById('admin-periodos-section').style.display = 'none'
+  document.getElementById('admin-obs-section').style.display = 'none'
+  document.getElementById('admin-directores-section').style.display = 'none'
+  document.getElementById('admin-reporte-corte-section').style.display = 'none'
+  document.getElementById('admin-estudiantes-section').style.display = 'none'
+  mostrarSeccion('admin-areas-section')
+  actualizarNavActivo('nav-areas')
+  await cargarAreasLista()
+}
+
+async function cargarAreasLista() {
+  const cont = document.getElementById('admin-areas-lista')
+  cont.innerHTML = '<div class="skeleton" style="width:60%;height:16px;margin:10px 0;"></div><div class="skeleton" style="width:40%;height:16px;margin:10px 0;"></div>'
+  try {
+    const res = await fetch(API + '/api/admin/areas', { headers: { 'Authorization': 'Bearer ' + currentToken } })
+    if (!res.ok) { cont.innerHTML = '<div style="color:var(--red-700);font-size:13px;padding:12px;">Error al cargar las áreas <button class="btn-sm" onclick="cargarAreasLista()" style="margin-left:8px;">Reintentar</button></div>'; return }
+    _areasData = await res.json()
+    renderAreasLista()
+  } catch (e) {
+    cont.innerHTML = '<div style="color:var(--red-700);font-size:13px;padding:12px;">Error de conexión <button class="btn-sm" onclick="cargarAreasLista()" style="margin-left:8px;">Reintentar</button></div>'
+  }
+}
+
+function renderAreasLista() {
+  const cont = document.getElementById('admin-areas-lista')
+  if (!_areasData.length) {
+    cont.innerHTML = '<div style="color:var(--ink-400);font-size:13px;padding:20px;text-align:center;background:var(--paper);border:1px dashed var(--line);border-radius:var(--r-lg);">A\u00fan no hay \u00e1reas. Crea la primera arriba.</div>'
+    return
+  }
+  cont.innerHTML = _areasData.map((a, idx) => {
+    const suma = a.materias.reduce((n, m) => n + Number(m.porcentaje), 0)
+    const materiasHtml = a.materias.length
+      ? a.materias.map(m => '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--line-soft);font-size:12.5px;"><span>' + esc(m.materiaNombre) + '</span><b style="color:var(--gold-700);">' + m.porcentaje + '%</b></div>').join('')
+      : '<div style="color:var(--ink-400);font-size:12px;padding:6px 0;">(sin materias)</div>'
+    const cursosHtml = a.cursos.length
+      ? a.cursos.map(c => '<span style="display:inline-flex;align-items:center;gap:5px;background:var(--cream-100);color:var(--ink-900);border-radius:12px;padding:3px 10px;font-size:11px;font-weight:600;">' + esc(c) + '<button onclick="desasignarAreaCurso(\'' + a.id + '\',\'' + escArg(c) + '\')" title="Desasignar del curso" style="border:none;background:none;cursor:pointer;color:var(--ink-400);font-size:13px;padding:0;line-height:1;">\u00d7</button></span>').join(' ')
+      : '<span style="color:var(--ink-400);font-size:12px;">(sin cursos asignados)</span>'
+    return '<div class="nota-card" style="margin-bottom:12px;">' +
+      '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px;flex-wrap:wrap;gap:8px;">' +
+        '<div><div style="font-size:14px;font-weight:700;color:var(--ink-900);">' + esc(a.nombre) + '</div>' +
+        '<div style="font-size:11px;color:var(--ink-400);">' + a.materias.length + ' materia(s) \u00b7 suma ' + Math.round(suma) + '%</div></div>' +
+        '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
+          '<button class="btn-sm" onclick="alternarEditorMaterias(\'' + a.id + '\')" style="font-size:11px;"><span class="icon" data-icon="lapiz"></span> Editar materias</button>' +
+          '<button class="btn-sm danger" onclick="eliminarArea(\'' + a.id + '\',\'' + escArg(a.nombre) + '\')" style="font-size:11px;"><span class="icon" data-icon="papelera"></span> Eliminar</button>' +
+        '</div>' +
+      '</div>' +
+      '<div style="margin-bottom:10px;">' + materiasHtml + '</div>' +
+      '<div style="font-size:11px;color:var(--ink-400);font-weight:600;text-transform:uppercase;margin-bottom:5px;">Cursos</div>' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">' + cursosHtml +
+        '<select class="sel" id="area-curso-sel-' + idx + '" style="font-size:11px;padding:4px 8px;width:auto;"><option value="">Asignar a curso\u2026</option></select>' +
+        '<button class="btn-sm primary" onclick="asignarAreaCurso(\'' + a.id + '\', ' + idx + ')" style="font-size:11px;">Asignar</button>' +
+      '</div>' +
+      '<div id="area-editor-' + a.id + '" style="display:none;margin-top:12px;border-top:1px solid var(--line);padding-top:12px;"></div>' +
+    '</div>'
+  }).join('')
+  poblarIconos(cont)
+  poblarSelectsCursos()
+}
+
+let _cursosParaAreas = null
+async function poblarSelectsCursos() {
+  try {
+    if (!_cursosParaAreas) {
+      const res = await fetch(API + '/api/admin/cursos', { headers: { 'Authorization': 'Bearer ' + currentToken } })
+      if (!res.ok) return
+      _cursosParaAreas = await res.json()
+    }
+    for (let i = 0; i < 40; i++) {
+      const sel = document.getElementById('area-curso-sel-' + i)
+      if (!sel) continue
+      const actual = sel.value
+      sel.innerHTML = '<option value="">Asignar a curso\u2026</option>' + _cursosParaAreas.map(c => '<option value="' + esc(c) + '">' + esc(c) + '</option>').join('')
+      sel.value = actual
+    }
+  } catch (e) { /* sin cursos para poblar */ }
+}
+
+async function crearArea() {
+  const nombre = document.getElementById('area-nombre').value.trim()
+  if (!nombre) { mostrarToast('error', 'Escribe el nombre del \u00e1rea'); return }
+  try {
+    const res = await fetch(API + '/api/admin/areas', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + currentToken },
+      body: JSON.stringify({ nombre, materias: [] })
+    })
+    const data = await res.json()
+    if (!res.ok) { mostrarToast('error', data.error || 'No se pudo crear el \u00e1rea'); return }
+    document.getElementById('area-nombre').value = ''
+    mostrarToast('ok', '\u00c1rea creada: ' + data.nombre)
+    _materiasLista = []
+    await cargarAreasLista()
+  } catch (e) {
+    mostrarToast('error', 'Error de conexi\u00f3n')
+  }
+}
+
+async function alternarEditorMaterias(areaId) {
+  const ed = document.getElementById('area-editor-' + areaId)
+  if (!ed) return
+  if (ed.style.display === 'block') { ed.style.display = 'none'; return }
+  ed.style.display = 'block'
+  ed.innerHTML = '<div class="skeleton" style="width:50%;height:14px;"></div>'
+  try {
+    if (!_materiasLista.length) {
+      const res = await fetch(API + '/api/admin/materias', { headers: { 'Authorization': 'Bearer ' + currentToken } })
+      if (!res.ok) { ed.innerHTML = '<div style="color:var(--red-700);font-size:12px;">Error al cargar materias</div>'; return }
+      _materiasLista = await res.json()
+    }
+    const area = _areasData.find(a => a.id === areaId)
+    if (!area) return
+    ed.innerHTML = construirEditorMaterias(areaId, area.materias)
+  } catch (e) {
+    ed.innerHTML = '<div style="color:var(--red-700);font-size:12px;">Error de conexi\u00f3n</div>'
+  }
+}
+
+function construirEditorMaterias(areaId, materiasActuales) {
+  window['_editorArea'] = window['_editorArea'] || {}
+  window['_editorArea'][areaId] = materiasActuales.map(m => ({ materiaId: m.materiaId, porcentaje: m.porcentaje }))
+  let html = '<div style="font-size:12px;font-weight:600;color:var(--ink-900);margin-bottom:8px;">Materias del \u00e1rea (el acumulado no puede pasar de 100%)</div>'
+  html += '<div id="area-filas-' + areaId + '">' + pintarFilasMateria(areaId) + '</div>'
+  html += '<div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap;">' +
+    '<button class="btn-sm" onclick="agregarFilaMateria(\'' + areaId + '\')" style="font-size:11px;"><span class="icon" data-icon="mas"></span> Agregar materia</button>' +
+    '<span id="area-suma-' + areaId + '" style="font-size:12px;font-weight:600;"></span>' +
+    '<span style="flex:1;"></span>' +
+    '<button class="btn-sm primary" onclick="guardarMateriasArea(\'' + areaId + '\')" style="font-weight:600;font-size:11px;">Guardar materias</button>' +
+  '</div>'
+  html += '<div id="area-error-' + areaId + '" style="display:none;color:var(--red-700);font-size:12px;margin-top:6px;"></div>'
+  return html
+}
+
+function pintarFilasMateria(areaId) {
+  const filas = window['_editorArea'][areaId] || []
+  return filas.map((f, i) => {
+    return '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">' +
+      '<select onchange="cambiarFilaMateria(\'' + areaId + '\', ' + i + ', this.value)" style="flex:1;min-width:0;font-size:12px;">' +
+        '<option value="">Elegir materia\u2026</option>' +
+        _materiasLista.map(x => '<option value="' + esc(x.id) + '"' + (x.id === f.materiaId ? ' selected' : '') + '>' + esc(x.nombre) + '</option>').join('') +
+      '</select>' +
+      '<input type="number" min="1" max="100" value="' + f.porcentaje + '" onchange="cambiarFilaPorcentaje(\'' + areaId + '\', ' + i + ', this.value)" style="width:64px;">' +
+      '<span style="font-size:11px;color:var(--ink-400);">%</span>' +
+      '<button class="btn-sm danger" onclick="quitarFilaMateria(\'' + areaId + '\', ' + i + ')" style="font-size:11px;">Quitar</button>' +
+    '</div>'
+  }).join('')
+}
+
+function repintarFilasMateria(areaId) {
+  const cont = document.getElementById('area-filas-' + areaId)
+  if (cont) cont.innerHTML = pintarFilasMateria(areaId)
+  actualizarSumaArea(areaId)
+  poblarIconos(cont)
+}
+
+function actualizarSumaArea(areaId) {
+  const filas = window['_editorArea'][areaId] || []
+  const suma = filas.reduce((n, f) => n + (Number(f.porcentaje) || 0), 0)
+  const el = document.getElementById('area-suma-' + areaId)
+  if (!el) return
+  el.textContent = 'Suma: ' + Math.round(suma) + '%'
+  el.style.color = suma > 100 ? 'var(--red-700)' : (suma === 100 ? 'var(--green-700)' : 'var(--ink-600)')
+}
+
+function cambiarFilaMateria(areaId, i, materiaId) {
+  const filas = window['_editorArea'][areaId] || []
+  if (!filas[i]) return
+  filas[i].materiaId = materiaId
+  repintarFilasMateria(areaId)
+}
+
+function cambiarFilaPorcentaje(areaId, i, valor) {
+  const filas = window['_editorArea'][areaId] || []
+  if (!filas[i]) return
+  filas[i].porcentaje = parseFloat(valor) || 0
+  actualizarSumaArea(areaId)
+}
+
+function agregarFilaMateria(areaId) {
+  window['_editorArea'][areaId] = window['_editorArea'][areaId] || []
+  window['_editorArea'][areaId].push({ materiaId: '', porcentaje: 20 })
+  repintarFilasMateria(areaId)
+}
+
+function quitarFilaMateria(areaId, i) {
+  const filas = window['_editorArea'][areaId] || []
+  filas.splice(i, 1)
+  repintarFilasMateria(areaId)
+}
+
+async function guardarMateriasArea(areaId) {
+  const filas = window['_editorArea'][areaId] || []
+  const sinElegir = filas.filter(f => !f.materiaId)
+  if (!filas.length) { mostrarAreaError(areaId, 'El \u00e1rea debe tener al menos una materia'); return }
+  if (sinElegir.length) { mostrarAreaError(areaId, 'Hay materias sin elegir'); return }
+  const suma = filas.reduce((n, f) => n + (Number(f.porcentaje) || 0), 0)
+  if (suma > 100) { mostrarAreaError(areaId, 'El acumulado no puede pasar de 100% (suma ' + Math.round(suma) + '%)'); return }
+  const errEl = document.getElementById('area-error-' + areaId)
+  if (errEl) errEl.style.display = 'none'
+  try {
+    const res = await fetch(API + '/api/admin/areas/' + areaId + '/materias', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + currentToken },
+      body: JSON.stringify({ materias: filas })
+    })
+    const data = await res.json()
+    if (!res.ok) { mostrarAreaError(areaId, data.error || 'No se pudo guardar'); return }
+    mostrarToast('ok', 'Materias del \u00e1rea guardadas')
+    await cargarAreasLista()
+  } catch (e) {
+    mostrarAreaError(areaId, 'Error de conexi\u00f3n')
+  }
+}
+
+function mostrarAreaError(areaId, mensaje) {
+  const el = document.getElementById('area-error-' + areaId)
+  if (el) { el.textContent = mensaje; el.style.display = 'block' }
+}
+
+async function asignarAreaCurso(areaId, idx) {
+  const sel = document.getElementById('area-curso-sel-' + idx)
+  const curso = sel ? sel.value : ''
+  if (!curso) { mostrarToast('error', 'Elige un curso para asignar el \u00e1rea'); return }
+  try {
+    const res = await fetch(API + '/api/admin/areas/' + areaId + '/cursos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + currentToken },
+      body: JSON.stringify({ curso })
+    })
+    const data = await res.json()
+    if (!res.ok) { mostrarToast('error', data.error || 'No se pudo asignar'); return }
+    mostrarToast('ok', '\u00c1rea asignada al curso ' + curso)
+    await cargarAreasLista()
+  } catch (e) {
+    mostrarToast('error', 'Error de conexi\u00f3n')
+  }
+}
+
+async function desasignarAreaCurso(areaId, curso) {
+  try {
+    const res = await fetch(API + '/api/admin/areas/' + areaId + '/cursos/' + encodeURIComponent(curso), {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer ' + currentToken }
+    })
+    if (!res.ok) { const data = await res.json(); mostrarToast('error', data.error || 'No se pudo desasignar'); return }
+    mostrarToast('ok', '\u00c1rea desasignada del curso ' + curso)
+    await cargarAreasLista()
+  } catch (e) {
+    mostrarToast('error', 'Error de conexi\u00f3n')
+  }
+}
+
+async function eliminarArea(areaId, nombre) {
+  confirmarAccion('\u00bfEliminar el \u00e1rea "' + nombre + '"? Se desasignar\u00e1 de todos sus cursos (las notas de las materias no se tocan).', async () => {
+    try {
+      const res = await fetch(API + '/api/admin/areas/' + areaId, {
+        method: 'DELETE',
+        headers: { 'Authorization': 'Bearer ' + currentToken }
+      })
+      const data = await res.json()
+      if (!res.ok) { mostrarToast('error', data.error || 'No se pudo eliminar'); return }
+      mostrarToast('ok', '\u00c1rea eliminada')
+      await cargarAreasLista()
+    } catch (e) {
+      mostrarToast('error', 'Error de conexi\u00f3n')
+    }
+  })
+}
+
 function showAdminPortal(user) {
   document.getElementById('app').classList.add('wide-mode')
   aplicarSidebarGuardado()
@@ -2404,6 +2787,7 @@ async function cargarAdminProfesores() {
   document.getElementById('admin-estudiantes-section').style.display = 'none'
   document.getElementById('admin-directores-section').style.display = 'none'
   document.getElementById('admin-reporte-corte-section').style.display = 'none'
+  document.getElementById('admin-areas-section').style.display = 'none'
   actualizarNavActivo('nav-profesores')
   const tb = document.getElementById('admin-tb-profesores')
   tb.innerHTML = skeletonFilas(5)
@@ -2435,12 +2819,14 @@ async function cargarAdminProfesores() {
 
 async function cargarAdminAsignaciones() {
   document.getElementById('admin-profesores-section').style.display = 'none'
+  document.getElementById('admin-areas-section').style.display = 'none'
   mostrarSeccion('admin-asignaciones-section')
   document.getElementById('admin-periodos-section').style.display = 'none'
   document.getElementById('admin-obs-section').style.display = 'none'
   document.getElementById('admin-reporte-corte-section').style.display = 'none'
   document.getElementById('admin-estudiantes-section').style.display = 'none'
   document.getElementById('admin-directores-section').style.display = 'none'
+  document.getElementById('admin-areas-section').style.display = 'none'
   actualizarNavActivo('nav-asignaciones')
   try {
     const [profRes, matRes, curRes] = await Promise.all([
@@ -2565,6 +2951,7 @@ async function adminCrearAsignacion() {
 
 async function cargarAdminMaterias() {
   document.getElementById('admin-profesores-section').style.display = 'none'
+  document.getElementById('admin-areas-section').style.display = 'none'
   mostrarSeccion('admin-materias-section')
   document.getElementById('admin-asignaciones-section').style.display = 'none'
   document.getElementById('admin-periodos-section').style.display = 'none'
@@ -2572,6 +2959,7 @@ async function cargarAdminMaterias() {
   document.getElementById('admin-reporte-corte-section').style.display = 'none'
   document.getElementById('admin-estudiantes-section').style.display = 'none'
   document.getElementById('admin-directores-section').style.display = 'none'
+  document.getElementById('admin-areas-section').style.display = 'none'
   actualizarNavActivo('nav-materias')
   const tb = document.getElementById('admin-tb-materias')
   tb.innerHTML = skeletonFilas(1)
@@ -2809,6 +3197,7 @@ function cerrarModalProfesor() {
 async function cargarAdminAdmins() {
   document.getElementById('admin-profesores-section').style.display = 'none'
   document.getElementById('admin-materias-section').style.display = 'none'
+  document.getElementById('admin-areas-section').style.display = 'none'
   mostrarSeccion('admin-admins-section')
   document.getElementById('admin-asignaciones-section').style.display = 'none'
   document.getElementById('admin-periodos-section').style.display = 'none'
@@ -2816,6 +3205,7 @@ async function cargarAdminAdmins() {
   document.getElementById('admin-reporte-corte-section').style.display = 'none'
   document.getElementById('admin-estudiantes-section').style.display = 'none'
   document.getElementById('admin-directores-section').style.display = 'none'
+  document.getElementById('admin-areas-section').style.display = 'none'
   actualizarNavActivo('nav-admins')
   const tb = document.getElementById('admin-tb-admins')
   tb.innerHTML = skeletonFilas(4)
@@ -2925,11 +3315,13 @@ async function cargarAdminPeriodos() {
   document.getElementById('admin-asignaciones-section').style.display = 'none'
   document.getElementById('admin-materias-section').style.display = 'none'
   document.getElementById('admin-admins-section').style.display = 'none'
+  document.getElementById('admin-areas-section').style.display = 'none'
   mostrarSeccion('admin-periodos-section')
   document.getElementById('admin-reporte-corte-section').style.display = 'none'
   document.getElementById('admin-estudiantes-section').style.display = 'none'
   document.getElementById('admin-directores-section').style.display = 'none'
   document.getElementById('admin-obs-section').style.display = 'none'
+  document.getElementById('admin-areas-section').style.display = 'none'
   actualizarNavActivo('nav-periodos')
   try {
     const sedesRes = await fetch(API + '/api/admin/sedes', { headers: { 'Authorization': 'Bearer ' + currentToken } })
@@ -3353,6 +3745,7 @@ async function cargarAdminReporteCorte() {
   document.getElementById('admin-admins-section').style.display = 'none'
   document.getElementById('admin-estudiantes-section').style.display = 'none'
   document.getElementById('admin-directores-section').style.display = 'none'
+  document.getElementById('admin-areas-section').style.display = 'none'
   mostrarSeccion('admin-reporte-corte-section')
   actualizarNavActivo('nav-reporte')
   try {
@@ -3554,6 +3947,7 @@ async function cargarAdminEstudiantes() {
   document.getElementById('admin-obs-section').style.display = 'none'
   document.getElementById('admin-directores-section').style.display = 'none'
   document.getElementById('admin-reporte-corte-section').style.display = 'none'
+  document.getElementById('admin-areas-section').style.display = 'none'
   mostrarSeccion('admin-estudiantes-section')
   actualizarNavActivo('nav-estudiantes')
 
@@ -3769,6 +4163,7 @@ async function cargarAdminDirectores() {
   document.getElementById('admin-obs-section').style.display = 'none'
   document.getElementById('admin-estudiantes-section').style.display = 'none'
   document.getElementById('admin-reporte-corte-section').style.display = 'none'
+  document.getElementById('admin-areas-section').style.display = 'none'
   mostrarSeccion('admin-directores-section')
   actualizarNavActivo('nav-directores')
 
@@ -3861,6 +4256,7 @@ async function cargarAdminObservaciones(pagina) {
   document.getElementById('admin-estudiantes-section').style.display = 'none'
   document.getElementById('admin-directores-section').style.display = 'none'
   document.getElementById('admin-reporte-corte-section').style.display = 'none'
+  document.getElementById('admin-areas-section').style.display = 'none'
   mostrarSeccion('admin-obs-section')
   actualizarNavActivo('nav-obs')
 

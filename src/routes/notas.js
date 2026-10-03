@@ -1171,4 +1171,91 @@ router.get('/mi-reporte-corte', async (req, res) => {
   }
 })
 
+// ─── ÁREAS (vista del estudiante por áreas) ───
+// Áreas asignadas al curso del estudiante: por área trae su promedio
+// (renormalizado: Σ(nota×pct)/Σpct, parcial con las materias que tengan
+// nota) y las materias del área con su definitiva individual (calculada
+// en vivo desde las notas si la definitiva está a medias).
+router.get('/mis-areas', async (req, res) => {
+  try {
+    if (!req.usuario || !req.usuario.estudianteId) {
+      return res.status(403).json({ error: 'Solo estudiantes' })
+    }
+    const estudianteId = req.usuario.estudianteId
+    const periodo = parseInt(req.query.periodo) || 1
+    const anio = parseInt(req.query.anio) || new Date().getFullYear()
+
+    const cursoRow = await prisma._db.prepare('SELECT curso FROM estudiantes WHERE id = ?').get(estudianteId)
+    if (!cursoRow) return res.json({ areas: [] })
+
+    const areas = await prisma._db.prepare(`
+      SELECT a.id AS "areaId", a.nombre
+      FROM area_cursos ac JOIN areas a ON a.id = ac.areaId
+      WHERE ac.curso = ?
+      ORDER BY a.nombre ASC, a.creadoEn ASC
+    `).all(cursoRow.curso)
+
+    const resultado = []
+    for (const a of areas) {
+      const materias = await prisma._db.prepare(`
+        SELECT am.materiaId, am.porcentaje, m.nombre AS "materiaNombre"
+        FROM area_materias am JOIN materias m ON m.id = am.materiaId
+        WHERE am.areaId = ?
+        ORDER BY am.porcentaje DESC, m.nombre ASC
+      `).all(a.areaId)
+
+      const materiasData = []
+      let sumaPonderada = 0
+      let sumaPorcentajes = 0
+      let parciales = false
+      for (const m of materias) {
+        const cal = await prisma._db.prepare(
+          'SELECT id, definitiva FROM calificaciones WHERE estudianteId = ? AND materiaId = ? AND periodo = ? AND anio = ?'
+        ).get(estudianteId, m.materiaId, periodo, anio)
+        let definitiva = cal ? cal.definitiva : null
+        let provisional = false
+        if (cal && definitiva === null) {
+          const items = await prisma._db.prepare('SELECT tipo, valor FROM notas_items WHERE calificacionId = ?').all(cal.id)
+          if (items.length) {
+            definitiva = calcularDefinitiva(items)
+            provisional = definitiva !== null
+          }
+        }
+        if (definitiva !== null) {
+          sumaPonderada += definitiva * m.porcentaje
+          sumaPorcentajes += m.porcentaje
+          if (provisional) parciales = true
+        }
+        materiasData.push({
+          materiaId: m.materiaId,
+          materiaNombre: m.materiaNombre,
+          porcentaje: m.porcentaje,
+          definitiva,
+          provisional,
+          estado: definitiva === null ? 'SIN_NOTA' : (definitiva < 3.0 ? 'RIESGO' : 'APROBADO'),
+        })
+      }
+
+      // Promedio renormalizado: solo las materias con nota, ÷ Σpct de las que tienen
+      const promedio = sumaPorcentajes > 0 ? parseFloat((sumaPonderada / sumaPorcentajes).toFixed(2)) : null
+      const todasConNota = materiasData.every(md => md.definitiva !== null)
+      resultado.push({
+        areaId: a.areaId,
+        nombre: a.nombre,
+        promedio,
+        // Parcial: el promedio no es definitivo — o faltan materias o alguna
+        // definitiva es provisional (calculada desde notas a medias)
+        provisional: promedio !== null && (parciales || !todasConNota),
+        completo: todasConNota,
+        estado: promedio === null ? 'SIN_NOTA' : (promedio < 3.0 ? 'RIESGO' : 'APROBADO'),
+        materias: materiasData,
+      })
+    }
+    res.json({ areas: resultado })
+  } catch (error) {
+    console.error('Error GET /notas/mis-areas:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
 module.exports = router

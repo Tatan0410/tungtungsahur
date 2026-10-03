@@ -22,7 +22,7 @@ after(() => {
   try { fs.rmSync(dir, { recursive: true, force: true }) } catch { /* ya borrado */ }
 })
 
-test('respaldar.js exporta las 15 tablas con los conteos correctos', () => {
+test('respaldar.js exporta las 18 tablas con los conteos correctos', () => {
   const out = execFileSync(process.execPath, ['scripts/respaldar.js', '--db', rutaCopia], { cwd: RAIZ, encoding: 'utf8' })
   assert.match(out, /Respaldo completo/)
 
@@ -31,7 +31,7 @@ test('respaldar.js exporta las 15 tablas con los conteos correctos', () => {
   const archivo = coincidencia[0]
 
   const paquete = JSON.parse(fs.readFileSync(path.join(RAIZ, archivo), 'utf8'))
-  assert.equal(paquete.tablas.length, 15, 'debe incluir las 15 tablas')
+  assert.equal(paquete.tablas.length, 18, 'debe incluir las 18 tablas')
   assert.equal(paquete.motor, 'sqlite')
   for (const t of paquete.tablas) {
     assert.ok(Array.isArray(paquete.datos[t]), `la tabla ${t} debe venir en el paquete`)

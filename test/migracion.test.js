@@ -17,7 +17,8 @@ const TABLAS_ESPERADAS = [
   'usuarios', 'estudiantes', 'docentes', 'materias', 'docente_materias',
   'notas_items', 'calificaciones', 'consultas_estudiantes', 'informes',
   'observaciones', 'periodos_config', 'password_resets', 'directores_grupo',
-  'columnas', 'intentos_login', '_prisma_migrations',
+  'columnas', 'intentos_login', 'areas', 'area_materias', 'area_cursos',
+  '_prisma_migrations',
 ]
 
 const INDICES_ESPERADOS = [
@@ -50,7 +51,7 @@ function indices(db) {
   return db.prepare('SELECT name FROM sqlite_master').all().then(r => r.map(x => x.name))
 }
 
-test('una BD vacía queda con las 16 tablas y los índices nuevos', async () => {
+test('una BD vacía queda con las 19 tablas y los índices nuevos', async () => {
   dbNueva = new ClienteSQLite(rutaNueva)
   const esperadas = listarMigraciones().map(m => m.nombre)
   const aplicadas = await aplicarMigraciones(dbNueva)

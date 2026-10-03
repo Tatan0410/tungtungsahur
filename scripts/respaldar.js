@@ -45,6 +45,9 @@ const TABLAS = [
   'password_resets',
   'directores_grupo',
   'intentos_login',
+  'areas',
+  'area_materias',
+  'area_cursos',
 ]
 
 async function main() {

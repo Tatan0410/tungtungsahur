@@ -227,3 +227,30 @@ ALTER TABLE materias ALTER COLUMN grado DROP NOT NULL;
 -- ─── Actualización idempotente (BD ya existentes): correo opcional ───
 -- Los administradores nacen solo con usuario y contraseña (sin correo).
 ALTER TABLE usuarios ALTER COLUMN correo DROP NOT NULL;
+
+-- ─── MIGRACIÓN: áreas ───
+-- Áreas conformadas por una o más materias con porcentaje, asignadas a
+-- cursos. Un área puede compartir nombre con otra (porcentajes distintos
+-- por curso), pero: ni la misma materia dos veces en un área, ni la misma
+-- área dos veces en un curso. La regla del mismo nombre en el mismo curso
+-- se valida a nivel de API (admin.js).
+CREATE TABLE IF NOT EXISTS areas (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "nombre" TEXT NOT NULL,
+    "creadoEn" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS area_materias (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "areaId" TEXT NOT NULL REFERENCES areas("id") ON DELETE CASCADE,
+    "materiaId" TEXT NOT NULL REFERENCES materias("id"),
+    "porcentaje" REAL NOT NULL,
+    UNIQUE ("areaId", "materiaId")
+);
+
+CREATE TABLE IF NOT EXISTS area_cursos (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "areaId" TEXT NOT NULL REFERENCES areas("id") ON DELETE CASCADE,
+    "curso" TEXT NOT NULL,
+    UNIQUE ("areaId", "curso")
+);
