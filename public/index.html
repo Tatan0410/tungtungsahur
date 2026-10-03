@@ -826,7 +826,7 @@ body::before {
   <div class="brand-bar">
     <img src="logo.png" width="44" height="44" style="border-radius:50%;object-fit:cover;background:#fff;flex-shrink:0;border:2px solid rgba(255,255,255,0.3);">
     <div><div class="brand-name" id="admin-name">Administrador</div><div class="brand-sub">Panel de control</div></div>
-    <div class="brand-right"><button class="btn-tema" onclick="alternarTema()" title="Cambiar tema"><span class="icono-tema"></span></button><button class="btn-logout" onclick="doLogout()"><span class="icon" data-icon="cerrar-sesion"></span> Cerrar sesión</button></div>
+    <div class="brand-right"><button class="btn-sm" onclick="abrirMiCuenta()" style="font-weight:600;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.28);color:#fff;font-size:12px;"><span class="icon" data-icon="engranaje"></span> Mi cuenta</button><button class="btn-tema" onclick="alternarTema()" title="Cambiar tema"><span class="icono-tema"></span></button><button class="btn-logout" onclick="doLogout()"><span class="icon" data-icon="cerrar-sesion"></span> Cerrar sesión</button></div>
   </div>
 
   <div style="display:flex;gap:20px;align-items:flex-start;">
@@ -1447,11 +1447,24 @@ function errorReintentar(cols, fnNombre, mensaje) {
     ' <button class="btn-sm" onclick="' + fnNombre + '()" style="margin-left:8px;">Reintentar</button></td></tr>'
 }
 
-// Salida suave de modales: anima y luego oculta
+// Salida suave de modales: anima y luego oculta. El timeout queda guardado
+// por elemento para poder cancelarlo si el modal se vuelve a abrir antes
+// (la cadena de prompts anidados de crear admin depende de esto).
+const _modalCloseTimers = new Map()
 function cerrarModalSuave(el) {
   if (!el || el.style.display === 'none') return
   el.classList.add('cerrando')
-  setTimeout(() => { el.classList.remove('cerrando'); el.style.display = 'none' }, 150)
+  clearTimeout(_modalCloseTimers.get(el))
+  _modalCloseTimers.set(el, setTimeout(() => { el.classList.remove('cerrando'); el.style.display = 'none' }, 150))
+}
+
+// Apertura de modales: cancela cualquier cierre pendiente y saca el modal
+// del estado 'cerrando' (si no, la tarjeta quedaria en opacity 0).
+function abrirModalSuave(el) {
+  if (!el) return
+  clearTimeout(_modalCloseTimers.get(el))
+  el.classList.remove('cerrando')
+  el.style.display = 'flex'
 }
 
 // Cross-fade al mostrar una sección (150-200ms)
@@ -1535,7 +1548,7 @@ function pedirTexto(titulo, valorDefault, cb) {
   input.value = valorDefault || ''
   document.getElementById('prompt-error').style.display = 'none'
   _promptCb = cb
-  document.getElementById('modal-prompt').style.display = 'flex'
+  abrirModalSuave(document.getElementById('modal-prompt'))
   setTimeout(() => { try { input.focus(); input.select() } catch (e) {} }, 60)
 }
 
@@ -1544,7 +1557,7 @@ function confirmarAccion(titulo, cb) {
   document.getElementById('prompt-input').style.display = 'none'
   document.getElementById('prompt-error').style.display = 'none'
   _promptCb = cb
-  document.getElementById('modal-prompt').style.display = 'flex'
+  abrirModalSuave(document.getElementById('modal-prompt'))
 }
 
 function selRole(r) {
@@ -3154,7 +3167,7 @@ function adminMostrarModalPass(id, nombre) {
   document.getElementById('modal-pass-titulo').textContent = 'Cambiar contraseña: ' + nombre
   document.getElementById('modal-pass-input').value = ''
   cerrarModalSuave(document.getElementById('modal-pass-error'))
-  document.getElementById('modal-pass').style.display = 'flex'
+  abrirModalSuave(document.getElementById('modal-pass'))
 }
 
 function cerrarModalPass() {
@@ -3194,7 +3207,7 @@ function adminMostrarModalDoc(id, nombre, docActual) {
   document.getElementById('modal-doc-titulo').textContent = 'Cambiar documento: ' + nombre
   document.getElementById('modal-doc-input').value = docActual
   cerrarModalSuave(document.getElementById('modal-doc-error'))
-  document.getElementById('modal-doc').style.display = 'flex'
+  abrirModalSuave(document.getElementById('modal-doc'))
 }
 
 function cerrarModalDoc() {
@@ -3235,7 +3248,7 @@ function adminMostrarModalCorreo(id, nombre, correoActual) {
   document.getElementById('modal-correo-titulo').textContent = 'Cambiar correo: ' + nombre
   document.getElementById('modal-correo-input').value = correoActual || ''
   cerrarModalSuave(document.getElementById('modal-correo-error'))
-  document.getElementById('modal-correo').style.display = 'flex'
+  abrirModalSuave(document.getElementById('modal-correo'))
 }
 
 function cerrarModalCorreo() {
@@ -3274,7 +3287,7 @@ function mostrarModalProfesor() {
   document.getElementById('modal-prof-nombre').value = ''
   document.getElementById('modal-prof-pass').value = ''
   cerrarModalSuave(document.getElementById('modal-prof-error'))
-  document.getElementById('modal-profesor').style.display = 'flex'
+  abrirModalSuave(document.getElementById('modal-profesor'))
 }
 
 function cerrarModalProfesor() {
@@ -3488,7 +3501,7 @@ function abrirModalFechas(id) {
     document.getElementById('modal-fecha-corte').value = cfg.fecha_corte || ''
     document.getElementById('modal-fecha-fin').value = cfg.fecha_fin || ''
     window._periodoFechas = cfg
-    document.getElementById('modal-fechas').style.display = 'flex'
+    abrirModalSuave(document.getElementById('modal-fechas'))
   })
   .catch(function(){ mostrarToast('error', 'Error de conexión') })
 }
@@ -3531,7 +3544,7 @@ function abrirRecuperarPassword() {
   document.getElementById('recuperar-correo').value = ''
   document.getElementById('recuperar-error').style.display = 'none'
   document.getElementById('recuperar-success').style.display = 'none'
-  document.getElementById('modal-recuperar').style.display = 'flex'
+  abrirModalSuave(document.getElementById('modal-recuperar'))
 }
 
 function cerrarModalRecuperar() {
@@ -3543,7 +3556,7 @@ function mostrarModalVerificar(correo) {
   document.getElementById('verificar-codigo').value = ''
   document.getElementById('verificar-password').value = ''
   document.getElementById('verificar-error').style.display = 'none'
-  document.getElementById('modal-verificar-codigo').style.display = 'flex'
+  abrirModalSuave(document.getElementById('modal-verificar-codigo'))
   cerrarModalSuave(document.getElementById('modal-recuperar'))
 }
 
@@ -3639,7 +3652,7 @@ function abrirMiCuenta() {
     : 'Cambia tu contraseña o correo. Se requiere la contraseña actual.'
   document.getElementById('mi-cuenta-password-actual').value = ''
   document.getElementById('mi-cuenta-codigo').value = ''
-  document.getElementById('modal-mi-cuenta').style.display = 'flex'
+  abrirModalSuave(document.getElementById('modal-mi-cuenta'))
 }
 
 function cerrarModalMiCuenta() {
@@ -4115,7 +4128,7 @@ function adminMostrarModalCambioCurso(id, nombre, cursoActual) {
   document.getElementById('modal-curso-info').textContent = 'Curso actual: ' + cursoActual
   cerrarModalSuave(document.getElementById('modal-curso-error'))
   document.getElementById('modal-curso-select').innerHTML = '<option value="">Cargando cursos...</option>'
-  document.getElementById('modal-cambiar-curso').style.display = 'flex'
+  abrirModalSuave(document.getElementById('modal-cambiar-curso'))
 
   // Load cursos disponibles
   fetch(API + '/api/admin/cursos-disponibles', { headers: { 'Authorization': 'Bearer ' + currentToken } })
@@ -4166,7 +4179,7 @@ async function adminVerNotas(id, nombre) {
   document.getElementById('modal-notas-info').textContent = 'Cargando...'
   document.getElementById('modal-notas-select').innerHTML = '<option value="">Cargando materias...</option>'
   document.getElementById('modal-notas-tabla').innerHTML = ''
-  document.getElementById('modal-notas-estudiante').style.display = 'flex'
+  abrirModalSuave(document.getElementById('modal-notas-estudiante'))
   try {
     const res = await fetch(API + '/api/admin/estudiantes/' + id + '/notas', { headers: { 'Authorization': 'Bearer ' + currentToken } })
     if (!res.ok) {
@@ -4450,7 +4463,7 @@ function mostrarObservaciones(estudianteId, nombre, materiaId) {
   const fechaHoy = hoy.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Bogota' })
   document.getElementById('modal-obs-fecha-info').innerHTML = icon('calendario') + ' Fecha de registro: ' + esc(fechaHoy)
   document.getElementById('modal-obs-lista').innerHTML = '<div style="color:var(--ink-400);font-size:13px;text-align:center;padding:16px;">Cargando...</div>'
-  document.getElementById('modal-observaciones').style.display = 'flex'
+  abrirModalSuave(document.getElementById('modal-observaciones'))
   cargarObservaciones(estudianteId)
 }
 
@@ -4465,7 +4478,7 @@ function mostrarObservacionesCursoDirector() {
   document.getElementById('modal-obs-texto').value = ''
   document.getElementById('modal-obs-fecha-info').innerHTML = icon('calendario') + ' Vista de observaciones del curso'
   document.getElementById('modal-obs-lista').innerHTML = '<div style="color:var(--ink-400);font-size:13px;text-align:center;padding:16px;">Cargando...</div>'
-  document.getElementById('modal-observaciones').style.display = 'flex'
+  abrirModalSuave(document.getElementById('modal-observaciones'))
   cargarObservacionesCursoDirector(curso)
 }
 
@@ -4507,7 +4520,7 @@ function mostrarReporteCorte() {
   document.getElementById('modal-reporte-titulo').innerHTML = icon('advertencia') + ' Reporte de Corte — Curso ' + esc(curso)
   document.getElementById('modal-reporte-sub').textContent = 'Director de grupo'
   document.getElementById('modal-reporte-lista').innerHTML = '<div style="color:var(--ink-400);font-size:13px;text-align:center;padding:16px;">Cargando...</div>'
-  document.getElementById('modal-reporte-corte').style.display = 'flex'
+  abrirModalSuave(document.getElementById('modal-reporte-corte'))
   cargarReporteCorte(curso)
 }
 
