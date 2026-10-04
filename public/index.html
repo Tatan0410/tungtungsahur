@@ -796,8 +796,8 @@ body::before {
       <div class="vista-opt" id="vista-nombres" onclick="selOrdenLista('nombres')" title="Los nombres como siempre">Nombres</div>
     </div>
     <div class="vista-row" id="switch-notas-row" style="width:205px;margin-left:auto;">
-      <div class="vista-opt" id="vista-notas-seg" onclick="selVistaNotas('notas')" title="La tabla de notas de siempre">Notas</div>
-      <div class="vista-opt" id="vista-consolidado-seg" onclick="selVistaNotas('consolidado')" title="La nota mínima que necesita cada estudiante para llegar a 3.0">Consolidado</div>
+      <div class="vista-opt" id="vista-notas-seg" onclick="selVistaDocente('notas')" title="La tabla de notas de siempre">Notas</div>
+      <div class="vista-opt" id="vista-consolidado-seg" onclick="selVistaDocente('consolidado')" title="La nota mínima que necesita cada estudiante para llegar a 3.0">Consolidado</div>
     </div>
   </div>
   <div class="add-columns-bar" style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
@@ -4205,7 +4205,7 @@ function selOrdenLista(v) {
   else renderGrid()
 }
 
-function selVistaNotas(v) {
+function selVistaDocente(v) {
   vistaConsolidado = (v === 'consolidado')
   actualizarSwitchesVista()
   actualizarVisibilidadVistaConsolidado()
