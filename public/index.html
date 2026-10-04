@@ -1544,6 +1544,21 @@ function actualizarIconosTema() {
 }
 aplicarTemaGuardado()
 
+// Parsea fechas del backend, que llegan en formatos distintos según el
+// motor: ISO completa con Z (Postgres: "2026-10-04T01:01:38.350Z"),
+// "AAAA-MM-DD HH:MM:SS" (SQLite) o fecha plana "AAAA-MM-DD". Devuelve un
+// Date válido o null — NUNCA se le apendizan sufijos a ciegas (el "+ 'Z'"
+// sobre una ISO completa producía "...ZZ" → Invalid Date → el estudiante
+// veía "Error al cargar observaciones" y el admin "Invalid Date").
+function parseFechaBackend(valor) {
+  if (!valor) return null
+  const v = String(valor).trim()
+  if (v.includes('T')) return new Date(v)
+  if (/^\d{4}-\d{2}-\d{2} \d{2}/.test(v)) return new Date(v.replace(' ', 'T') + 'Z')
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return new Date(v + 'T00:00:00')
+  return new Date(v)
+}
+
 // Sanitización de texto para prevenir XSS cuando se inserta datos del usuario en el DOM
 function esc(s) {
   if (s === null || s === undefined) return ''
@@ -2441,9 +2456,13 @@ async function cargarObservacionesEstudiante() {
       return
     }
     container.innerHTML = data.map(o => {
-      const creado = new Date(o.creadoEn + 'Z')
+      const creado = parseFechaBackend(o.creadoEn)
+      if (!creado) return ''
       const fechaHora = creado.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'America/Bogota' }) + ' · ' + creado.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' })
-      const eventoInfo = (o.fecha && o.fecha !== creado.toISOString().split('T')[0]) ? ' -- ' + icon('calendario') + ' Evento: ' + new Date(o.fecha + 'T00:00:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'America/Bogota' }) : ''
+      // La fecha de evento solo se muestra si es DISTINTA del día de registro
+      // (comparando la fecha LOCAL de Bogotá, no la UTC)
+      const diaRegistro = creado.toLocaleDateString('sv-SE', { timeZone: 'America/Bogota' })
+      const eventoInfo = (o.fecha && o.fecha !== diaRegistro) ? ' -- ' + icon('calendario') + ' Evento: ' + parseFechaBackend(o.fecha).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'America/Bogota' }) : ''
       return '<div style="background:var(--cream-50);border:1px solid var(--line);border-radius:var(--r-md);padding:10px 12px;margin-bottom:8px;">' +
         '<div style="font-size:11px;color:var(--ink-500);margin-bottom:5px;display:flex;justify-content:space-between;align-items:start;">' +
         '<span>' + esc(o.docenteNombre || 'Coordinación') + ' · ' + fechaHora + '<span style="background:var(--paper);padding:1px 6px;border-radius:8px;font-size:10px;margin-left:4px;">' + esc(o.materiaNombre || 'General') + '</span></span>' +
@@ -4698,10 +4717,10 @@ async function cargarAdminObservaciones(pagina) {
       tb.innerHTML = '<tr><td colspan="8" style="padding:24px;text-align:center;color:var(--ink-400);">Sin resultados</td></tr>'
     } else {
       tb.innerHTML = rows.map(o => {
-        const d = new Date((o.fecha || o.creadoEn) + 'T00:00:00')
-        const fecha = d.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'America/Bogota' })
-        const creadoDate = new Date(o.creadoEn + 'Z')
-          const creadoEn = creadoDate.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'America/Bogota' }) + ' ' + creadoDate.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' })
+        const d = parseFechaBackend(o.fecha || o.creadoEn)
+        const fecha = d ? d.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'America/Bogota' }) : '—'
+        const creadoDate = parseFechaBackend(o.creadoEn)
+          const creadoEn = creadoDate ? creadoDate.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'America/Bogota' }) + ' ' + creadoDate.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' }) : '—'
           return '<tr>' +
           '<td style="padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap;">' + fecha + '</td>' +
           '<td style="padding:8px 10px;border-bottom:1px solid var(--line);">' + esc(o.estudianteNombre || '') + '</td>' +
@@ -4782,7 +4801,7 @@ async function cargarObservacionesCursoDirector(curso) {
       return
     }
     lista.innerHTML = data.map(o => {
-      const creado = new Date(o.creadoEn + 'Z')
+      const creado = parseFechaBackend(o.creadoEn)
       const fechaCreado = creado.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'America/Bogota' }) + ' · ' + creado.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' })
       const materiaLabel = o.materiaNombre ? ' <span style="background:var(--cream-100);padding:1px 6px;border-radius:8px;font-size:10px;">' + esc(o.materiaNombre) + '</span>' : ''
       return '<div style="background:var(--paper);border:1px solid var(--line);border-radius:var(--r-md);padding:10px 12px;margin-bottom:8px;">' +
@@ -4863,7 +4882,7 @@ async function cargarObservaciones(estudianteId) {
       return
     }
     lista.innerHTML = data.map(o => {
-      const creado = new Date(o.creadoEn + 'Z')
+      const creado = parseFechaBackend(o.creadoEn)
       const fechaCreado = creado.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'America/Bogota' }) + ' · ' + creado.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' })
       const materiaLabel = o.materiaNombre ? ' <span style="background:var(--cream-100);padding:1px 6px;border-radius:8px;font-size:10px;">' + esc(o.materiaNombre) + '</span>' : ''
       return '<div style="background:var(--paper);border:1px solid var(--line);border-radius:var(--r-md);padding:10px 12px;margin-bottom:8px;" id="obs-card-' + o.id + '">' +
