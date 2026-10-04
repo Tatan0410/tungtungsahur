@@ -665,6 +665,7 @@ body::before {
 
 /* Modales con entrada suave (los 12) */
 #modal-cambiar-curso > div,
+#modal-estudiante-nuevo > div,
 #modal-notas-estudiante > div,
 #modal-observaciones > div,
 #modal-reporte-corte > div,
@@ -790,11 +791,15 @@ body::before {
     <div class="period-tab" data-p="3" onclick="selPeriodo(3)">P3<span class="weight">20%</span></div>
     <div class="period-tab" data-p="4" onclick="selPeriodo(4)">P4<span class="weight">30%</span></div>
   </div>
-  <div style="font-size:11.5px;color:var(--ink-600);margin-bottom:12px;display:flex;gap:18px;flex-wrap:wrap;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-md);padding:10px 14px;box-shadow:var(--shadow-card);">
+  <div id="leyendas-grid" style="font-size:11.5px;color:var(--ink-600);margin-bottom:12px;display:flex;gap:18px;flex-wrap:wrap;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-md);padding:10px 14px;box-shadow:var(--shadow-card);">
     <span><span class="icon" data-icon="nota"></span> <strong style="color:var(--burgundy-700);">Actitudinal 25%</strong> · Participación, disciplina, respeto</span>
     <span><span class="icon" data-icon="nota"></span> <strong style="color:var(--burgundy-700);">Responsabilidad 25%</strong> · Tareas, puntualidad, compromiso</span>
     <span><span class="icon" data-icon="nota"></span> <strong style="color:var(--burgundy-700);">Actividades 35%</strong> · Trabajo en clase, talleres, quizzes</span>
     <span><span class="icon" data-icon="nota"></span> <strong style="color:var(--burgundy-700);">Evaluación 15%</strong> · Examen bimestral</span>
+  </div>
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+    <button class="btn-sm" id="btn-orden-lista" onclick="alternarOrdenLista()" title="Cambiar el orden de la lista (para pasar lista)" style="font-size:11.5px;">Lista: Apellidos</button>
+    <button class="btn-sm" id="btn-vista-consolidado" onclick="alternarVistaConsolidado()" title="Ver la nota mnima que necesita cada estudiante" style="font-size:11.5px;">Vista: Notas</button>
   </div>
   <div class="add-columns-bar" style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
     <button class="btn-sm primary" onclick="agregarColumna('ACTITUDINAL')"><span class="icon" data-icon="mas"></span> Agregar nota en Actitudinal</button>
@@ -818,6 +823,22 @@ body::before {
       <tr id="gt-header-row"></tr>
     </thead><tbody id="gtbody"></tbody></table></div>
     <button id="scroll-right" class="scroll-btn"><span class="icon" data-icon="chevron-der"></span></button>
+  </div>
+  <div id="consolidado-wrap" style="display:none;overflow-x:auto;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);">
+    <table class="grades-table" style="min-width:720px;">
+      <thead>
+        <tr style="background:var(--cream-100);">
+          <th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--ink-400);">Estudiante</th>
+          <th style="padding:10px 12px;text-align:center;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--ink-400);">P1</th>
+          <th style="padding:10px 12px;text-align:center;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--ink-400);">P2</th>
+          <th style="padding:10px 12px;text-align:center;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--ink-400);">P3</th>
+          <th style="padding:10px 12px;text-align:center;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--ink-400);">P4</th>
+          <th style="padding:10px 12px;text-align:center;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--ink-400);">Necesita</th>
+          <th style="padding:10px 12px;text-align:center;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--ink-400);">Promedio final</th>
+        </tr>
+      </thead>
+      <tbody id="consolidado-tbody"></tbody>
+    </table>
   </div>
 </div>
 </div>
@@ -1020,7 +1041,9 @@ body::before {
       </div>
       <div><div class="lbl">Curso</div><input class="inp" id="admin-est-curso" placeholder="Ej: 301" style="width:80px;"></div>
       <div><div class="lbl">Grado</div><select class="sel" id="admin-est-grado"><option value="">Todos</option></select></div>
-      <div><button class="btn-sm primary" onclick="cargarAdminEstudiantes()" style="font-weight:600;">Filtrar</button></div>
+      <div><button class="btn-sm primary" onclick="cargarAdminEstudiantes()" style="font-weight:600;">Filtrar</button>
+      <div><button class="btn-sm success" onclick="mostrarModalEstudianteNuevo()" style="font-weight:600;"><span class="icon" data-icon="mas"></span> Agregar estudiante</button></div>
+      </div>
     </div>
     <div style="overflow-x:auto;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);">
       <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:600px;">
@@ -1089,6 +1112,26 @@ body::before {
     </div>
     <div class="inp-g" style="margin-bottom:12px;"><label class="lbl">Materia</label><select class="sel" id="modal-notas-select" style="width:100%;" onchange="renderNotasMateria(this.value)"></select></div>
     <div id="modal-notas-tabla" style="overflow-x:auto;"></div>
+  </div>
+</div>
+
+<!-- Modal Agregar Estudiante (admin) -->
+<div id="modal-estudiante-nuevo" style="display:none;position:fixed;inset:0;z-index:100;background:rgba(0,0,0,0.4);align-items:center;justify-content:center;" onclick="if(event.target===this)cerrarModalEstudianteNuevo()">
+  <div style="background:var(--paper);border-radius:var(--r-lg);padding:24px;max-width:440px;width:92%;max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+    <div style="font-size:15px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);margin-bottom:14px;"><span class="icon" data-icon="estudiante"></span> Agregar estudiante</div>
+    <div class="inp-g" style="margin-bottom:10px;"><label class="lbl">Curso *</label><select class="sel" id="est-nuevo-curso" style="width:100%;" onchange="estNuevoCursoOtro(this.value)"></select><input class="inp" id="est-nuevo-curso-texto" placeholder="Código del curso nuevo (Ej: 604)" style="width:100%;margin-top:8px;display:none;"></div>
+    <div class="inp-g" style="margin-bottom:10px;"><label class="lbl">Primer nombre *</label><input class="inp" id="est-nuevo-n1" style="width:100%;"></div>
+    <div class="inp-g" style="margin-bottom:10px;"><label class="lbl">Segundo nombre (opcional)</label><input class="inp" id="est-nuevo-n2" style="width:100%;"></div>
+    <div class="inp-g" style="margin-bottom:10px;"><label class="lbl">Primer apellido *</label><input class="inp" id="est-nuevo-a1" style="width:100%;"></div>
+    <div class="inp-g" style="margin-bottom:10px;"><label class="lbl">Segundo apellido (opcional)</label><input class="inp" id="est-nuevo-a2" style="width:100%;"></div>
+    <div class="inp-g" style="margin-bottom:10px;"><label class="lbl">Documento *</label><input class="inp" id="est-nuevo-doc" inputmode="numeric" placeholder="Solo números" style="width:100%;"></div>
+    <div class="inp-g" style="margin-bottom:10px;"><label class="lbl">Jornada</label><select class="sel" id="est-nuevo-jornada" style="width:100%;"><option value="">Automática según el curso</option><option value="MAÑANA">Mañana</option><option value="TARDE">Tarde</option><option value="ÚNICA">Única</option></select></div>
+    <div style="margin-top:12px;padding:8px 10px;background:var(--amber-100);border-radius:6px;font-size:11px;color:var(--amber-700);">La contraseña inicial del estudiante será su número de documento.</div>
+    <div class="error-msg" id="est-nuevo-error" style="display:none;"></div>
+    <div style="display:flex;gap:8px;justify-content:end;margin-top:14px;">
+      <button class="btn-sm" onclick="cerrarModalEstudianteNuevo()">Cancelar</button>
+      <button class="btn-sm primary" id="btn-est-nuevo" onclick="conCarga(this, crearEstudianteNuevo)" style="font-weight:600;"><span class="icon" data-icon="mas"></span> Crear estudiante</button>
+    </div>
   </div>
 </div>
 
@@ -1713,6 +1756,7 @@ function selPeriodoEstudiante(v) {
 function showTeacherPortal(user) {
   document.getElementById('app').classList.add('wide-mode')
   requestAnimationFrame(moverIndicadorPeriodo)
+  aplicarOrdenGuardado()
   document.getElementById('doc-name').textContent = user.nombre || 'Docente'
   document.getElementById('doc-info').textContent = (user.correo || '')
   document.getElementById('period-pill').textContent = 'Período ' + currentPeriodo + ' · ' + new Date().getFullYear()
@@ -1923,6 +1967,8 @@ async function onMateriaChange() {
 
 async function cargarGrupo() {
   if (!selectedCurso || !selectedMateria) return
+  // En la vista consolidado: recargar el consolidado en vez del grid de notas
+  if (vistaConsolidado) return cargarConsolidado()
 
   document.getElementById('teacher-loading').style.display = 'block'
   document.getElementById('teacher-content').style.display = 'none'
@@ -2043,14 +2089,28 @@ function renderGrid() {
     colsPorTipo['EVALUACION'].push({ titulo: 'Examen', isEval: true })
   }
 
-  studentsData.forEach((s, i) => {
+  // Orden de la lista: apellidos primero (por defecto) o nombres, segÃºn el
+  // toggle. El sort preserva el Ãndice ORIGINAL de studentsData: los
+  // onchange de las celdas y el restore de cambios pendientes usan ese
+  // Ãndice (ordenar sin preservarlo asignarÃ­a notas al estudiante equivocado).
+  const listaOrdenada = studentsData
+    .map((s, idx) => ({ s, idx }))
+    .sort((a, b) => {
+      if (vistaOrdenDocente === 'nombres') {
+        return (a.s.nombre || '').localeCompare(b.s.nombre || '', 'es', { sensitivity: 'base' })
+      }
+      return claveApellidos(a.s.nombre).localeCompare(claveApellidos(b.s.nombre), 'es', { sensitivity: 'base' })
+    })
+  listaOrdenada.forEach((item, pos) => {
+    const s = item.s
+    const i = item.idx
     const def = s.definitiva
     const g = s.grupos || {}
     const calId = s.calificacionId
     const tr = document.createElement('tr')
     tr.className = 'stu-row'
     tr.style.animation = 'filaEntra .25s var(--ease-out) both'
-    tr.style.animationDelay = (i * 25) + 'ms'
+    tr.style.animationDelay = (pos * 25) + 'ms'
 
     let html = '<td style="min-width:160px;font-weight:500;position:sticky;left:0;background:var(--paper);border-right:1px solid var(--line);">' + esc(s.nombre) + '</td>'
 
@@ -2867,6 +2927,85 @@ async function eliminarArea(areaId, nombre) {
       mostrarToast('error', 'Error de conexi\u00f3n')
     }
   })
+}
+
+// ─── Crear estudiante (panel admin) ───
+function cerrarModalEstudianteNuevo() {
+  cerrarModalSuave(document.getElementById('modal-estudiante-nuevo'))
+}
+
+function estNuevoCursoOtro(v) {
+  const inp = document.getElementById('est-nuevo-curso-texto')
+  if (!inp) return
+  inp.style.display = (v === '__OTRO__') ? 'block' : 'none'
+}
+
+function mostrarEstNuevoError(m) {
+  const el = document.getElementById('est-nuevo-error')
+  if (el) { el.textContent = m; el.style.display = 'block' }
+}
+
+async function mostrarModalEstudianteNuevo() {
+  document.getElementById('est-nuevo-n1').value = ''
+  document.getElementById('est-nuevo-n2').value = ''
+  document.getElementById('est-nuevo-a1').value = ''
+  document.getElementById('est-nuevo-a2').value = ''
+  document.getElementById('est-nuevo-doc').value = ''
+  document.getElementById('est-nuevo-curso-texto').value = ''
+  document.getElementById('est-nuevo-curso-texto').style.display = 'none'
+  document.getElementById('est-nuevo-jornada').value = ''
+  document.getElementById('est-nuevo-error').style.display = 'none'
+  const sel = document.getElementById('est-nuevo-curso')
+  sel.innerHTML = '<option value="">Cargando cursos\u2026</option>'
+  abrirModalSuave(document.getElementById('modal-estudiante-nuevo'))
+  try {
+    if (!_cursosParaAreas) {
+      const res = await fetch(API + '/api/admin/cursos', { headers: { 'Authorization': 'Bearer ' + currentToken } })
+      if (!res.ok) return
+      _cursosParaAreas = await res.json()
+    }
+    sel.innerHTML = '<option value="">Elegir curso\u2026</option>' +
+      _cursosParaAreas.map(c => '<option value="' + esc(c) + '">' + esc(c) + '</option>').join('') +
+      '<option value="__OTRO__">Nuevo curso\u2026</option>'
+  } catch (e) { /* sin cursos para poblar */ }
+}
+
+async function crearEstudianteNuevo() {
+  const cursoSel = document.getElementById('est-nuevo-curso').value
+  const cursoTexto = document.getElementById('est-nuevo-curso-texto').value.trim()
+  const curso = cursoSel === '__OTRO__' ? cursoTexto : cursoSel
+  const n1 = document.getElementById('est-nuevo-n1').value.trim()
+  const n2 = document.getElementById('est-nuevo-n2').value.trim()
+  const a1 = document.getElementById('est-nuevo-a1').value.trim()
+  const a2 = document.getElementById('est-nuevo-a2').value.trim()
+  const doc = document.getElementById('est-nuevo-doc').value.trim()
+  const jornada = document.getElementById('est-nuevo-jornada').value
+
+  document.getElementById('est-nuevo-error').style.display = 'none'
+  if (!curso) return mostrarEstNuevoError('Elegir o escribir el curso es obligatorio')
+  if (cursoSel === '__OTRO__' && !cursoTexto) return mostrarEstNuevoError('Escribe el c\u00f3digo del curso nuevo (Ej: 604)')
+  if (!n1) return mostrarEstNuevoError('El primer nombre es obligatorio')
+  if (!a1) return mostrarEstNuevoError('El primer apellido es obligatorio')
+  if (!doc) return mostrarEstNuevoError('El documento es obligatorio')
+  if (!/^\d+$/.test(doc)) return mostrarEstNuevoError('El documento debe ser num\u00e9rico')
+
+  try {
+    const res = await fetch(API + '/api/admin/estudiantes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + currentToken },
+      body: JSON.stringify({ curso, documento: doc, primerNombre: n1, segundoNombre: n2 || undefined, primerApellido: a1, segundoApellido: a2 || undefined, jornada: jornada || undefined })
+    })
+    const data = await res.json()
+    if (!res.ok) { mostrarEstNuevoError(data.error || 'No se pudo crear el estudiante'); return }
+    cerrarModalEstudianteNuevo()
+    mostrarToast('ok', 'Estudiante creado: ' + (data.nombre || '') + '. La contrase\u00f1a es su documento.')
+    // Refresca la tabla filtrada por ese curso: el admin ve donde quedo ubicado
+    document.getElementById('admin-est-curso').value = curso
+    currentEstPage = 1
+    await cargarTablaEstudiantes()
+  } catch (e) {
+    mostrarEstNuevoError('Error de conexi\u00f3n')
+  }
 }
 
 function showAdminPortal(user) {
@@ -4021,6 +4160,125 @@ document.addEventListener('keydown', (ev) => {
   cerrarSugerencias()
 })
 
+// ─── Orden de la lista del docente (apellidos por defecto, el orden de colegio) ───
+let vistaOrdenDocente = 'apellidos'
+
+function claveApellidos(nombre) {
+  // Igual que sortKeyApellidos del backend: apellidos primero, nombres después
+  const parts = (nombre || '').trim().split(/\s+/)
+  const n = parts.length
+  if (n >= 3) return parts.slice(-2).join(' ') + ' ' + parts.slice(0, -2).join(' ')
+  if (n === 2) return parts[1] + ' ' + parts[0]
+  return (nombre || '')
+}
+
+function claveOrdenDocente() {
+  // Preferencia por docente (su documento es único)
+  return 'orden-lista-' + ((currentUser && currentUser.documento) ? currentUser.documento : 'global')
+}
+
+function aplicarOrdenGuardado() {
+  let v = null
+  try { v = localStorage.getItem(claveOrdenDocente()) } catch (e) { /* sin storage */ }
+  vistaOrdenDocente = (v === 'nombres') ? 'nombres' : 'apellidos'
+  actualizarBotonOrdenLista()
+}
+
+function alternarOrdenLista() {
+  vistaOrdenDocente = vistaOrdenDocente === 'apellidos' ? 'nombres' : 'apellidos'
+  try { localStorage.setItem(claveOrdenDocente(), vistaOrdenDocente) } catch (e) { /* sin storage */ }
+  actualizarBotonOrdenLista()
+  renderGrid()
+}
+
+function actualizarBotonOrdenLista() {
+  const b = document.getElementById('btn-orden-lista')
+  if (b) b.textContent = vistaOrdenDocente === 'apellidos' ? 'Lista: Apellidos' : 'Lista: Nombres'
+}
+
+// ─── Vista Consolidado del docente (nota mnima para llegar a 3.0) ───
+let vistaConsolidado = false
+
+function alternarVistaConsolidado() {
+  vistaConsolidado = !vistaConsolidado
+  actualizarBotonVistaConsolidado()
+  actualizarVisibilidadVistaConsolidado()
+  if (vistaConsolidado) cargarConsolidado()
+  else renderGrid()
+}
+
+function actualizarBotonVistaConsolidado() {
+  const b = document.getElementById('btn-vista-consolidado')
+  if (b) b.textContent = vistaConsolidado ? 'Vista: Consolidado' : 'Vista: Notas'
+}
+
+function actualizarVisibilidadVistaConsolidado() {
+  const mostrarConsolidado = vistaConsolidado
+  const grid = document.querySelector('.scroll-container')
+  if (grid) grid.style.display = mostrarConsolidado ? 'none' : ''
+  const bar = document.querySelector('.add-columns-bar')
+  if (bar) bar.style.display = mostrarConsolidado ? 'none' : ''
+  const leyendas = document.getElementById('leyendas-grid')
+  if (leyendas) leyendas.style.display = mostrarConsolidado ? 'none' : ''
+  const cons = document.getElementById('consolidado-wrap')
+  if (cons) cons.style.display = mostrarConsolidado ? 'block' : 'none'
+}
+
+async function cargarConsolidado() {
+  const tb = document.getElementById('consolidado-tbody')
+  if (!tb || !selectedCurso || !selectedMateria) return
+  tb.innerHTML = '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--ink-400);">Cargando consolidado...</td></tr>'
+  try {
+    const res = await fetch(API + '/api/notas/consolidado?curso=' + encodeURIComponent(selectedCurso) + '&materiaId=' + encodeURIComponent(selectedMateria) + '&anio=' + new Date().getFullYear(), {
+      headers: { 'Authorization': 'Bearer ' + currentToken }
+    })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      tb.innerHTML = '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--red-700);font-size:13px;">' + esc(data.error || 'Error al cargar') +
+        ' <button class="btn-sm" onclick="cargarConsolidado()" style="margin-left:8px;">Reintentar</button></td></tr>'
+      return
+    }
+    const data = await res.json()
+    renderConsolidado(data.estudiantes || [])
+  } catch (e) {
+    tb.innerHTML = '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--red-700);font-size:13px;">Error de conexi\u00f3n <button class="btn-sm" onclick="cargarConsolidado()" style="margin-left:8px;">Reintentar</button></td></tr>'
+  }
+}
+
+function renderConsolidado(estudiantes) {
+  const tb = document.getElementById('consolidado-tbody')
+  if (!tb) return
+  if (!estudiantes.length) {
+    tb.innerHTML = '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--ink-400);">Sin estudiantes en este curso</td></tr>'
+    return
+  }
+  tb.innerHTML = estudiantes.map((e, i) => {
+    const celdas = (e.definitivas || []).map(d => {
+      const color = d !== null && d !== undefined ? getColorDef(d) : 'var(--ink-400)'
+      return '<td style="padding:8px 10px;border-bottom:1px solid var(--line-soft);text-align:center;font-weight:500;color:' + color + ';">' + (d !== null && d !== undefined ? d.toFixed(2) : '--') + '</td>'
+    }).join('')
+    // La celda "Necesita": badge con color segn el estado
+    let necesita = '<td style="padding:8px 10px;border-bottom:1px solid var(--line-soft);text-align:center;">--</td>'
+    if (e.estadoNecesaria === 'ASEGURADO') {
+      necesita = '<td style="padding:8px 10px;border-bottom:1px solid var(--line-soft);text-align:center;"><span style="background:var(--green-100);color:var(--green-700);padding:2px 10px;border-radius:12px;font-size:11px;font-weight:600;">Asegurado</span></td>'
+    } else if (e.estadoNecesaria === 'RIESGO_CRITICO') {
+      necesita = '<td style="padding:8px 10px;border-bottom:1px solid var(--line-soft);text-align:center;"><span style="background:var(--red-100);color:var(--red-700);padding:2px 10px;border-radius:12px;font-size:11px;font-weight:600;">No alcanzable</span></td>'
+    } else if (e.notaNecesaria !== null) {
+      necesita = '<td style="padding:8px 10px;border-bottom:1px solid var(--line-soft);text-align:center;"><span style="background:var(--amber-100);color:var(--amber-700);padding:2px 10px;border-radius:12px;font-size:11.5px;font-weight:700;">' + e.notaNecesaria.toFixed(1) + (e.periodoSiguiente ? ' <span style="font-weight:500;font-size:10px;">en P' + e.periodoSiguiente + '</span>' : '') + '</span></td>'
+    }
+    // Promedio final (solo si complet los 4)
+    let final = '<td style="padding:8px 10px;border-bottom:1px solid var(--line-soft);text-align:center;">--</td>'
+    if (e.completo && e.promedioFinal !== null) {
+      const color = getColorDef(e.promedioFinal)
+      final = '<td style="padding:8px 10px;border-bottom:1px solid var(--line-soft);text-align:center;font-weight:700;color:' + color + ';">' + e.promedioFinal.toFixed(2) + '</td>'
+    }
+    return '<tr style="animation:filaEntra .25s var(--ease-out) both;animation-delay:' + (i * 25) + 'ms;">' +
+      '<td style="padding:8px 10px;border-bottom:1px solid var(--line-soft);font-weight:500;">' + esc(e.nombre) + '</td>' +
+      celdas + necesita + final +
+    '</tr>'
+  }).join('')
+}
+
 // ─── Shake del login (feedback físico del error) ───
 function sacudirLogin() {
   const c = document.querySelector('.login-card')
@@ -4208,7 +4466,7 @@ function renderNotasMateria(materiaId) {
   if (!data) return
   const mat = data.materias.find(m => m.materiaId === materiaId)
   if (!mat) return
-  let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="background:var(--cream-100);"><th style="padding:8px 10px;text-align:left;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--ink-400);">Periodo</th><th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--ink-400);">Nota</th><th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--ink-400);">Estado</th></tr></thead><tbody>'
+  let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="background:var(--cream-100);"><th style="padding:8px 10px;text-align:left;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--ink-400);">Periodo</th><th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--ink-400);">Nota</th><th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--ink-400);">Estado</th><th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--ink-400);">Mnimo para pasar</th></tr></thead><tbody>'
   for (const p of mat.periodos) {
     const badge = p.estado === 'RIESGO'
       ? '<span style="background:var(--red-100);color:var(--red-700);padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">En riesgo</span>'
@@ -4218,7 +4476,12 @@ function renderNotasMateria(materiaId) {
     const nota = p.definitiva !== null
       ? '<b style="color:' + (p.definitiva < 3.0 ? 'var(--red-700)' : 'var(--ink-900)') + ';">' + p.definitiva.toFixed(2) + '</b>' + (p.provisional ? ' <span style="font-size:10px;color:var(--amber-700);">(parcial)</span>' : '')
       : '—'
-    html += '<tr><td style="padding:8px 10px;border-bottom:1px solid var(--line-soft);">Periodo ' + p.periodo + '</td><td style="padding:8px 10px;border-bottom:1px solid var(--line-soft);text-align:center;">' + nota + '</td><td style="padding:8px 10px;border-bottom:1px solid var(--line-soft);text-align:center;">' + badge + '</td></tr>'
+    const minimo = p.estadoMinimo === 'ASEGURADO'
+      ? '<span style="background:var(--green-100);color:var(--green-700);padding:2px 8px;border-radius:12px;font-size:10px;font-weight:600;">Asegurado</span>'
+      : p.estadoMinimo === 'RIESGO_CRITICO'
+      ? '<span style="background:var(--red-100);color:var(--red-700);padding:2px 8px;border-radius:12px;font-size:10px;font-weight:600;">No alcanzable</span>'
+      : (p.minimo !== null ? '<b style="color:var(--amber-700);">' + p.minimo.toFixed(1) + '</b>' : '—')
+    html += '<tr><td style="padding:8px 10px;border-bottom:1px solid var(--line-soft);">Periodo ' + p.periodo + '</td><td style="padding:8px 10px;border-bottom:1px solid var(--line-soft);text-align:center;">' + nota + '</td><td style="padding:8px 10px;border-bottom:1px solid var(--line-soft);text-align:center;">' + badge + '</td><td style="padding:8px 10px;border-bottom:1px solid var(--line-soft);text-align:center;">' + minimo + '</td></tr>'
   }
   html += '</tbody></table>'
   document.getElementById('modal-notas-tabla').innerHTML = html

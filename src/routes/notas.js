@@ -3,6 +3,7 @@ const jwt     = require('jsonwebtoken')
 const prisma  = require('../prisma')
 const { calcularReporteCorte } = require('../services/reporteCorte')
 const { calcularDefinitiva } = require('../services/calculoNotas')
+const { calcularConsolidado } = require('../services/consolidado')
 
 // Mismo adaptador que el resto de la app (SQLite local / Postgres en Supabase)
 const db = prisma._db
@@ -1262,6 +1263,33 @@ router.get('/mis-areas', async (req, res) => {
   } catch (error) {
     console.error('Error GET /notas/mis-areas:', error)
     res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// ─── CONSOLIDADO (docente) ───
+// La nota mnima que necesita cada estudiante para llegar a 3.0 en la
+// materia seleccionada. Solo materias que el docente tiene asignadas.
+router.get('/consolidado', async (req, res) => {
+  try {
+    if (req.usuario.rol !== 'DOCENTE' && req.usuario.rol !== 'ADMIN') {
+      return res.status(403).json({ error: 'Solo para docentes' })
+    }
+    const { curso, materiaId } = req.query
+    const anio = parseInt(req.query.anio) || new Date().getFullYear()
+    if (!curso || !materiaId) return res.status(400).json({ error: 'Debes enviar curso y materiaId' })
+
+    if (req.usuario.rol === 'DOCENTE') {
+      const asignacion = await prisma._db.prepare(
+        'SELECT id FROM docente_materias WHERE docenteId = ? AND materiaId = ? AND curso = ?'
+      ).get(req.usuario.docenteId, materiaId, curso)
+      if (!asignacion) return res.status(403).json({ error: 'No tienes asignada esa materia en ese curso' })
+    }
+
+    const estudiantes = await calcularConsolidado(prisma._db, curso, materiaId, anio)
+    res.json({ estudiantes, anio })
+  } catch (error) {
+    console.error('Error en consolidado:', error)
+    res.status(500).json({ error: 'Error interno del servidor' })
   }
 })
 

@@ -255,3 +255,13 @@ CREATE TABLE IF NOT EXISTS area_cursos (
     curso TEXT NOT NULL,
     UNIQUE (areaid, curso)
 );
+
+-- ─── MIGRACIÓN: nombres estructurados ───
+-- Campos de nombre separado SOLO para estudiantes creados desde ahora en
+-- adelante vía el formulario del panel admin. Los registros existentes
+-- quedan con estas columnas en NULL: cualquier ORDER BY que las use debe
+-- tener fallback con COALESCE a la columna "nombre".
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS primer_nombre TEXT;
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS segundo_nombre TEXT;
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS primer_apellido TEXT;
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS segundo_apellido TEXT;

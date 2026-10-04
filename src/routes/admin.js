@@ -4,6 +4,7 @@ const jwt     = require('jsonwebtoken')
 const prisma  = require('../prisma')
 const { calcularReporteCorte } = require('../services/reporteCorte')
 const { calcularDefinitiva } = require('../services/calculoNotas')
+const { calcularConsolidado, calcularMinimoRequerido } = require('../services/consolidado')
 
 const router = express.Router()
 
@@ -683,6 +684,54 @@ router.get('/estudiantes', async (req, res) => {
   }
 })
 
+// Crear estudiante desde el panel: nombre armado "nombres apellidos"
+// (mismo formato de los existentes para que el orden por apellidos funcione),
+// contraseña = documento, correo NULL (los estudiantes no lo necesitan:
+// su credencial es su documento).
+router.post('/estudiantes', async (req, res) => {
+  try {
+    const { curso, documento, primerNombre, segundoNombre, primerApellido, segundoApellido, sede, jornada, grado } = req.body
+    if (!curso || !String(curso).trim()) return res.status(400).json({ error: 'curso es requerido' })
+    if (!documento || !/^\d+$/.test(String(documento).trim())) return res.status(400).json({ error: 'documento es requerido y debe ser numérico' })
+    if (!primerNombre || !String(primerNombre).trim()) return res.status(400).json({ error: 'primer nombre es requerido' })
+    if (!primerApellido || !String(primerApellido).trim()) return res.status(400).json({ error: 'primer apellido es requerido' })
+
+    const doc = String(documento).trim()
+    const existente = await prisma._db.prepare('SELECT id FROM usuarios WHERE documento = ?').get(doc)
+    if (existente) return res.status(409).json({ error: 'Ya existe un usuario con ese documento' })
+
+    // grado/jornada/sede: del formulario o derivados del código del curso
+    const derivado = derivarCurso(String(curso).trim())
+    const gradoFinal = (grado !== undefined && grado !== null && String(grado).trim() !== '') ? parseInt(grado) : derivado.grado
+    if (isNaN(gradoFinal) || gradoFinal < 3 || gradoFinal > 11) return res.status(400).json({ error: 'El grado debe estar entre 3 y 11' })
+    const jornadaFinal = (jornada && String(jornada).trim()) ? String(jornada).trim().toUpperCase() : derivado.jornada
+    const sedeFinal = (sede && String(sede).trim()) ? String(sede).trim() : derivado.sede
+
+    // Nombre completo: nombres primero, apellidos al final (formato de los 761)
+    const partes = [primerNombre, segundoNombre, primerApellido, segundoApellido]
+      .map(p => (p || '').toString().trim()).filter(Boolean)
+    const nombreCompleto = partes.join(' ')
+
+    const hash = bcrypt.hashSync(doc, 10)
+    const id = require('crypto').randomUUID()
+    const estudianteId = require('crypto').randomUUID()
+    await prisma._db.transaction(async () => {
+      await prisma._db.prepare('INSERT INTO usuarios (id, correo, password, rol, nombre, documento, activo, primer_nombre, segundo_nombre, primer_apellido, segundo_apellido) VALUES (?, NULL, ?, ?, ?, ?, 1, ?, ?, ?, ?)').run(
+        id, hash, 'ESTUDIANTE', nombreCompleto, doc,
+        String(primerNombre).trim(),
+        segundoNombre && String(segundoNombre).trim() ? String(segundoNombre).trim() : null,
+        String(primerApellido).trim(),
+        segundoApellido && String(segundoApellido).trim() ? String(segundoApellido).trim() : null
+      )
+      await prisma._db.prepare('INSERT INTO estudiantes (id, usuarioId, documento, codigo, sede, jornada, grado, curso) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(estudianteId, id, doc, doc, sedeFinal, jornadaFinal, gradoFinal, String(curso).trim())
+    })()
+    res.status(201).json({ mensaje: 'Estudiante creado. La contraseña es su número de documento.', id, estudianteId, nombre: nombreCompleto, documento: doc, curso: String(curso).trim(), grado: gradoFinal, jornada: jornadaFinal })
+  } catch (error) {
+    console.error('Error POST /estudiantes:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
 // Notas de un estudiante en las materias de su curso, para el visor del
 // panel de admin. Por materia trae los 4 periodos del año con la
 // definitiva cerrada o, si aún no está cerrada, la parcial calculada
@@ -707,6 +756,15 @@ router.get('/estudiantes/:id/notas', async (req, res) => {
     const anio = parseInt(req.query.anio) || new Date().getFullYear()
     const resultado = []
     for (const mat of materias) {
+      // Las definitivas de TODOS los periodos de esta materia (1 query),
+      // para calcular el minimo requerido de cada periodo con la formula
+      // simple (3.0 x n - suma de anteriores, ceil a 1 decimal)
+      const cals = await prisma._db.prepare(`
+        SELECT cal.periodo, cal.definitiva
+        FROM calificaciones cal
+        WHERE cal.estudianteid = ? AND cal.materiaid = ? AND cal.anio = ?
+      `).all(estudiante.id, mat.materiaId, anio)
+      const porPeriodo = new Map(cals.map(c => [c.periodo, c.definitiva]))
       const periodos = []
       for (const p of [1, 2, 3, 4]) {
         const cal = await prisma._db.prepare(
@@ -723,10 +781,18 @@ router.get('/estudiantes/:id/notas', async (req, res) => {
             provisional = definitiva !== null
           }
         }
+        // Minimo para pasar este periodo (dado lo que lleva de los anteriores)
+        const anteriores = []
+        for (let q = 1; q < p; q++) {
+          if (porPeriodo.has(q) && porPeriodo.get(q) !== null) anteriores.push(porPeriodo.get(q))
+        }
+        const r = calcularMinimoRequerido(anteriores)
         periodos.push({
           periodo: p,
           definitiva,
           provisional,
+          minimo: r.minimo,
+          estadoMinimo: r.estado,
           estado: definitiva === null ? 'SIN_NOTA' : (definitiva < 3.0 ? 'RIESGO' : 'APROBADO'),
         })
       }
@@ -1001,6 +1067,22 @@ router.delete('/areas/:id/cursos/:curso', async (req, res) => {
     res.json({ mensaje: 'Área desasignada del curso' })
   } catch (error) {
     console.error('Error DELETE /areas/cursos:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// ─── CONSOLIDADO (admin) ───
+// La misma vista que el docente, pero el admin puede ver cualquier
+// curso/materia (sin validacion de asignacion).
+router.get('/consolidado', async (req, res) => {
+  try {
+    const { curso, materiaId } = req.query
+    const anio = parseInt(req.query.anio) || new Date().getFullYear()
+    if (!curso || !materiaId) return res.status(400).json({ error: 'Debes enviar curso y materiaId' })
+    const estudiantes = await calcularConsolidado(prisma._db, curso, materiaId, anio)
+    res.json({ estudiantes, anio })
+  } catch (error) {
+    console.error('Error en admin/consolidado:', error)
     res.status(500).json({ error: 'Error interno' })
   }
 })
