@@ -1267,7 +1267,7 @@ router.get('/mis-areas', async (req, res) => {
 })
 
 // ─── CONSOLIDADO (docente) ───
-// La nota mnima que necesita cada estudiante para llegar a 3.0 en la
+// La nota mínima que necesita cada estudiante para llegar a 3.0 en la
 // materia seleccionada. Solo materias que el docente tiene asignadas.
 router.get('/consolidado', async (req, res) => {
   try {
@@ -1276,6 +1276,7 @@ router.get('/consolidado', async (req, res) => {
     }
     const { curso, materiaId } = req.query
     const anio = parseInt(req.query.anio) || new Date().getFullYear()
+    const periodoActual = parseInt(req.query.periodo) || 1
     if (!curso || !materiaId) return res.status(400).json({ error: 'Debes enviar curso y materiaId' })
 
     if (req.usuario.rol === 'DOCENTE') {
@@ -1285,7 +1286,7 @@ router.get('/consolidado', async (req, res) => {
       if (!asignacion) return res.status(403).json({ error: 'No tienes asignada esa materia en ese curso' })
     }
 
-    const estudiantes = await calcularConsolidado(prisma._db, curso, materiaId, anio)
+    const estudiantes = await calcularConsolidado(prisma._db, curso, materiaId, anio, periodoActual)
     res.json({ estudiantes, anio })
   } catch (error) {
     console.error('Error en consolidado:', error)

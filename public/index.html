@@ -224,6 +224,8 @@ body::before {
   pointer-events:none;
 }
 .vista-row.en-areas::before { transform: translateX(100%); }
+/* Variante para los switches de dos segmentos del docente */
+.vista-row.en-segundo::before { transform: translateX(100%); }
 .vista-opt { padding: 7px 8px; border-radius: 7px; text-align:center; cursor:pointer; font-size:12px; color: var(--ink-600); transition: color .2s var(--ease), font-weight .2s var(--ease); font-weight:500; position:relative; z-index:1; }
 .vista-opt.sel { color: var(--burgundy-700); font-weight:600; }
 
@@ -484,17 +486,8 @@ body::before {
 
 /* ---------- Teacher grid ---------- */
 #teacher-content { width:100%; }
-.t-wrap { overflow-x:auto; max-width:100%; border-radius: var(--r-md); border: 1px solid var(--line); }
+.t-wrap { overflow-x:auto; max-width:100%; border-radius: var(--r-md); border: 1px solid var(--line); -webkit-overflow-scrolling: touch; }
 .scroll-container { position:relative; }
-.scroll-btn {
-  position:absolute; top:50%; transform: translateY(-50%);
-  background: rgba(58,15,28,0.55); border:none; color:#fff;
-  width:30px; height:30px; border-radius:50%; cursor:pointer; z-index:10;
-  font-size:15px; display:flex; align-items:center; justify-content:center;
-  backdrop-filter: blur(2px); transition: background .12s var(--ease);
-}
-.scroll-btn:hover { background: rgba(58,15,28,0.78); }
-#scroll-left { left:8px; } #scroll-right { right:8px; }
 
 .grades-table { width:100%; border-collapse:collapse; font-size:13px; min-width:640px; background:var(--paper); }
 .grades-table th { text-align:left; padding:9px 10px; border-bottom:1px solid var(--line); color: var(--ink-400); font-weight:600; background: var(--cream-100); font-size:11.5px; white-space:nowrap; }
@@ -797,9 +790,15 @@ body::before {
     <span><span class="icon" data-icon="nota"></span> <strong style="color:var(--burgundy-700);">Actividades 35%</strong> · Trabajo en clase, talleres, quizzes</span>
     <span><span class="icon" data-icon="nota"></span> <strong style="color:var(--burgundy-700);">Evaluación 15%</strong> · Examen bimestral</span>
   </div>
-  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
-    <button class="btn-sm" id="btn-orden-lista" onclick="alternarOrdenLista()" title="Cambiar el orden de la lista (para pasar lista)" style="font-size:11.5px;">Lista: Apellidos</button>
-    <button class="btn-sm" id="btn-vista-consolidado" onclick="alternarVistaConsolidado()" title="Ver la nota mnima que necesita cada estudiante" style="font-size:11.5px;">Vista: Notas</button>
+<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+    <div class="vista-row" id="orden-lista-row" style="width:190px;">
+      <div class="vista-opt" id="vista-planilla" onclick="selOrdenLista('planilla')" title="Los apellidos van primero (para pasar lista)">Planilla</div>
+      <div class="vista-opt" id="vista-nombres" onclick="selOrdenLista('nombres')" title="Los nombres como siempre">Nombres</div>
+    </div>
+    <div class="vista-row" id="switch-notas-row" style="width:205px;margin-left:auto;">
+      <div class="vista-opt" id="vista-notas-seg" onclick="selVistaNotas('notas')" title="La tabla de notas de siempre">Notas</div>
+      <div class="vista-opt" id="vista-consolidado-seg" onclick="selVistaNotas('consolidado')" title="La nota mínima que necesita cada estudiante para llegar a 3.0">Consolidado</div>
+    </div>
   </div>
   <div class="add-columns-bar" style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
     <button class="btn-sm primary" onclick="agregarColumna('ACTITUDINAL')"><span class="icon" data-icon="mas"></span> Agregar nota en Actitudinal</button>
@@ -814,7 +813,6 @@ body::before {
 </div>
 
   <div class="scroll-container">
-    <button id="scroll-left" class="scroll-btn"><span class="icon" data-icon="chevron-izq"></span></button>
     <div class="t-wrap"><table class="grades-table"><thead>
       <tr><th colspan="30" style="text-align:center;background:var(--cream-100);font-size:11.5px;color:var(--burgundy-700);padding:8px;font-weight:600;">
         Edita las notas directamente en la tabla. Los cambios se guardan al hacer clic en "<span class="icon" data-icon="guardar"></span> Guardar todos los cambios".
@@ -822,7 +820,6 @@ body::before {
       <tr id="gt-cat-row"></tr>
       <tr id="gt-header-row"></tr>
     </thead><tbody id="gtbody"></tbody></table></div>
-    <button id="scroll-right" class="scroll-btn"><span class="icon" data-icon="chevron-der"></span></button>
   </div>
   <div id="consolidado-wrap" style="display:none;overflow-x:auto;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);">
     <table class="grades-table" style="min-width:720px;">
@@ -2089,10 +2086,10 @@ function renderGrid() {
     colsPorTipo['EVALUACION'].push({ titulo: 'Examen', isEval: true })
   }
 
-  // Orden de la lista: apellidos primero (por defecto) o nombres, segÃºn el
-  // toggle. El sort preserva el Ãndice ORIGINAL de studentsData: los
-  // onchange de las celdas y el restore de cambios pendientes usan ese
-  // Ãndice (ordenar sin preservarlo asignarÃ­a notas al estudiante equivocado).
+  // Orden de la lista: planilla (apellidos reescritos primero) o nombres.
+  // El sort preserva el índice ORIGINAL de studentsData: los onchange de
+  // las celdas y el restore de cambios pendientes usan ese índice (ordenar
+  // sin preservarlo asignaría notas al estudiante equivocado).
   const listaOrdenada = studentsData
     .map((s, idx) => ({ s, idx }))
     .sort((a, b) => {
@@ -2112,7 +2109,7 @@ function renderGrid() {
     tr.style.animation = 'filaEntra .25s var(--ease-out) both'
     tr.style.animationDelay = (pos * 25) + 'ms'
 
-    let html = '<td style="min-width:160px;font-weight:500;position:sticky;left:0;background:var(--paper);border-right:1px solid var(--line);">' + esc(s.nombre) + '</td>'
+    let html = '<td style="min-width:160px;font-weight:500;position:sticky;left:0;background:var(--paper);border-right:1px solid var(--line);">' + (vistaOrdenDocente === 'planilla' ? esc(claveApellidos(s.nombre)) : esc(s.nombre)) + '</td>'
 
     for (const tipo of TIPOS) {
       const key = tipo === 'ACTIVIDAD' ? 'actividades' : tipo.toLowerCase()
@@ -2152,14 +2149,6 @@ function renderGrid() {
    renderGridHeaders(colsPorTipo);
    // Restaurar visualmente los cambios pendientes (autoguardado)
    aplicarCambiosPendientesAlGrid();
-   // Scroll button handlers
-   const wrap = document.querySelector('.t-wrap');
-   const leftBtn = document.getElementById('scroll-left');
-   const rightBtn = document.getElementById('scroll-right');
-   if (wrap && leftBtn && rightBtn) {
-     leftBtn.onclick = () => wrap.scrollBy({ left: -200, behavior: 'smooth' });
-     rightBtn.onclick = () => wrap.scrollBy({ left: 200, behavior: 'smooth' });
-   }
 }
 
 function renderGridHeaders(colsPorTipo) {
@@ -4160,11 +4149,16 @@ document.addEventListener('keydown', (ev) => {
   cerrarSugerencias()
 })
 
-// ─── Orden de la lista del docente (apellidos por defecto, el orden de colegio) ───
-let vistaOrdenDocente = 'apellidos'
+// ─── Orden de la lista del docente ───
+// Dos vistas (switch "Planilla | Nombres"):
+//   - Nombres (por defecto): la lista tal cual es (los nombres como están)
+//   - Planilla: los mismos estudiantes REESCRITOS como
+//     "apellido1 apellido2 nombre1 nombre2" y ordenados así (para pasar lista)
+let vistaOrdenDocente = 'nombres'
 
+// Reescribe el nombre al formato planilla: apellidos primero (es la misma
+// transformación que usa el sort de claveApellidos)
 function claveApellidos(nombre) {
-  // Igual que sortKeyApellidos del backend: apellidos primero, nombres después
   const parts = (nombre || '').trim().split(/\s+/)
   const n = parts.length
   if (n >= 3) return parts.slice(-2).join(' ') + ' ' + parts.slice(0, -2).join(' ')
@@ -4180,37 +4174,62 @@ function claveOrdenDocente() {
 function aplicarOrdenGuardado() {
   let v = null
   try { v = localStorage.getItem(claveOrdenDocente()) } catch (e) { /* sin storage */ }
-  vistaOrdenDocente = (v === 'nombres') ? 'nombres' : 'apellidos'
-  actualizarBotonOrdenLista()
+  vistaOrdenDocente = (v === 'planilla') ? 'planilla' : 'nombres'
+  actualizarSwitchesVista()
 }
 
-function alternarOrdenLista() {
-  vistaOrdenDocente = vistaOrdenDocente === 'apellidos' ? 'nombres' : 'apellidos'
-  try { localStorage.setItem(claveOrdenDocente(), vistaOrdenDocente) } catch (e) { /* sin storage */ }
-  actualizarBotonOrdenLista()
-  renderGrid()
+function selOrdenLista(v) {
+  vistaOrdenDocente = v
+  try { localStorage.setItem(claveOrdenDocente(), v) } catch (e) { /* sin storage */ }
+  actualizarSwitchesVista()
+  if (vistaConsolidado) renderConsolidado(_consolidadoData || [])
+  else renderGrid()
 }
 
-function actualizarBotonOrdenLista() {
-  const b = document.getElementById('btn-orden-lista')
-  if (b) b.textContent = vistaOrdenDocente === 'apellidos' ? 'Lista: Apellidos' : 'Lista: Nombres'
-}
-
-// ─── Vista Consolidado del docente (nota mnima para llegar a 3.0) ───
-let vistaConsolidado = false
-
-function alternarVistaConsolidado() {
-  vistaConsolidado = !vistaConsolidado
-  actualizarBotonVistaConsolidado()
+function selVistaNotas(v) {
+  vistaConsolidado = (v === 'consolidado')
+  actualizarSwitchesVista()
   actualizarVisibilidadVistaConsolidado()
   if (vistaConsolidado) cargarConsolidado()
   else renderGrid()
 }
 
-function actualizarBotonVistaConsolidado() {
-  const b = document.getElementById('btn-vista-consolidado')
-  if (b) b.textContent = vistaConsolidado ? 'Vista: Consolidado' : 'Vista: Notas'
+function actualizarSwitchesVista() {
+  const planilla = document.getElementById('vista-planilla')
+  const nombres = document.getElementById('vista-nombres')
+  if (planilla) planilla.classList.toggle('sel', vistaOrdenDocente === 'planilla')
+  if (nombres) nombres.classList.toggle('sel', vistaOrdenDocente === 'nombres')
+  const filaOrden = document.getElementById('orden-lista-row')
+  if (filaOrden) filaOrden.classList.toggle('en-segundo', vistaOrdenDocente === 'nombres')
+  const segNotas = document.getElementById('vista-notas-seg')
+  const segConsolidado = document.getElementById('vista-consolidado-seg')
+  if (segNotas) segNotas.classList.toggle('sel', !vistaConsolidado)
+  if (segConsolidado) segConsolidado.classList.toggle('sel', vistaConsolidado)
+  const filaNotas = document.getElementById('switch-notas-row')
+  if (filaNotas) filaNotas.classList.toggle('en-segundo', vistaConsolidado)
 }
+
+// ─── Movimiento estilo Excel: las flechas del teclado desplazan la tabla ───
+// Solo con la vista docente activa, sin botones estáticos. Dentro de un
+// input las flechas hacen lo suyo (mover el cursor de texto, como Excel
+// al escribir). En móvil el deslizamiento con el dedo es el nativo del
+// scroll horizontal (-webkit-overflow-scrolling: touch en .t-wrap).
+document.addEventListener('keydown', (ev) => {
+  if (ev.key !== 'ArrowLeft' && ev.key !== 'ArrowRight') return
+  const activa = document.querySelector('.screen.active')
+  if (!activa || activa.id !== 'sc-teacher') return
+  const tag = document.activeElement ? document.activeElement.tagName : ''
+  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return
+  if (vistaConsolidado) return
+  const wrap = document.querySelector('.t-wrap')
+  if (!wrap) return
+  ev.preventDefault()
+  wrap.scrollBy({ left: ev.key === 'ArrowLeft' ? -140 : 140, behavior: 'smooth' })
+})
+
+// ─── Vista Consolidado del docente (nota mínima para llegar a 3.0) ───
+let vistaConsolidado = false
+let _consolidadoData = []
 
 function actualizarVisibilidadVistaConsolidado() {
   const mostrarConsolidado = vistaConsolidado
@@ -4229,7 +4248,7 @@ async function cargarConsolidado() {
   if (!tb || !selectedCurso || !selectedMateria) return
   tb.innerHTML = '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--ink-400);">Cargando consolidado...</td></tr>'
   try {
-    const res = await fetch(API + '/api/notas/consolidado?curso=' + encodeURIComponent(selectedCurso) + '&materiaId=' + encodeURIComponent(selectedMateria) + '&anio=' + new Date().getFullYear(), {
+    const res = await fetch(API + '/api/notas/consolidado?curso=' + encodeURIComponent(selectedCurso) + '&materiaId=' + encodeURIComponent(selectedMateria) + '&anio=' + new Date().getFullYear() + '&periodo=' + currentPeriodo, {
       headers: { 'Authorization': 'Bearer ' + currentToken }
     })
     if (!res.ok) {
@@ -4239,7 +4258,8 @@ async function cargarConsolidado() {
       return
     }
     const data = await res.json()
-    renderConsolidado(data.estudiantes || [])
+    _consolidadoData = data.estudiantes || []
+    renderConsolidado(_consolidadoData)
   } catch (e) {
     tb.innerHTML = '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--red-700);font-size:13px;">Error de conexi\u00f3n <button class="btn-sm" onclick="cargarConsolidado()" style="margin-left:8px;">Reintentar</button></td></tr>'
   }
@@ -4252,12 +4272,17 @@ function renderConsolidado(estudiantes) {
     tb.innerHTML = '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--ink-400);">Sin estudiantes en este curso</td></tr>'
     return
   }
-  tb.innerHTML = estudiantes.map((e, i) => {
+  // Mismo orden que la vista de notas (planilla/nombres) para coherencia
+  const lista = [...estudiantes].sort((a, b) => {
+    if (vistaOrdenDocente === 'nombres') return (a.nombre || '').localeCompare(b.nombre || '', 'es', { sensitivity: 'base' })
+    return claveApellidos(a.nombre).localeCompare(claveApellidos(b.nombre), 'es', { sensitivity: 'base' })
+  })
+  tb.innerHTML = lista.map((e, i) => {
     const celdas = (e.definitivas || []).map(d => {
       const color = d !== null && d !== undefined ? getColorDef(d) : 'var(--ink-400)'
       return '<td style="padding:8px 10px;border-bottom:1px solid var(--line-soft);text-align:center;font-weight:500;color:' + color + ';">' + (d !== null && d !== undefined ? d.toFixed(2) : '--') + '</td>'
     }).join('')
-    // La celda "Necesita": badge con color segn el estado
+    // La celda "Necesita": badge con color según el estado
     let necesita = '<td style="padding:8px 10px;border-bottom:1px solid var(--line-soft);text-align:center;">--</td>'
     if (e.estadoNecesaria === 'ASEGURADO') {
       necesita = '<td style="padding:8px 10px;border-bottom:1px solid var(--line-soft);text-align:center;"><span style="background:var(--green-100);color:var(--green-700);padding:2px 10px;border-radius:12px;font-size:11px;font-weight:600;">Asegurado</span></td>'
@@ -4272,8 +4297,9 @@ function renderConsolidado(estudiantes) {
       const color = getColorDef(e.promedioFinal)
       final = '<td style="padding:8px 10px;border-bottom:1px solid var(--line-soft);text-align:center;font-weight:700;color:' + color + ';">' + e.promedioFinal.toFixed(2) + '</td>'
     }
+    const nombreMostrado = vistaOrdenDocente === 'planilla' ? claveApellidos(e.nombre) : e.nombre
     return '<tr style="animation:filaEntra .25s var(--ease-out) both;animation-delay:' + (i * 25) + 'ms;">' +
-      '<td style="padding:8px 10px;border-bottom:1px solid var(--line-soft);font-weight:500;">' + esc(e.nombre) + '</td>' +
+      '<td style="padding:8px 10px;border-bottom:1px solid var(--line-soft);font-weight:500;">' + esc(nombreMostrado) + '</td>' +
       celdas + necesita + final +
     '</tr>'
   }).join('')
@@ -4466,7 +4492,7 @@ function renderNotasMateria(materiaId) {
   if (!data) return
   const mat = data.materias.find(m => m.materiaId === materiaId)
   if (!mat) return
-  let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="background:var(--cream-100);"><th style="padding:8px 10px;text-align:left;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--ink-400);">Periodo</th><th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--ink-400);">Nota</th><th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--ink-400);">Estado</th><th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--ink-400);">Mnimo para pasar</th></tr></thead><tbody>'
+  let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="background:var(--cream-100);"><th style="padding:8px 10px;text-align:left;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--ink-400);">Periodo</th><th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--ink-400);">Nota</th><th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--ink-400);">Estado</th><th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--ink-400);">Mínimo para pasar</th></tr></thead><tbody>'
   for (const p of mat.periodos) {
     const badge = p.estado === 'RIESGO'
       ? '<span style="background:var(--red-100);color:var(--red-700);padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">En riesgo</span>'
@@ -4968,7 +4994,7 @@ function aplicarCambiosPendientesAlGrid() {
     if (!m) continue
     const est = studentsData[Number(m[1])]
     if (!est) continue
-    const pend = pendientes.find(p => p.estudianteId === est.estudianteId && p.tipo === m[2] && p.titulo === m[3])
+    const pend = pendientes.find(p => p.estudianteId === est.estudianteId && p.tipo === m[2] && p.titulo === m[3] && p.periodo === currentPeriodo)
     if (pend) inp.value = pend._delete ? '' : pend.valor
   }
 }

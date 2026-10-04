@@ -77,20 +77,27 @@ test('endpoint consolidado: definitivas por estudiante + nota necesaria', async 
   ).run('test-cons-1', estudiantes[0].id, materiaId, asigDoc.docenteId, ANIO_PRUEBA)
   // P2: est[0] -> 3.5 (completa los 2 primeros)
 
-  const r = await api.get('/api/notas/consolidado?curso=' + encodeURIComponent(curso) + '&materiaId=' + materiaId + '&anio=' + ANIO_PRUEBA, { token: tokenDocente })
+  const r = await api.get('/api/notas/consolidado?curso=' + encodeURIComponent(curso) + '&materiaId=' + materiaId + '&anio=' + ANIO_PRUEBA + '&periodo=2', { token: tokenDocente })
   assert.equal(r.status, 200)
   const david = r.data.estudiantes.find(e => e.estudianteId === estudiantes[0].id)
   assert.ok(david, 'el estudiante debe aparecer')
   assert.equal(david.definitivas[0], 2.5)
   assert.equal(david.definitivas[1], null)
-  assert.equal(david.periodoSiguiente, 2, 'el siguiente periodo sin calificar es P2')
+  assert.equal(david.periodoSiguiente, 2, 'con periodo=2 y P2 sin calificar, el siguiente es P2')
   assert.equal(david.notaNecesaria, 3.5, '2.5 en P1 -> necesita 3.5 en P2')
   assert.equal(david.completo, false)
 
-  // El otro estudiante sin notas: el minimo es 3.0 (pasar el siguiente)
-  const otro = r.data.estudiantes.find(e => e.estudianteId === estudiantes[1].id)
-  assert.equal(otro.notaNecesaria, 3.0)
-  assert.equal(otro.periodoSiguiente, 1)
+  // El "siguiente" NUNCA es un periodo ya pasado: con periodo=4, la nota
+  // necesaria es para P4 (los periodos P2/P3 sin nota no penalizan)
+  const r4 = await api.get('/api/notas/consolidado?curso=' + encodeURIComponent(curso) + '&materiaId=' + materiaId + '&anio=' + ANIO_PRUEBA + '&periodo=4', { token: tokenDocente })
+  const david4 = r4.data.estudiantes.find(e => e.estudianteId === estudiantes[0].id)
+  assert.equal(david4.periodoSiguiente, 4, 'con periodo=4, el siguiente es P4 (nunca P1)')
+  assert.equal(david4.notaNecesaria, 3.5, '2.5 en P1 -> necesita 3.5 (n=2) en P4')
+
+  // El caso del colegio: P4 actual SIN notas en P1-P3 -> necesita 3.0 en P4
+  const otro4 = r4.data.estudiantes.find(e => e.estudianteId === estudiantes[1].id)
+  assert.equal(otro4.periodoSiguiente, 4)
+  assert.equal(otro4.notaNecesaria, 3.0, 'sin notas -> el minimo es 3.0 en P4')
 })
 
 test('endpoint consolidado: no-docente de la materia -> 403, sin params -> 400', async () => {

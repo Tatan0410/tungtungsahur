@@ -1078,8 +1078,9 @@ router.get('/consolidado', async (req, res) => {
   try {
     const { curso, materiaId } = req.query
     const anio = parseInt(req.query.anio) || new Date().getFullYear()
+    const periodoActual = parseInt(req.query.periodo) || 1
     if (!curso || !materiaId) return res.status(400).json({ error: 'Debes enviar curso y materiaId' })
-    const estudiantes = await calcularConsolidado(prisma._db, curso, materiaId, anio)
+    const estudiantes = await calcularConsolidado(prisma._db, curso, materiaId, anio, periodoActual)
     res.json({ estudiantes, anio })
   } catch (error) {
     console.error('Error en admin/consolidado:', error)

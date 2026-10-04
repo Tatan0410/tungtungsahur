@@ -1,16 +1,16 @@
 // ─────────────────────────────────────────────────────────────────
-// Consolidado: nota mnima que necesita cada estudiante para llegar a 3.0
+// Consolidado: nota mínima que necesita cada estudiante para llegar a 3.0
 // en una materia. Usado por el docente (/api/notas/consolidado) y por el
 // admin (/api/admin/consolidado): una sola fuente de verdad.
 //
-// Formula (promedio simple, confirmada por el colegio):
-//   minimo = 3.0 x n - suma(definitivas anteriores)
+// Fórmula (promedio simple, confirmada por el colegio):
+//   mínimo = 3.0 x n - suma(definitivas anteriores)
 //   con n = periodos con nota + 1 (los periodos sin nota no penalizan)
-//   Ceil a 1 decimal: si da 3.46 se muestra 3.5 (garantiza que alcance
+//   Redondeo hacia arriba (ceil) a 1 decimal: si da 3.46 se muestra 3.5 (garantiza que alcance
 //   tras el redondeo real del sistema).
 //   Casos: <= 0 -> ASEGURADO (ya pasa con cualquier nota)
 //          > 5  -> RIESGO_CRITICO (no alcanza en el siguiente periodo)
-//          sin periodos anteriores -> el minimo es 3.0 (pasar este periodo)
+//          sin periodos anteriores -> el mínimo es 3.0 (pasar este periodo)
 // ─────────────────────────────────────────────────────────────────
 function calcularMinimoRequerido(definitivasAnteriores) {
   const conNota = (definitivasAnteriores || []).filter(d => d !== null && d !== undefined)
@@ -27,7 +27,7 @@ function calcularMinimoRequerido(definitivasAnteriores) {
 // devuelve las definitivas de P1-P4, la nota necesaria para el PRIMER
 // periodo sin calificar (el "siguiente") y, si ya complet los 4, el
 // promedio final ponderado real (con los pesos reales de la sede).
-async function calcularConsolidado(db, curso, materiaId, anio) {
+async function calcularConsolidado(db, curso, materiaId, anio, periodoActual) {
   const estudiantes = await db.prepare(`
     SELECT e.id AS "estudianteId", u.nombre
     FROM estudiantes e
@@ -69,16 +69,22 @@ async function calcularConsolidado(db, curso, materiaId, anio) {
     const porPeriodo = new Map(calsEst.map(c => [c.periodo, c.definitiva]))
     const definitivas = [1, 2, 3, 4].map(p => porPeriodo.has(p) ? porPeriodo.get(p) : null)
 
-    const siguiente = definitivas.findIndex(d => d === null)
+    // El "siguiente" periodo: el PRIMERO SIN calificar que sea >= el periodo
+    // actual (nunca uno ya pasado: si estamos en P4, la nota necesaria es
+    // para P4 o nada, no para P1)
+    let siguiente = -1
+    for (let p = (periodoActual || 1); p <= 4; p++) {
+      if (definitivas[p - 1] === null) { siguiente = p; break }
+    }
     if (siguiente >= 0) {
-      // El "siguiente" periodo es el primero sin calificar (1 -> 4)
-      const anteriores = definitivas.slice(0, siguiente)
+      // Solo cuentan los periodos ANTERIORES al siguiente que tengan nota
+      const anteriores = definitivas.slice(0, siguiente - 1).filter(d => d !== null)
       const r = calcularMinimoRequerido(anteriores)
       resultado.push({
         estudianteId: est.estudianteId,
         nombre: est.nombre,
         definitivas,
-        periodoSiguiente: siguiente + 1,
+        periodoSiguiente: siguiente,
         notaNecesaria: r.minimo,
         estadoNecesaria: r.estado,
         completo: false,
@@ -86,7 +92,8 @@ async function calcularConsolidado(db, curso, materiaId, anio) {
         aprobado: null,
       })
     } else {
-      // COMPLETO: promedio final ponderado con los pesos reales
+      // COMPLETO: todos los periodos >= el actual ya calificados (o P4 pasado):
+      // promedio final ponderado con los pesos reales de TODO el año
       let sumaP = 0, sumaW = 0
       for (let p = 1; p <= 4; p++) {
         const w = parseFloat(pesos[p])
