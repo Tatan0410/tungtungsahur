@@ -25,7 +25,7 @@ function crearApi(base) {
 }
 
 async function login(api, documento, password) {
-  const r = await api.post('/api/auth/login', { body: { documento, password } })
+  const r = await api.post('/api/auth/login', { body: { documento, password, aceptaTerminos: true } })
   if (r.status !== 200) {
     throw new Error(`Login falló (${r.status}): ${JSON.stringify(r.data)}`)
   }

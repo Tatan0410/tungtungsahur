@@ -27,6 +27,7 @@ const prisma = {
       return {
         id: row.id, correo: row.correo, password: row.password, rol: row.rol,
         nombre: row.nombre, documento: row.documento, activo: Boolean(row.activo), creadoEn: row.creadoEn,
+        terminosAceptadosEn: row.terminos_aceptados_en || null, terminosVersion: row.terminos_version || null,
         estudiante: row.estudiante_id ? { id: row.estudiante_id, usuarioId: row.id, documento: row.est_doc, codigo: row.codigo, sede: row.sede, jornada: row.jornada, grado: row.grado, curso: row.curso, mesa: row.mesa } : null,
         docente: row.docente_id ? { id: row.docente_id, usuarioId: row.id } : null,
       }

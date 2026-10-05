@@ -117,7 +117,7 @@ test('el servidor arranca sobre la BD recién migrada y sirve la API', async () 
     const login = await fetch(srv.base + '/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ documento: '99999999', password: 'Admin2025' }),
+      body: JSON.stringify({ documento: '99999999', password: 'Admin2025', aceptaTerminos: true }),
     })
     assert.equal(login.status, 401, 'una BD vacía no tiene usuarios (401, no 500)')
   } finally {

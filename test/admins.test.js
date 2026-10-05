@@ -35,7 +35,7 @@ test('el admin crea, lista y elimina otro admin', async () => {
   assert.equal(nuevoEnLista.correo, null, 'el admin nuevo nace sin correo')
 
   // El nuevo admin puede iniciar sesión
-  const loginNuevo = await api.post('/api/auth/login', { body: { documento: NUEVO.documento, password: NUEVO.password } })
+  const loginNuevo = await api.post('/api/auth/login', { body: { documento: NUEVO.documento, password: NUEVO.password, aceptaTerminos: true } })
   assert.equal(loginNuevo.status, 200)
   assert.equal(loginNuevo.data.usuario.rol, 'ADMIN')
 
@@ -114,9 +114,9 @@ test('flujo del código: pedir código (admin con correo), mi-datos cambia docum
   assert.equal(ok.data.documento, '99999998')
 
   // El login viejo (documento anterior) ya no funciona; el nuevo sí
-  const viejo = await api.post('/api/auth/login', { body: ADMIN })
+  const viejo = await api.post('/api/auth/login', { body: { ...ADMIN, aceptaTerminos: true } })
   assert.equal(viejo.status, 401)
-  const nuevo = await api.post('/api/auth/login', { body: { documento: '99999998', password: ADMIN.password } })
+  const nuevo = await api.post('/api/auth/login', { body: { documento: '99999998', password: ADMIN.password, aceptaTerminos: true } })
   assert.equal(nuevo.status, 200)
   assert.equal(nuevo.data.usuario.rol, 'ADMIN')
 

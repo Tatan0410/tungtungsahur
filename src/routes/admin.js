@@ -1088,4 +1088,44 @@ router.get('/consolidado', async (req, res) => {
   }
 })
 
+// ─── AUDITORÍA DE ACEPTACIÓN DE TÉRMINOS ───
+// Evidencia legal: cuántos usuarios aceptaron cada versión del texto
+// legal y, con ?documento=X, el detalle de cuándo aceptó un usuario
+// específico (fecha/hora exactas).
+router.get('/auditoria-terminos', async (req, res) => {
+  try {
+    const { documento } = req.query
+
+    // Detalle de un usuario específico (por documento)
+    if (documento) {
+      const usuario = await prisma._db.prepare(`
+        SELECT nombre, documento, rol, terminos_aceptados_en AS "terminosAceptadosEn", terminos_version AS "terminosVersion"
+        FROM usuarios WHERE documento = ?
+      `).get(String(documento).trim())
+      if (!usuario) return res.status(404).json({ error: 'Usuario no encontrado' })
+      return res.json({ usuario })
+    }
+
+    // Resumen general: conteos por versión
+    const porVersion = await prisma._db.prepare(`
+      SELECT terminos_version AS "version", COUNT(*) AS "cantidad"
+      FROM usuarios
+      WHERE terminos_version IS NOT NULL
+      GROUP BY terminos_version
+      ORDER BY terminos_version
+    `).all()
+    const total = await prisma._db.prepare('SELECT COUNT(*) c FROM usuarios').get()
+    const sinAceptar = await prisma._db.prepare('SELECT COUNT(*) c FROM usuarios WHERE terminos_version IS NULL').get()
+    res.json({
+      porVersion,
+      totalUsuarios: Number(total.c),
+      hanAceptado: Number(total.c) - Number(sinAceptar.c),
+      sinAceptar: Number(sinAceptar.c),
+    })
+  } catch (error) {
+    console.error('Error GET /auditoria-terminos:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
 module.exports = router

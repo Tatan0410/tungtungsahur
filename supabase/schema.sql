@@ -265,3 +265,10 @@ ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS primer_nombre TEXT;
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS segundo_nombre TEXT;
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS primer_apellido TEXT;
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS segundo_apellido TEXT;
+
+-- ─── MIGRACIÓN: aceptación de términos legales ───
+-- Evidencia legal: cuándo aceptó cada usuario los Términos y Condiciones
+-- y la Política de Tratamiento de Datos, y con qué versión del texto.
+-- NULL en ambas = aún no ha aceptado.
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS terminos_aceptados_en TEXT;
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS terminos_version TEXT;

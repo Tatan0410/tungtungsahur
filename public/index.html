@@ -725,7 +725,19 @@ body::before {
       <div class="inp-g"><label class="lbl">Número de documento</label><input class="inp" id="doc-input" type="text" inputmode="numeric" placeholder="Ej: 1046732606"/><div class="inp-hint">Tu contraseña también es tu número de documento</div></div>
       <div class="inp-g"><label class="lbl">Contraseña</label><div class="inp-con-ojo"><input class="inp" id="password" type="password" placeholder="••••••••"/><button type="button" class="btn-ojo" onclick="alternarVisibilidadPassword(this, 'password')" tabindex="-1" aria-label="Mostrar u ocultar contraseña"><span class="icon" data-icon="ojo"></span></button></div></div>
       <div class="error-msg" id="login-error"></div>
-      <button class="btn-primary" id="login-btn" style="margin-top:6px;" onclick="doLogin()">Ingresar</button>
+      <div style="margin-top:10px;padding:10px 12px;background:var(--cream-100);border:1px solid var(--line);border-radius:var(--r-sm);font-size:11px;color:var(--ink-600);line-height:1.5;">
+        Al ingresar a esta plataforma, usted confirma que:
+        <ul style="margin:4px 0 0 16px;padding:0;">
+          <li>Es estudiante, docente o personal autorizado de la Institución Educativa Técnica Sagrado Corazón.</li>
+          <li>El tratamiento de sus datos personales (o los de su hijo/a, si es representante legal) ya fue autorizado en el proceso de matrícula, conforme a la Ley 1581 de 2012.</li>
+          <li>Ha leído la <a href="politica-datos.html" target="_blank" style="color:var(--burgundy-700);font-weight:600;">Política de Tratamiento de Datos</a> y los <a href="terminos.html" target="_blank" style="color:var(--burgundy-700);font-weight:600;">Términos y Condiciones</a> de uso de la plataforma.</li>
+        </ul>
+      </div>
+      <div style="display:flex;align-items:start;gap:8px;margin-top:10px;">
+        <input type="checkbox" id="acepta-terminos" style="margin-top:3px;accent-color:var(--burgundy-700);width:16px;height:16px;cursor:pointer;" onchange="actualizarBotonLogin()">
+        <label for="acepta-terminos" style="font-size:12px;color:var(--ink-600);cursor:pointer;line-height:1.4;">He leído y acepto lo anterior.</label>
+      </div>
+      <button class="btn-primary" id="login-btn" style="margin-top:6px;" onclick="doLogin()" disabled>Ingresar</button>
       <div style="text-align:center;margin-top:12px;font-size:13px;display:none;" id="recuperar-link">
         <span style="color:var(--ink-400);">¿Olvidaste tu contraseña?</span>
         <a href="javascript:void(0)" onclick="abrirRecuperarPassword()" style="color:var(--burgundy-700);font-weight:600;">Recuperar</a>
@@ -1631,6 +1643,11 @@ function showScreen(id) {
   if (el) el.classList.add('active')
 }
 
+function actualizarBotonLogin() {
+  const aceptado = document.getElementById('acepta-terminos').checked
+  document.getElementById('login-btn').disabled = !aceptado
+}
+
 function doLogin() {
   const doc = document.getElementById('doc-input').value.trim()
   const password = document.getElementById('password').value
@@ -1651,7 +1668,7 @@ function doLogin() {
   fetch(API + '/api/auth/login', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ documento: doc, password, periodo: currentPeriodo, anio: new Date().getFullYear() })
+  body: JSON.stringify({ documento: doc, password, periodo: currentPeriodo, anio: new Date().getFullYear(), aceptaTerminos: true })
   })
   .then(res => res.json().then(data => ({ status: res.status, data })))
   .then(({ status, data }) => {

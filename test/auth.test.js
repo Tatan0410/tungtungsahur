@@ -13,7 +13,7 @@ before(async () => { srv = await arrancarServidor(); api = crearApi(srv.base) })
 after(async () => { await srv.cerrar() })
 
 test('login de administrador devuelve token y rol ADMIN', async () => {
-  const r = await api.post('/api/auth/login', { body: ADMIN })
+  const r = await api.post('/api/auth/login', { body: { ...ADMIN, aceptaTerminos: true } })
   assert.equal(r.status, 200)
   assert.ok(r.data.token, 'debe devolver token')
   assert.equal(r.data.usuario.rol, 'ADMIN')
@@ -21,14 +21,14 @@ test('login de administrador devuelve token y rol ADMIN', async () => {
 })
 
 test('login de docente devuelve token y rol DOCENTE', async () => {
-  const r = await api.post('/api/auth/login', { body: DOCENTE })
+  const r = await api.post('/api/auth/login', { body: { ...DOCENTE, aceptaTerminos: true } })
   assert.equal(r.status, 200)
   assert.equal(r.data.usuario.rol, 'DOCENTE')
   assert.ok(r.data.usuario.docenteId, 'payload debe incluir docenteId')
 })
 
 test('contraseña incorrecta → 401', async () => {
-  const r = await api.post('/api/auth/login', { body: { documento: ADMIN.documento, password: 'clave-mala' } })
+  const r = await api.post('/api/auth/login', { body: { documento: ADMIN.documento, password: 'clave-mala', aceptaTerminos: true } })
   assert.equal(r.status, 401)
   assert.match(r.data.error, /incorrectos/)
 })
@@ -65,7 +65,7 @@ test('sin token → 401', async () => {
 
 test('los logins exitosos NO consumen el cupo por IP (35 seguidos)', async () => {
   for (let i = 0; i < 35; i++) {
-    const r = await api.post('/api/auth/login', { body: ADMIN })
+    const r = await api.post('/api/auth/login', { body: { ...ADMIN, aceptaTerminos: true } })
     assert.equal(r.status, 200, `intento exitoso #${i + 1} no debe ser rechazado`)
   }
 })
@@ -73,10 +73,10 @@ test('los logins exitosos NO consumen el cupo por IP (35 seguidos)', async () =>
 test('5 contraseñas malas bloquean el documento 15 min (6º → 429)', async () => {
   const objetivo = '30010002' // docente distinto al que usa el resto de tests
   for (let i = 1; i <= 5; i++) {
-    const r = await api.post('/api/auth/login', { body: { documento: objetivo, password: 'mala' + i } })
+    const r = await api.post('/api/auth/login', { body: { documento: objetivo, password: 'mala' + i, aceptaTerminos: true } })
     assert.equal(r.status, 401, `intento ${i} debe ser 401`)
   }
-  const r = await api.post('/api/auth/login', { body: { documento: objetivo, password: 'mala6' } })
+  const r = await api.post('/api/auth/login', { body: { documento: objetivo, password: 'mala6', aceptaTerminos: true } })
   assert.equal(r.status, 429)
   assert.match(r.data.error, /Demasiados intentos/)
 })
@@ -86,7 +86,7 @@ test('intentos fallidos desde una IP se cortan (429 con mención de IP)', async 
   // Documentos inexistentes y distintos: solo cuenta el límite por IP
   for (let i = 1; i <= 70 && !gatillado; i++) {
     const r = await api.post('/api/auth/login', {
-      body: { documento: '7999' + String(10000 + i), password: 'inventada' },
+      body: { documento: '7999' + String(10000 + i), password: 'inventada', aceptaTerminos: true },
     })
     if (r.status === 429) {
       assert.match(r.data.error, /IP/)

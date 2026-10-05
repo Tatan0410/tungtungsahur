@@ -136,7 +136,7 @@ test('normalizarFila restaura las claves camelCase que Postgres pasa a minúscul
 })
 
 test('login de estudiante devuelve curso y sede', async () => {
-  const r = await api.post('/api/auth/login', { body: { documento: correoEstudiante, password: 'Estudiante123' } })
+  const r = await api.post('/api/auth/login', { body: { documento: correoEstudiante, password: 'Estudiante123', aceptaTerminos: true } })
   assert.equal(r.status, 200)
   assert.equal(r.data.usuario.rol, 'ESTUDIANTE')
   assert.ok(r.data.usuario.curso, 'payload debe incluir curso')

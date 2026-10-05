@@ -80,10 +80,10 @@ test('flujo feliz: código correcto restablece la contraseña', async () => {
   assert.equal(ok.status, 200)
   assert.match(ok.data.mensaje, /restablecida/)
 
-  const vieja = await api.post('/api/auth/login', { body: DOCENTE })
+  const vieja = await api.post('/api/auth/login', { body: { ...DOCENTE, aceptaTerminos: true } })
   assert.equal(vieja.status, 401, 'la contraseña anterior deja de funcionar')
 
-  const nueva = await api.post('/api/auth/login', { body: { documento: DOCENTE.documento, password: 'NuevaClave123' } })
+  const nueva = await api.post('/api/auth/login', { body: { documento: DOCENTE.documento, password: 'NuevaClave123', aceptaTerminos: true } })
   assert.equal(nueva.status, 200, 'la contraseña nueva funciona')
   assert.equal(nueva.data.usuario.rol, 'DOCENTE')
 })

@@ -51,12 +51,24 @@ async function registrarIntentoFallido(documento) {
   }
 }
 
+// Versión canónica del texto legal (Términos y Condiciones + Política de
+// Tratamiento de Datos). El SERVIDOR es quien la define y registra: si el
+// texto legal cambia mañana, se sube la versión y todos deben re-aceptar.
+const VERSION_TERMINOS = 'v1.0-2026-10'
+
 router.post('/login', async (req, res) => {
   try {
-    const { documento, password } = req.body
+    const { documento, password, aceptaTerminos } = req.body
 
     if (!documento || !password) {
       return res.status(400).json({ error: 'Documento y contraseña son requeridos' })
+    }
+
+    // Evidencia legal: el checkbox de los términos debe estar marcado.
+    // Se pide SIEMPRE en el login visible, pero el registro en la BD solo
+    // se actualiza cuando la versión del texto cambió (o es la primera vez).
+    if (aceptaTerminos !== true) {
+      return res.status(400).json({ error: 'Debes aceptar los términos para continuar' })
     }
 
     // ─── RATE LIMITING POR IP (solo fallos) ───
@@ -102,6 +114,15 @@ router.post('/login', async (req, res) => {
 
     // Login exitoso → resetear contador
     await prisma._db.prepare('DELETE FROM intentos_login WHERE documento = ?').run(documento)
+
+    // Evidencia legal: registra la aceptación SOLO si la versión del
+    // usuario difiere de la actual (o nunca ha aceptado). Así no se
+    // escribe la BD en cada login, y si el texto legal cambia, la
+    // próxima aceptación queda registrada con fecha nueva.
+    if (usuario.terminosVersion !== VERSION_TERMINOS) {
+      await prisma._db.prepare('UPDATE usuarios SET terminos_aceptados_en = ?, terminos_version = ? WHERE id = ?')
+        .run(new Date().toISOString(), VERSION_TERMINOS, usuario.id)
+    }
 
     const payload = {
       id:     usuario.id,
