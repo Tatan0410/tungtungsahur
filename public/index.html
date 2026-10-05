@@ -803,10 +803,6 @@ body::before {
     <span><span class="icon" data-icon="nota"></span> <strong style="color:var(--burgundy-700);">Evaluación 15%</strong> · Examen bimestral</span>
   </div>
 <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
-    <div class="vista-row" id="orden-lista-row" style="width:190px;">
-      <div class="vista-opt" id="vista-planilla" onclick="selOrdenLista('planilla')" title="Los apellidos van primero (para pasar lista)">Planilla</div>
-      <div class="vista-opt" id="vista-nombres" onclick="selOrdenLista('nombres')" title="Los nombres como siempre">Nombres</div>
-    </div>
     <div class="vista-row" id="switch-notas-row" style="width:205px;margin-left:auto;">
       <div class="vista-opt" id="vista-notas-seg" onclick="selVistaDocente('notas')" title="La tabla de notas de siempre">Notas</div>
       <div class="vista-opt" id="vista-consolidado-seg" onclick="selVistaDocente('consolidado')" title="La nota mínima que necesita cada estudiante para llegar a 3.0">Consolidado</div>
@@ -1785,7 +1781,6 @@ function selPeriodoEstudiante(v) {
 function showTeacherPortal(user) {
   document.getElementById('app').classList.add('wide-mode')
   requestAnimationFrame(moverIndicadorPeriodo)
-  aplicarOrdenGuardado()
   document.getElementById('doc-name').textContent = user.nombre || 'Docente'
   document.getElementById('doc-info').textContent = (user.correo || '')
   document.getElementById('period-pill').textContent = 'Período ' + currentPeriodo + ' · ' + new Date().getFullYear()
@@ -2125,9 +2120,6 @@ function renderGrid() {
   const listaOrdenada = studentsData
     .map((s, idx) => ({ s, idx }))
     .sort((a, b) => {
-      if (vistaOrdenDocente === 'nombres') {
-        return (a.s.nombre || '').localeCompare(b.s.nombre || '', 'es', { sensitivity: 'base' })
-      }
       return claveApellidos(a.s.nombre).localeCompare(claveApellidos(b.s.nombre), 'es', { sensitivity: 'base' })
     })
   listaOrdenada.forEach((item, pos) => {
@@ -2141,7 +2133,7 @@ function renderGrid() {
     tr.style.animation = 'filaEntra .25s var(--ease-out) both'
     tr.style.animationDelay = (pos * 25) + 'ms'
 
-    let html = '<td style="min-width:160px;font-weight:500;position:sticky;left:0;background:var(--paper);border-right:1px solid var(--line);">' + (vistaOrdenDocente === 'planilla' ? esc(claveApellidos(s.nombre)) : esc(s.nombre)) + '</td>'
+    let html = '<td style="min-width:160px;font-weight:500;position:sticky;left:0;background:var(--paper);border-right:1px solid var(--line);">' + esc(claveApellidos(s.nombre)) + '</td>'
 
     for (const tipo of TIPOS) {
       const key = tipo === 'ACTIVIDAD' ? 'actividades' : tipo.toLowerCase()
@@ -4185,41 +4177,17 @@ document.addEventListener('keydown', (ev) => {
   cerrarSugerencias()
 })
 
-// ─── Orden de la lista del docente ───
-// Dos vistas (switch "Planilla | Nombres"):
-//   - Nombres (por defecto): la lista tal cual es (los nombres como están)
-//   - Planilla: los mismos estudiantes REESCRITOS como
-//     "apellido1 apellido2 nombre1 nombre2" y ordenados así (para pasar lista)
-let vistaOrdenDocente = 'nombres'
+// ─── Orden de la lista del docente: SIEMPRE planilla ───
+// Los nombres se muestran REESCRITOS como "apellido1 apellido2 nombre1
+// nombre2" y ordenados así (el formato para pasar lista).
 
-// Reescribe el nombre al formato planilla: apellidos primero (es la misma
-// transformación que usa el sort de claveApellidos)
+// Reescribe el nombre al formato planilla: apellidos primero
 function claveApellidos(nombre) {
   const parts = (nombre || '').trim().split(/\s+/)
   const n = parts.length
   if (n >= 3) return parts.slice(-2).join(' ') + ' ' + parts.slice(0, -2).join(' ')
   if (n === 2) return parts[1] + ' ' + parts[0]
   return (nombre || '')
-}
-
-function claveOrdenDocente() {
-  // Preferencia por docente (su documento es único)
-  return 'orden-lista-' + ((currentUser && currentUser.documento) ? currentUser.documento : 'global')
-}
-
-function aplicarOrdenGuardado() {
-  let v = null
-  try { v = localStorage.getItem(claveOrdenDocente()) } catch (e) { /* sin storage */ }
-  vistaOrdenDocente = (v === 'planilla') ? 'planilla' : 'nombres'
-  actualizarSwitchesVista()
-}
-
-function selOrdenLista(v) {
-  vistaOrdenDocente = v
-  try { localStorage.setItem(claveOrdenDocente(), v) } catch (e) { /* sin storage */ }
-  actualizarSwitchesVista()
-  if (vistaConsolidado) renderConsolidado(_consolidadoData || [])
-  else renderGrid()
 }
 
 function selVistaDocente(v) {
@@ -4231,12 +4199,6 @@ function selVistaDocente(v) {
 }
 
 function actualizarSwitchesVista() {
-  const planilla = document.getElementById('vista-planilla')
-  const nombres = document.getElementById('vista-nombres')
-  if (planilla) planilla.classList.toggle('sel', vistaOrdenDocente === 'planilla')
-  if (nombres) nombres.classList.toggle('sel', vistaOrdenDocente === 'nombres')
-  const filaOrden = document.getElementById('orden-lista-row')
-  if (filaOrden) filaOrden.classList.toggle('en-segundo', vistaOrdenDocente === 'nombres')
   const segNotas = document.getElementById('vista-notas-seg')
   const segConsolidado = document.getElementById('vista-consolidado-seg')
   if (segNotas) segNotas.classList.toggle('sel', !vistaConsolidado)
@@ -4308,9 +4270,8 @@ function renderConsolidado(estudiantes) {
     tb.innerHTML = '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--ink-400);">Sin estudiantes en este curso</td></tr>'
     return
   }
-  // Mismo orden que la vista de notas (planilla/nombres) para coherencia
+  // Mismo orden planilla que la vista de notas (apellidos primero)
   const lista = [...estudiantes].sort((a, b) => {
-    if (vistaOrdenDocente === 'nombres') return (a.nombre || '').localeCompare(b.nombre || '', 'es', { sensitivity: 'base' })
     return claveApellidos(a.nombre).localeCompare(claveApellidos(b.nombre), 'es', { sensitivity: 'base' })
   })
   tb.innerHTML = lista.map((e, i) => {
@@ -4333,7 +4294,7 @@ function renderConsolidado(estudiantes) {
       const color = getColorDef(e.promedioFinal)
       final = '<td style="padding:8px 10px;border-bottom:1px solid var(--line-soft);text-align:center;font-weight:700;color:' + color + ';">' + e.promedioFinal.toFixed(2) + '</td>'
     }
-    const nombreMostrado = vistaOrdenDocente === 'planilla' ? claveApellidos(e.nombre) : e.nombre
+    const nombreMostrado = claveApellidos(e.nombre)
     return '<tr style="animation:filaEntra .25s var(--ease-out) both;animation-delay:' + (i * 25) + 'ms;">' +
       '<td style="padding:8px 10px;border-bottom:1px solid var(--line-soft);font-weight:500;">' + esc(nombreMostrado) + '</td>' +
       celdas + necesita + final +
