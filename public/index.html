@@ -2738,7 +2738,7 @@ function renderAreasLista() {
   cont.innerHTML = _areasData.map((a, idx) => {
     const suma = a.materias.reduce((n, m) => n + Number(m.porcentaje), 0)
     const materiasHtml = a.materias.length
-      ? a.materias.map(m => '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--line-soft);font-size:12.5px;"><span>' + esc(m.materiaNombre) + '</span><b style="color:var(--gold-700);">' + m.porcentaje + '%</b></div>').join('')
+      ? a.materias.map(m => '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--line-soft);font-size:12.5px;"><span>' + esc(m.materiaNombre) + '</span><b style="color:var(--gold-700);">' + (suma > 0 ? Math.round(m.porcentaje / suma * 100) + '%' : '—') + '</b> <span style="font-size:10px;color:var(--ink-400);">' + m.porcentaje + 'h</span></div>').join('')
       : '<div style="color:var(--ink-400);font-size:12px;padding:6px 0;">(sin materias)</div>'
     const cursosHtml = a.cursos.length
       ? a.cursos.map(c => '<span style="display:inline-flex;align-items:center;gap:5px;background:var(--cream-100);color:var(--ink-900);border-radius:12px;padding:3px 10px;font-size:11px;font-weight:600;">' + esc(c) + '<button onclick="desasignarAreaCurso(\'' + a.id + '\',\'' + escArg(c) + '\')" title="Desasignar del curso" style="border:none;background:none;cursor:pointer;color:var(--ink-400);font-size:13px;padding:0;line-height:1;">\u00d7</button></span>').join(' ')
@@ -2746,7 +2746,7 @@ function renderAreasLista() {
     return '<div class="nota-card" style="margin:0;">' +
       '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px;flex-wrap:wrap;gap:8px;">' +
         '<div><div style="font-size:14px;font-weight:700;color:var(--ink-900);">' + esc(a.nombre) + '</div>' +
-        '<div style="font-size:11px;color:var(--ink-400);">' + a.materias.length + ' materia(s) \u00b7 suma ' + Math.round(suma) + '%</div></div>' +
+        '<div style="font-size:11px;color:var(--ink-400);">' + a.materias.length + ' materia(s) \u00b7 ' + (suma > 0 ? '100% del \u00e1rea \u00b7 ' + suma + ' h/semana' : 'sin materias') + '</div></div>' +
         '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
           '<button class="btn-sm" onclick="alternarEditorMaterias(\'' + a.id + '\')" style="font-size:11px;"><span class="icon" data-icon="lapiz"></span> Editar materias</button>' +
           '<button class="btn-sm danger" onclick="eliminarArea(\'' + a.id + '\',\'' + escArg(a.nombre) + '\')" style="font-size:11px;"><span class="icon" data-icon="papelera"></span> Eliminar</button>' +
