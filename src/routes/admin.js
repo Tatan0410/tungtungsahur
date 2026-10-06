@@ -293,6 +293,38 @@ function derivarCurso(curso) {
   return { grado, jornada, sede: 'PPAL - TRIUNFO' }
 }
 
+// ─── ELIMINAR MATERIA ───
+// Limitación conocida: si la materia tiene calificaciones, se bloquea
+// (409) sin alternativa — es el comportamiento seguro por ahora.
+router.delete('/materias/:id', async (req, res) => {
+  try {
+    const materia = await prisma._db.prepare('SELECT id, nombre FROM materias WHERE id = ?').get(req.params.id)
+    if (!materia) return res.status(404).json({ error: 'Materia no encontrada' })
+
+    // Si tiene calificaciones reales: RECHAZAR (no romper el histórico académico)
+    const conNotas = await prisma._db.prepare('SELECT COUNT(*) AS c FROM calificaciones WHERE materiaid = ?').get(req.params.id)
+    if (Number(conNotas.c) > 0) {
+      return res.status(409).json({ error: 'No se puede eliminar: esta materia tiene ' + conNotas.c + ' calificaciones registradas. Contacta al desarrollador si de verdad necesitas borrarla.' })
+    }
+
+    // Sin calificaciones: eliminar relaciones primero y luego la materia
+    const asignaciones = await prisma._db.prepare('SELECT COUNT(*) AS c FROM docente_materias WHERE materiaid = ?').get(req.params.id)
+    const enAreas = await prisma._db.prepare('SELECT COUNT(*) AS c FROM area_materias WHERE materiaid = ?').get(req.params.id)
+    await prisma._db.transaction(async () => {
+      await prisma._db.prepare('DELETE FROM docente_materias WHERE materiaid = ?').run(req.params.id)
+      await prisma._db.prepare('DELETE FROM area_materias WHERE materiaid = ?').run(req.params.id)
+      await prisma._db.prepare('DELETE FROM materias WHERE id = ?').run(req.params.id)
+    })()
+    res.json({
+      mensaje: 'Materia "' + materia.nombre + '" eliminada',
+      detalle: Number(asignaciones.c) + ' asignación(es) de docente y ' + Number(enAreas.c) + ' vínculo(s) de área removidos',
+    })
+  } catch (error) {
+    console.error('Error DELETE /materias:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
 router.get('/cursos', async (req, res) => {
   try {
     const rows = await prisma._db.prepare(
@@ -942,7 +974,21 @@ router.get('/areas', async (req, res) => {
     // Postgres guarda las columnas en minúscula: los alias camelCase de
     // salida restauran las claves que el frontend espera (mismo patrón de
     // normalizarFila en el resto del sistema). Funciona igual en SQLite.
-    const areas = await prisma._db.prepare('SELECT id, nombre, creadoen AS "creadoEn" FROM areas ORDER BY nombre ASC, creadoen ASC').all()
+    // Con ?curso=XXXX: solo las áreas asignadas a ese curso.
+    let areas, areaIds
+    if (req.query.curso) {
+      const asignadas = await prisma._db.prepare(
+        'SELECT areaid FROM area_cursos WHERE curso = ?'
+      ).all(String(req.query.curso))
+      areaIds = asignadas.map(r => r.areaid)
+      areas = areaIds.length
+        ? await prisma._db.prepare(
+            `SELECT id, nombre, creadoen AS "creadoEn" FROM areas WHERE id IN (${areaIds.map(() => '?').join(',')}) ORDER BY nombre ASC, creadoen ASC`
+          ).all(...areaIds)
+        : []
+    } else {
+      areas = await prisma._db.prepare('SELECT id, nombre, creadoen AS "creadoEn" FROM areas ORDER BY nombre ASC, creadoen ASC').all()
+    }
     const materias = await prisma._db.prepare(`
       SELECT am.areaid AS "areaId", am.materiaid AS "materiaId", am.porcentaje, m.nombre AS "materiaNombre"
       FROM area_materias am JOIN materias m ON m.id = am.materiaid
@@ -962,17 +1008,16 @@ router.get('/areas', async (req, res) => {
 
 function validarMateriasArea(materias) {
   if (!Array.isArray(materias) || materias.length === 0) return 'El área debe tener al menos una materia'
-  let suma = 0
   const vistos = new Set()
   for (const m of materias) {
     if (!m || !m.materiaId) return 'cada materia debe tener materiaId'
-    const pct = parseFloat(m.porcentaje)
-    if (isNaN(pct) || pct <= 0) return 'cada materia debe tener un porcentaje mayor a 0'
-    suma += pct
+    const peso = parseFloat(m.porcentaje)
+    if (isNaN(peso) || peso < 1 || !Number.isInteger(peso)) {
+      return 'cada materia debe tener horas semanales (I.H.S.) enteras, mínimo 1'
+    }
     if (vistos.has(m.materiaId)) return 'no puede haber dos materias repetidas en el área'
     vistos.add(m.materiaId)
   }
-  if (suma > 100.001) return 'el porcentaje acumulado no puede pasar de 100% (suma ' + Math.round(suma) + '%)'
   return null
 }
 

@@ -1244,7 +1244,12 @@ router.get('/mis-areas', async (req, res) => {
         })
       }
 
-      // Promedio renormalizado: solo las materias con nota, ÷ Σpct de las que tienen
+      // Promedio ponderado por I.H.S.: Σ(nota × horas) / Σ(horas).
+      // El campo "porcentaje" en la BD ahora son horas semanales (I.H.S.),
+      // y el % de cada materia se deriva automáticamente:
+      //   % = horas_materia / total_horas × 100
+      // La fórmula es la misma: Σ(nota×peso)/Σ(pesos) — solo cambia
+      // la interpretación del campo (horas, no % pre-calculado).
       const promedio = sumaPorcentajes > 0 ? parseFloat((sumaPonderada / sumaPorcentajes).toFixed(2)) : null
       const todasConNota = materiasData.every(md => md.definitiva !== null)
       resultado.push({

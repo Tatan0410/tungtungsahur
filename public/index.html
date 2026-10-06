@@ -1004,8 +1004,15 @@ body::before {
       <div style="font-size:11px;color:var(--ink-400);margin-top:8px;">Después de crearla, agrégale las materias con sus porcentajes (el acumulado no puede pasar de 100%).</div>
     </div>
 
-    <!-- Lista de áreas -->
-    <div id="admin-areas-lista" style="margin-bottom:20px;"></div>
+    <!-- Filtro por curso -->
+    <div style="margin-bottom:14px;">
+      <select class="sel" id="areas-filtro-curso" onchange="cargarAreasLista()" style="width:auto;min-width:160px;font-size:13px;padding:8px 12px;">
+        <option value="">Todos los cursos</option>
+      </select>
+    </div>
+
+    <!-- Lista de áreas (grid responsivo) -->
+    <div id="admin-areas-lista" style="margin-bottom:20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;align-items:start;"></div>
   </div>
 
   <div id="admin-asignaciones-section" style="display:none;">
@@ -2685,14 +2692,33 @@ async function cargarAdminAreas() {
   document.getElementById('admin-estudiantes-section').style.display = 'none'
   mostrarSeccion('admin-areas-section')
   actualizarNavActivo('nav-areas')
+  await poblarFiltroAreasCurso()
   await cargarAreasLista()
+}
+
+// Puebla el selector de cursos del panel de areas
+async function poblarFiltroAreasCurso() {
+  const sel = document.getElementById('areas-filtro-curso')
+  if (!sel) return
+  const actual = sel.value
+  try {
+    if (!_cursosParaAreas) {
+      const res = await fetch(API + '/api/admin/cursos', { headers: { 'Authorization': 'Bearer ' + currentToken } })
+      if (!res.ok) return
+      _cursosParaAreas = await res.json()
+    }
+    sel.innerHTML = '<option value="">Todos los cursos</option>' +
+      _cursosParaAreas.map(c => '<option value="' + esc(c) + '"' + (c === actual ? ' selected' : '') + '>' + esc(c) + '</option>').join('')
+  } catch (e) { /* sin cursos */ }
 }
 
 async function cargarAreasLista() {
   const cont = document.getElementById('admin-areas-lista')
   cont.innerHTML = '<div class="skeleton" style="width:60%;height:16px;margin:10px 0;"></div><div class="skeleton" style="width:40%;height:16px;margin:10px 0;"></div>'
   try {
-    const res = await fetch(API + '/api/admin/areas', { headers: { 'Authorization': 'Bearer ' + currentToken } })
+    const filtroCurso = document.getElementById('areas-filtro-curso') ? document.getElementById('areas-filtro-curso').value : ''
+    const url = filtroCurso ? API + '/api/admin/areas?curso=' + encodeURIComponent(filtroCurso) : API + '/api/admin/areas'
+    const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + currentToken } })
     if (!res.ok) { cont.innerHTML = '<div style="color:var(--red-700);font-size:13px;padding:12px;">Error al cargar las áreas <button class="btn-sm" onclick="cargarAreasLista()" style="margin-left:8px;">Reintentar</button></div>'; return }
     _areasData = await res.json()
     renderAreasLista()
@@ -2704,9 +2730,11 @@ async function cargarAreasLista() {
 function renderAreasLista() {
   const cont = document.getElementById('admin-areas-lista')
   if (!_areasData.length) {
-    cont.innerHTML = '<div style="color:var(--ink-400);font-size:13px;padding:20px;text-align:center;background:var(--paper);border:1px dashed var(--line);border-radius:var(--r-lg);">A\u00fan no hay \u00e1reas. Crea la primera arriba.</div>'
+    cont.style.display = 'block'
+    cont.innerHTML = '<div style="color:var(--ink-400);font-size:13px;padding:20px;text-align:center;background:var(--paper);border:1px dashed var(--line);border-radius:var(--r-lg);">No hay \u00e1reas' + (document.getElementById('areas-filtro-curso') && document.getElementById('areas-filtro-curso').value ? ' asignadas a ese curso' : '') + '.</div>'
     return
   }
+  cont.style.display = 'grid'
   cont.innerHTML = _areasData.map((a, idx) => {
     const suma = a.materias.reduce((n, m) => n + Number(m.porcentaje), 0)
     const materiasHtml = a.materias.length
@@ -2715,7 +2743,7 @@ function renderAreasLista() {
     const cursosHtml = a.cursos.length
       ? a.cursos.map(c => '<span style="display:inline-flex;align-items:center;gap:5px;background:var(--cream-100);color:var(--ink-900);border-radius:12px;padding:3px 10px;font-size:11px;font-weight:600;">' + esc(c) + '<button onclick="desasignarAreaCurso(\'' + a.id + '\',\'' + escArg(c) + '\')" title="Desasignar del curso" style="border:none;background:none;cursor:pointer;color:var(--ink-400);font-size:13px;padding:0;line-height:1;">\u00d7</button></span>').join(' ')
       : '<span style="color:var(--ink-400);font-size:12px;">(sin cursos asignados)</span>'
-    return '<div class="nota-card" style="margin-bottom:12px;">' +
+    return '<div class="nota-card" style="margin:0;">' +
       '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px;flex-wrap:wrap;gap:8px;">' +
         '<div><div style="font-size:14px;font-weight:700;color:var(--ink-900);">' + esc(a.nombre) + '</div>' +
         '<div style="font-size:11px;color:var(--ink-400);">' + a.materias.length + ' materia(s) \u00b7 suma ' + Math.round(suma) + '%</div></div>' +
@@ -2798,7 +2826,8 @@ async function alternarEditorMaterias(areaId) {
 function construirEditorMaterias(areaId, materiasActuales) {
   window['_editorArea'] = window['_editorArea'] || {}
   window['_editorArea'][areaId] = materiasActuales.map(m => ({ materiaId: m.materiaId, porcentaje: m.porcentaje }))
-  let html = '<div style="font-size:12px;font-weight:600;color:var(--ink-900);margin-bottom:8px;">Materias del \u00e1rea (el acumulado no puede pasar de 100%)</div>'
+  let html = '<div style="font-size:12px;font-weight:600;color:var(--ink-900);margin-bottom:4px;">Materias del área (I.H.S. = horas semanales)</div>'
+  html += '<div id="area-total-' + areaId + '" style="font-size:11px;color:var(--ink-400);margin-bottom:8px;"></div>'
   html += '<div id="area-filas-' + areaId + '">' + pintarFilasMateria(areaId) + '</div>'
   html += '<div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap;">' +
     '<button class="btn-sm" onclick="agregarFilaMateria(\'' + areaId + '\')" style="font-size:11px;"><span class="icon" data-icon="mas"></span> Agregar materia</button>' +
@@ -2812,17 +2841,49 @@ function construirEditorMaterias(areaId, materiasActuales) {
 
 function pintarFilasMateria(areaId) {
   const filas = window['_editorArea'][areaId] || []
+  const totalPeso = filas.reduce((n, f) => n + (Number(f.porcentaje) || 0), 0)
   return filas.map((f, i) => {
-    return '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">' +
+    const peso = Number(f.porcentaje) || 0
+    const pctCalculado = totalPeso > 0 ? Math.round(peso / totalPeso * 100) : 0
+    return '<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">' +
       '<select onchange="cambiarFilaMateria(\'' + areaId + '\', ' + i + ', this.value)" style="flex:1;min-width:0;font-size:12px;">' +
         '<option value="">Elegir materia\u2026</option>' +
         _materiasLista.map(x => '<option value="' + esc(x.id) + '"' + (x.id === f.materiaId ? ' selected' : '') + '>' + esc(x.nombre) + '</option>').join('') +
       '</select>' +
-      '<input type="number" min="1" max="100" value="' + f.porcentaje + '" onchange="cambiarFilaPorcentaje(\'' + areaId + '\', ' + i + ', this.value)" style="width:64px;">' +
-      '<span style="font-size:11px;color:var(--ink-400);">%</span>' +
-      '<button class="btn-sm danger" onclick="quitarFilaMateria(\'' + areaId + '\', ' + i + ')" style="font-size:11px;">Quitar</button>' +
+      '<input type="number" min="1" step="1" value="' + peso + '" onchange="cambiarFilaPorcentaje(\'' + areaId + '\', ' + i + ', this.value)" style="width:52px;" title="Horas semanales (I.H.S.)">' +
+      '<span style="font-size:10px;color:var(--ink-400);white-space:nowrap;">h</span>' +
+      '<span style="font-size:10px;color:var(--ink-400);white-space:nowrap;width:52px;text-align:right;">\u2248 ' + pctCalculado + '%</span>' +
+      '<button class="btn-sm danger" onclick="quitarFilaMateria(\'' + areaId + '\', ' + i + ')" style="font-size:10px;padding:4px 8px;" title="Quitar de esta \u00e1rea (la materia sigue existiendo)">Quitar</button>' +
+      (f.materiaId ? '<button class="btn-sm danger" onclick="eliminarMateriaDesdeArea(\'' + areaId + '\', ' + i + ')" style="font-size:11px;padding:4px 6px;" title="Eliminar la materia por completo (irreversible)"><span class="icon" data-icon="papelera"></span></button>' : '') +
     '</div>'
   }).join('')
+}
+
+// Elimina la materia por completo DESDE el editor de un área (con confirmación
+// más explícita porque es irreversible)
+function eliminarMateriaDesdeArea(areaId, idx) {
+  const filas = window['_editorArea'][areaId] || []
+  const fila = filas[idx]
+  if (!fila || !fila.materiaId) return
+  const mat = _materiasLista.find(x => x.id === fila.materiaId)
+  const nombre = mat ? mat.nombre : fila.materiaId
+  confirmarAccion('\u00bfELIMINAR la materia "' + nombre + '" por completo?\n\nEsto es IRREVERSIBLE: la materia desaparecer\u00e1 de todas sus asignaciones y \u00e1reas. Si s\u00f3lo quieres sacarla de esta \u00e1rea, usa "Quitar del \u00e1rea".', async () => {
+    try {
+      const res = await fetch(API + '/api/admin/materias/' + fila.materiaId, {
+        method: 'DELETE',
+        headers: { 'Authorization': 'Bearer ' + currentToken }
+      })
+      const data = await res.json()
+      if (!res.ok) { mostrarToast('error', data.error || 'No se pudo eliminar'); return }
+      mostrarToast('ok', data.mensaje || 'Materia eliminada')
+      filas.splice(idx, 1)
+      _materiasLista = []
+      repintarFilasMateria(areaId)
+      await cargarAreasLista()
+    } catch (e) {
+      mostrarToast('error', 'Error de conexi\u00f3n')
+    }
+  })
 }
 
 function repintarFilasMateria(areaId) {
@@ -2834,11 +2895,11 @@ function repintarFilasMateria(areaId) {
 
 function actualizarSumaArea(areaId) {
   const filas = window['_editorArea'][areaId] || []
-  const suma = filas.reduce((n, f) => n + (Number(f.porcentaje) || 0), 0)
-  const el = document.getElementById('area-suma-' + areaId)
-  if (!el) return
-  el.textContent = 'Suma: ' + Math.round(suma) + '%'
-  el.style.color = suma > 100 ? 'var(--red-700)' : (suma === 100 ? 'var(--green-700)' : 'var(--ink-600)')
+  const total = filas.reduce((n, f) => n + (Number(f.porcentaje) || 0), 0)
+  const elTotal = document.getElementById('area-total-' + areaId)
+  if (elTotal) {
+    elTotal.textContent = total > 0 ? 'Total: ' + total + ' horas semanales \u00b7 el % de cada materia se calcula autom\u00e1ticamente' : ''
+  }
 }
 
 function cambiarFilaMateria(areaId, i, materiaId) {
@@ -2851,8 +2912,8 @@ function cambiarFilaMateria(areaId, i, materiaId) {
 function cambiarFilaPorcentaje(areaId, i, valor) {
   const filas = window['_editorArea'][areaId] || []
   if (!filas[i]) return
-  filas[i].porcentaje = parseFloat(valor) || 0
-  actualizarSumaArea(areaId)
+  filas[i].porcentaje = parseInt(valor) || 1
+  repintarFilasMateria(areaId)
 }
 
 function agregarFilaMateria(areaId) {
@@ -2872,8 +2933,6 @@ async function guardarMateriasArea(areaId) {
   const sinElegir = filas.filter(f => !f.materiaId)
   if (!filas.length) { mostrarAreaError(areaId, 'El \u00e1rea debe tener al menos una materia'); return }
   if (sinElegir.length) { mostrarAreaError(areaId, 'Hay materias sin elegir'); return }
-  const suma = filas.reduce((n, f) => n + (Number(f.porcentaje) || 0), 0)
-  if (suma > 100) { mostrarAreaError(areaId, 'El acumulado no puede pasar de 100% (suma ' + Math.round(suma) + '%)'); return }
   const errEl = document.getElementById('area-error-' + areaId)
   if (errEl) errEl.style.display = 'none'
   try {
@@ -3230,34 +3289,59 @@ async function cargarAdminMaterias() {
     tb.innerHTML = materias.map(m => {
       return '<tr>' +
         '<td style="padding:10px 12px;border-bottom:1px solid var(--line);font-weight:600;">' + esc(m.nombre) + '</td>' +
+        '<td style="padding:10px 12px;border-bottom:1px solid var(--line);text-align:right;"><button class="btn-sm danger" onclick="eliminarMateria(\'' + m.id + '\',\'' + escArg(m.nombre) + '\')" style="font-size:11px;"><span class="icon" data-icon="papelera"></span> Eliminar</button></td>' +
         '</tr>'
     }).join('')
-    if (!materias.length) tb.innerHTML = '<tr><td colspan="1" style="padding:24px;text-align:center;color:var(--ink-400);">No hay materias. Crea la primera arriba.</td></tr>'
+    poblarIconos(tb)
+    if (!materias.length) tb.innerHTML = '<tr><td colspan="2" style="padding:24px;text-align:center;color:var(--ink-400);">No hay materias. Crea la primera arriba.</td></tr>'
   } catch (e) {
     tb.innerHTML = errorReintentar(1, 'cargarAdminMaterias', 'Error al cargar')
   }
 }
 
 async function adminCrearMateria() {
-  const nombre = document.getElementById('admin-input-materia-nombre').value.trim()
-  if (!nombre) { mostrarToast('error', 'Ingresa el nombre de la materia'); return }
+  const nombre = document.getElementById('admin-in-materia').value.trim()
+  if (!nombre) { mostrarToast('error', 'Escribe el nombre de la materia'); return }
   try {
     const res = await fetch(API + '/api/admin/materias', {
       method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + currentToken, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + currentToken },
       body: JSON.stringify({ nombre })
     })
     const data = await res.json()
-    if (res.ok) {
-      mostrarToast('ok', 'Materia creada')
-      document.getElementById('admin-input-materia-nombre').value = ''
-      cargarAdminMaterias()
-    } else {
-      mostrarToast('error', data.error || 'Error al crear la materia')
-    }
+    if (!res.ok) { mostrarToast('error', data.error || 'No se pudo crear la materia'); return }
+    document.getElementById('admin-in-materia').value = ''
+    mostrarToast('ok', 'Materia creada: ' + (data.nombre || nombre))
+    await cargarAdminMaterias()
   } catch (e) {
-    mostrarToast('error', 'Error de conexión')
+    mostrarToast('error', 'Error de conexi\u00f3n')
   }
+}
+
+// ─── Eliminar materia por completo (panel admin) ───
+// Diferente de "quitar del área" (que solo desvincula): esto borra la
+// materia de la BD junto con sus asignaciones y vínculos de área.
+// Si tiene calificaciones, el backend la bloquea (409).
+async function eliminarMateria(materiaId, nombre) {
+  confirmarAccion('\u00bfEliminar la materia "' + nombre + '" por completo?\n\nSe quitar\u00e1 de sus asignaciones y \u00e1reas. Si tiene calificaciones registradas, no se podr\u00e1 eliminar.', async () => {
+    try {
+      const res = await fetch(API + '/api/admin/materias/' + materiaId, {
+        method: 'DELETE',
+        headers: { 'Authorization': 'Bearer ' + currentToken }
+      })
+      const data = await res.json()
+      if (!res.ok) { mostrarToast('error', data.error || 'No se pudo eliminar'); return }
+      mostrarToast('ok', data.mensaje || 'Materia eliminada')
+      _materiasLista = [] // forzar recarga en el editor de áreas
+      await cargarAdminMaterias()
+      // si estamos en el panel de áreas, recargar la lista
+      if (document.getElementById('admin-areas-section').style.display === 'block') {
+        await cargarAreasLista()
+      }
+    } catch (e) {
+      mostrarToast('error', 'Error de conexi\u00f3n')
+    }
+  })
 }
 
 async function adminEliminarAsignacion(id) {

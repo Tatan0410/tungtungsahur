@@ -66,14 +66,28 @@ test('listar áreas trae materias, porcentajes y cursos', async () => {
   assert.ok(a1.cursos.includes(curso))
 })
 
-test('validaciones: acumulado >100 → 400, materia repetida → 400; crear sin materias → 201', async () => {
+test('validaciones: I.H.S. decimal o cero -> 400, materia repetida -> 400; crear sin materias -> 201', async () => {
   const materias = (await api.get('/api/admin/materias', { token: tokenAdmin })).data
-  const excede = await api.post('/api/admin/areas', {
+  // I.H.S. con decimal -> 400 (deben ser enteros, no hay limite de 100)
+  const decimal = await api.post('/api/admin/areas', {
     token: tokenAdmin,
-    body: { nombre: 'X', materias: [ { materiaId: materias[0].id, porcentaje: 60 }, { materiaId: materias[1].id, porcentaje: 60 } ] }
+    body: { nombre: 'X', materias: [ { materiaId: materias[0].id, porcentaje: 2.5 }, { materiaId: materias[1].id, porcentaje: 3 } ] }
   })
-  assert.equal(excede.status, 400)
-  assert.match(excede.data.error, /100/)
+  assert.equal(decimal.status, 400)
+  assert.match(decimal.data.error, /enteras/)
+  // I.H.S. con cero -> 400 (minimo 1)
+  const cero = await api.post('/api/admin/areas', {
+    token: tokenAdmin,
+    body: { nombre: 'X', materias: [ { materiaId: materias[0].id, porcentaje: 0 }, { materiaId: materias[1].id, porcentaje: 3 } ] }
+  })
+  assert.equal(cero.status, 400)
+  // I.H.S. acumulados > 100 -> 201 (es horas, no %: no hay limite)
+  const sinLimite = await api.post('/api/admin/areas', {
+    token: tokenAdmin,
+    body: { nombre: 'Area Sin Limite IHS', materias: [ { materiaId: materias[0].id, porcentaje: 50 }, { materiaId: materias[1].id, porcentaje: 50 } ] }
+  })
+  assert.equal(sinLimite.status, 201, 'I.H.S. acumulados > 100 son validos (es horas, no %)')
+  await api.delete('/api/admin/areas/' + sinLimite.data.id, { token: tokenAdmin })
 
   const repetida = await api.post('/api/admin/areas', {
     token: tokenAdmin,
