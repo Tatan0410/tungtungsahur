@@ -3300,7 +3300,7 @@ async function cargarAdminMaterias() {
 }
 
 async function adminCrearMateria() {
-  const nombre = document.getElementById('admin-in-materia').value.trim()
+  const nombre = document.getElementById('admin-input-materia-nombre').value.trim()
   if (!nombre) { mostrarToast('error', 'Escribe el nombre de la materia'); return }
   try {
     const res = await fetch(API + '/api/admin/materias', {
@@ -3310,7 +3310,7 @@ async function adminCrearMateria() {
     })
     const data = await res.json()
     if (!res.ok) { mostrarToast('error', data.error || 'No se pudo crear la materia'); return }
-    document.getElementById('admin-in-materia').value = ''
+    document.getElementById('admin-input-materia-nombre').value = ''
     mostrarToast('ok', 'Materia creada: ' + (data.nombre || nombre))
     await cargarAdminMaterias()
   } catch (e) {
