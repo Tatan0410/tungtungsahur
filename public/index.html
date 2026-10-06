@@ -2574,9 +2574,10 @@ function renderAreasEstudiante(areas) {
       : a.estado === 'APROBADO'
       ? '<span style="background:var(--green-100);color:var(--green-700);padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">Aprobado</span>'
       : '<span style="background:var(--cream-100);color:var(--ink-600);padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">Sin nota</span>'
+    const totalPeso = (a.materias || []).reduce((acc, m) => acc + m.porcentaje, 0)
     const materias = (a.materias || []).map(m => {
       const color = m.definitiva !== null ? getColorDef(m.definitiva) : 'var(--ink-400)'
-      return '<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:11.5px;"><span style="color:var(--ink-600);">' + esc(m.materiaNombre) + ' (' + m.porcentaje + '%)</span><span style="font-weight:600;color:' + color + '">' + (m.definitiva !== null ? m.definitiva.toFixed(2) : '--') + '</span></div>'
+      return '<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:11.5px;"><span style="color:var(--ink-600);">' + esc(m.materiaNombre) + ' (' + (totalPeso > 0 ? Math.round(m.porcentaje / totalPeso * 100) : 0) + '%)</span><span style="font-weight:600;color:' + color + '">' + (m.definitiva !== null ? m.definitiva.toFixed(2) : '--') + '</span></div>'
     }).join('')
     return '<div class="nota-card" style="animation:filaEntra .25s var(--ease-out) both;animation-delay:' + (i * 25) + 'ms;">' +
       '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px;gap:8px;">' +
