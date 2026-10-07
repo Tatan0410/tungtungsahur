@@ -1,5 +1,6 @@
 const { test, before, after } = require('node:test')
 const assert = require('node:assert/strict')
+const crypto = require('node:crypto')
 const { arrancarServidor } = require('./helpers/servidor')
 const { crearApi, login, ADMIN, DOCENTE } = require('./helpers/api')
 
@@ -15,10 +16,17 @@ before(async () => {
 
   // Período abierto de la SEDE de un estudiante real + una materia cualquiera
   // (después del podado solo hay estudiantes en algunas sedes)
-  const est = db.prepare('SELECT id, sede FROM estudiantes LIMIT 1').get()
+  const est = db.prepare('SELECT id, sede, curso FROM estudiantes LIMIT 1').get()
   const p = db.prepare('SELECT sede, periodo, anio FROM periodos_config WHERE abierto = 1 AND sede = ? ORDER BY periodo LIMIT 1').get(est.sede)
   const mat = db.prepare('SELECT id FROM materias LIMIT 1').get()
   objetivo = { sede: p.sede, periodo: p.periodo, anio: p.anio, estudianteId: est.id, materiaId: mat.id }
+
+  // Desde el fix de IDOR, PUT /guardar valida que el docente tenga la
+  // materia asignada en el curso del estudiante — se garantiza la asignación
+  const usu = db.prepare('SELECT id FROM usuarios WHERE documento = ?').get(DOCENTE.documento)
+  const doc = db.prepare('SELECT id FROM docentes WHERE usuarioId = ?').get(usu.id)
+  db.prepare('INSERT OR IGNORE INTO docente_materias (id, docenteId, materiaId, curso) VALUES (?, ?, ?, ?)')
+    .run(crypto.randomUUID(), doc.id, mat.id, est.curso)
 })
 after(async () => { db.close(); await srv.cerrar() })
 

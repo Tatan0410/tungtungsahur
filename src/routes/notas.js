@@ -272,22 +272,39 @@ router.post('/items', async (req, res) => {
       return res.status(400).json({ error: `Tipo inválido. Debe ser: ${tiposValidos.join(', ')}` })
     }
 
-if (tipo === 'EVALUACION') {
-       const existente = await prisma.notaItem.findFirst({
-         where: { calificacionId, tipo: 'EVALUACION' }
-       })
-       if (existente) {
-         return res.status(400).json({ error: 'Solo se permite una nota de evaluación. Edita la existente o elimínala primero.' })
-       }
-     }
-
     // SEGURIDAD: el docente solo agrega notas a calificaciones de sus materias/cursos
+    // (va antes de las validaciones de negocio: no filtrar información a quien
+    // no debería operar este recurso)
     if (req.usuario.rol === 'DOCENTE') {
       const cal = await prisma._db.prepare(
         'SELECT c.materiaId, e.curso FROM calificaciones c JOIN estudiantes e ON e.id = c.estudianteId WHERE c.id = ?'
       ).get(calificacionId)
       if (!cal || !(await verificarDocenteAsignado(prisma._db, req.usuario.docenteId, cal.materiaId, cal.curso))) {
         return res.status(403).json({ error: 'No tienes asignada esa materia en ese curso' })
+      }
+    }
+
+    if (tipo === 'EVALUACION') {
+       const existente = await prisma.notaItem.findFirst({
+         where: { calificacionId, tipo: 'EVALUACION' }
+       })
+       if (existente) {
+         return res.status(400).json({ error: 'Solo se permite una nota de evaluación. Edita la existente o elimínala primero.' })
+       }
+    } else {
+      // La planilla es un modelo de columnas: un item sin título jamás tiene
+      // celda (GET /columnas exige descripcion NOT NULL) pero SÍ cuenta para
+      // la definitiva. Los tipos con columnas propias exigen título.
+      if (!descripcion || !String(descripcion).trim()) {
+        return res.status(400).json({ error: 'El título de la nota es requerido en esta columna' })
+      }
+      // Duplicado (calificacionId, tipo, descripcion): el índice UNIQUE lo
+      // reventaba con un 500 crudo; se avisa claro para editar la existente.
+      const dup = await prisma.notaItem.findFirst({
+        where: { calificacionId, tipo, descripcion: String(descripcion).trim() }
+      })
+      if (dup) {
+        return res.status(409).json({ error: 'Ya existe una nota con ese título en esta columna — edítala o elimínala primero' })
       }
     }
 
@@ -349,6 +366,21 @@ router.put('/items/:id', async (req, res) => {
       ).get(itemExistente.calificacionId)
       if (!cal || !(await verificarDocenteAsignado(prisma._db, req.usuario.docenteId, cal.materiaId, cal.curso))) {
         return res.status(403).json({ error: 'No tienes asignada esa materia en ese curso' })
+      }
+    }
+
+    // Cambiar el título: los tipos con columnas propias no admiten vacío
+    // (un item sin título es invisible en la planilla) ni duplicados
+    // (el índice UNIQUE reventaba con un 500 crudo).
+    if (descripcion !== undefined && itemExistente.tipo !== 'EVALUACION') {
+      if (!descripcion || !String(descripcion).trim()) {
+        return res.status(400).json({ error: 'El título de la nota es requerido en esta columna' })
+      }
+      const dup = await prisma.notaItem.findFirst({
+        where: { calificacionId: itemExistente.calificacionId, tipo: itemExistente.tipo, descripcion: String(descripcion).trim() }
+      })
+      if (dup && dup.id !== id) {
+        return res.status(409).json({ error: 'Ya existe una nota con ese título en esta columna — edítala o elimínala primero' })
       }
     }
 
@@ -728,8 +760,19 @@ router.post('/columna', async (req, res) => {
     const p = parseInt(periodo) || 1
     const a = parseInt(anio) || new Date().getFullYear()
 
+    // ¿Ya existe una columna con ese título? Antes el ON CONFLICT DO NOTHING
+    // tragaba el duplicado en silencio y respondía 200 "agregada" aunque no
+    // creó nada: el docente veía el toast de éxito pero la columna jamás
+    // aparecía en la planilla (el bug del botón "+ Agregar nota").
+    const yaExiste = await db.prepare(
+      'SELECT id FROM columnas WHERE curso = ? AND materiaId = ? AND periodo = ? AND anio = ? AND tipo = ? AND titulo = ?'
+    ).get(curso, materiaId, p, a, tipo, titulo.trim())
+    if (yaExiste) {
+      return res.status(409).json({ error: `Ya existe una columna con el título "${titulo.trim()}" en este período` })
+    }
+
     // ON CONFLICT DO NOTHING = INSERT OR IGNORE en ambos motores (requiere el
-    // índice único columnas_unicas)
+    // índice único columnas_unicas) — queda como red de seguridad ante carreras
     await db.prepare('INSERT INTO columnas (id, curso, materiaId, periodo, anio, tipo, titulo, creadoEn) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING').run(require('crypto').randomUUID(), curso, materiaId, p, a, tipo, titulo.trim(), new Date().toISOString())
 
     res.json({ mensaje: `Columna "${titulo}" agregada` })

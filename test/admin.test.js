@@ -111,7 +111,7 @@ test('crear profesor valida contraseña corta (400) y documento duplicado (409)'
 })
 
 test('el profesor recién creado puede iniciar sesión', async () => {
-  const r = await api.post('/api/auth/login', { body: { documento: NUEVO.documento, password: NUEVO.password } })
+  const r = await api.post('/api/auth/login', { body: { documento: NUEVO.documento, password: NUEVO.password, aceptaTerminos: true } })
   assert.equal(r.status, 200)
   assert.equal(r.data.usuario.rol, 'DOCENTE')
   assert.ok(r.data.usuario.docenteId)
@@ -128,9 +128,9 @@ test('cambiar contraseña del profesor: corta 400, válida 200 y sirve para entr
   })
   assert.equal(ok.status, 200)
 
-  const vieja = await api.post('/api/auth/login', { body: { documento: NUEVO.documento, password: NUEVO.password } })
+  const vieja = await api.post('/api/auth/login', { body: { documento: NUEVO.documento, password: NUEVO.password, aceptaTerminos: true } })
   assert.equal(vieja.status, 401)
-  const nueva = await api.post('/api/auth/login', { body: { documento: NUEVO.documento, password: 'OtraClave456' } })
+  const nueva = await api.post('/api/auth/login', { body: { documento: NUEVO.documento, password: 'OtraClave456', aceptaTerminos: true } })
   assert.equal(nueva.status, 200)
 })
 

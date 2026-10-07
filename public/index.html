@@ -2407,7 +2407,7 @@ function marcarCambio(studentIdx, tipo, titulo, valor, input) {
 
 async function agregarColumna(tipo) {
   pedirTexto('Título de la nueva nota en ' + TIPOS_LABEL[tipo] + ':', '', async (titulo) => {
-  if (!titulo || !titulo.trim()) return
+  if (!titulo || !titulo.trim()) { mostrarToast('error', 'El título de la columna no puede estar vacío'); return }
 
   try {
     const res = await fetch(API + '/api/notas/columna', {

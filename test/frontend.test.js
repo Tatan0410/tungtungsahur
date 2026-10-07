@@ -193,8 +193,13 @@ test('la barra de carga ya no usa animación de timer fijo', () => {
   assert.ok(HTML.includes("r.status >= 500"), 'el interceptor debe contar 5xx como fallo')
 })
 
-test('interceptor distingue fallo de red de error 5xx del servidor', () => {
-  // Fallo de red (el fetch rechazó, nunca hubo respuesta)
+test('agregarColumna avisa si el título viene vacío (antes: silencio total)', () => {
+  const fn = extraerFuncion('agregarColumna')
+  assert.match(fn, /título de la columna no puede estar vacío/, 'debe mostrar el error antes de cualquier fetch')
+  assert.ok(!fn.includes('prompt('), 'sin prompt nativo')
+})
+
+test('interceptor distingue fallo de red de error 5xx del servidor', () => {  // Fallo de red (el fetch rechazó, nunca hubo respuesta)
   assert.ok(HTML.includes("'Sin conexión con el servidor. Intenta de nuevo.'"), 'falta el toast de red')
   // 5xx (el servidor respondió con error interno) — mensaje distinto
   assert.ok(HTML.includes("'Error del servidor al guardar. Intenta de nuevo.'"), 'falta el toast de 5xx')
