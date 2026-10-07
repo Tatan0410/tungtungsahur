@@ -309,9 +309,8 @@ body::before {
 .carga-progreso {
   height:100%; width:1%; border-radius:6px;
   background:linear-gradient(90deg, var(--gold-600), var(--burgundy-600));
-  animation: cargaLlena 3.5s var(--ease-out) forwards;
+  transition: width .25s var(--ease);
 }
-@keyframes cargaLlena { from { width:1%; } to { width:100%; } }
 /* Mensajes rotativos */
 .carga-mensaje { font-size:13.5px; color:var(--ink-600); transition: opacity .3s var(--ease); min-height:20px; }
 .carga-mensaje.saliendo { opacity:0; }
@@ -1783,15 +1782,15 @@ function showStudentPortal(user) {
 
 // ─── Carga de datos del estudiante (período activo + notas) ───
 async function cargarDatosEstudiante() {
-  // Período activo: se determina ANTES de cargar notas (el docente pudo
-  // guardar en el período actual mientras el estudiante consultaba el 1)
-  const activo = await determinarPeriodoActivo()
+  // Las observaciones propias no dependen del período: arrancan en paralelo
+  // con la detección del período activo (que notas y corte sí necesitan)
+  const [activo] = await Promise.all([determinarPeriodoActivo(), cargarObservacionesEstudiante()])
   if (activo && currentPeriodo !== activo) {
     currentPeriodo = activo
     document.getElementById('stu-period-pill').textContent = 'Período ' + currentPeriodo + ' · ' + new Date().getFullYear()
     poblarSelectorPeriodoEstudiante()
   }
-  await Promise.all([cargarNotasEstudiante(), cargarEstadoCorte(), cargarObservacionesEstudiante()])
+  await Promise.all([cargarNotasEstudiante(), cargarEstadoCorte()])
 }
 
 // Período activo con fallback claro (nunca indefinido ni el 1 por silencio):
@@ -2215,7 +2214,7 @@ function renderGrid() {
         const evalItem = cat.items && cat.items.length > 0 ? cat.items[0] : null
         const val = (evalItem && evalItem.valor !== null && evalItem.valor !== undefined) ? evalItem.valor : ''
         html += '<td class="cell-eval" data-cal-id="' + (calId || '') + '">'
-          html += '<input type="number" step="0.1" min="0" max="5" class="excel-input cell-input" value="' + val + '" placeholder="" onchange="marcarCambio(' + i + ',\'' + tipo + '\',\'\',this.value,this)">'
+          html += '<input type="text" inputmode="decimal" maxlength="4" class="excel-input cell-input" value="' + val + '" placeholder="" onchange="marcarCambio(' + i + ',\'' + tipo + '\',\'\',this.value,this)">'
         html += '</td>'
       } else {
         for (const col of colArray) {
@@ -2224,7 +2223,7 @@ function renderGrid() {
           const val = (raw !== null && raw !== undefined) ? raw : ''
           html += '<td class="cell-' + tipo.toLowerCase() + '" data-cal-id="' + (calId || '') + '" data-titulo="' + (col.titulo || '') + '">'
           if (col.titulo) {
-            html += '<input type="number" step="0.1" min="0" max="5" class="excel-input cell-input" value="' + val + '" placeholder="" onchange="marcarCambio(' + i + ',\'' + tipo + '\',\'' + escArg(col.titulo) + '\',this.value,this)">'
+            html += '<input type="text" inputmode="decimal" maxlength="4" class="excel-input cell-input" value="' + val + '" placeholder="" onchange="marcarCambio(' + i + ',\'' + tipo + '\',\'' + escArg(col.titulo) + '\',this.value,this)">'
           } else {
             html += '<span style="color:var(--ink-400);font-size:11px;">Sin notas</span>'
           }
@@ -2344,24 +2343,61 @@ async function eliminarColumna(tipo, titulo) {
   })
 }
 
+// Valor de la nota YA GUARDADA en la BD para una celda (no los pendientes).
+// Evalúa lo mismo que renderiza el grid, para decidir si vaciarla borra algo real.
+function valorGuardadoCelda(s, tipo, titulo) {
+  const key = tipo === 'ACTIVIDAD' ? 'actividades' : tipo.toLowerCase()
+  const cat = ((s.grupos || {})[key]) || { items: [] }
+  const items = cat.items || []
+  if (tipo === 'EVALUACION') return items.length ? (items[0].valor ?? '') : ''
+  const it = items.find(x => x.descripcion === titulo)
+  return it ? (it.valor ?? '') : ''
+}
+
 function marcarCambio(studentIdx, tipo, titulo, valor, input) {
   const s = studentsData[studentIdx]
   if (!s) return
   const key = s.estudianteId + '_' + tipo + '_' + titulo
-  // Vaciar la celda: marca el item para borrar
-  if (valor === '' || valor === null || valor === undefined) {
-    cambiosGrid[key] = { estudianteId: s.estudianteId, materiaId: selectedMateria, periodo: currentPeriodo, anio: new Date().getFullYear(), tipo, titulo, valor: null, _delete: true }
-    guardarCambiosLocal()
+  const texto = (valor === null || valor === undefined) ? '' : String(valor).trim()
+
+  // ── Celda vaciada ──
+  if (texto === '') {
+    const guardado = valorGuardadoCelda(s, tipo, titulo)
+    const hayNotaGuardada = guardado !== '' && guardado !== null && guardado !== undefined
+    const aplicarBorrado = () => {
+      cambiosGrid[key] = { estudianteId: s.estudianteId, materiaId: selectedMateria, periodo: currentPeriodo, anio: new Date().getFullYear(), tipo, titulo, valor: null, _delete: true }
+      guardarCambiosLocal()
+      if (input) input.value = ''
+    }
+    // SEGURIDAD (bug móvil): vaciar por accidente NUNCA borra una nota ya
+    // guardada sin confirmación explícita. Sin nota guardada es inocuo.
+    if (hayNotaGuardada) {
+      const etiqueta = TIPOS_LABEL[tipo] || tipo
+      const col = titulo ? ' "' + titulo + '"' : ''
+      confirmarAccion('\u00bfBorrar la nota de ' + etiqueta + col + ' de ' + (claveApellidos(s.nombre) || s.nombre) + '? Esta acción no se puede deshacer.', (ok) => {
+        if (!ok) {
+          if (input) input.value = guardado
+          return
+        }
+        aplicarBorrado()
+      })
+    } else {
+      aplicarBorrado()
+    }
     return
   }
-  const v = parseFloat(valor)
-  // Restricción de rango: la nota solo puede ir de 0 a 5. Se revierte la
-  // celda al valor previo y se avisa con un mensaje.
+
+  // ── Con valor: normalizar coma decimal (teclados móviles) y validar ──
+  // Los inputs usan type="text" inputmode="decimal" para que el texto crudo
+  // ("3,5") sea legible; antes, con type="number", el navegador devolvía ''
+  // silenciosamente y un borrado accidental borraba la nota real.
+  const v = parseFloat(texto.replace(',', '.'))
   if (isNaN(v) || v < 0 || v > 5) {
-    mostrarToast('error', 'La nota solo puede ir de 0 a 5')
+    mostrarToast('error', 'La nota solo puede ir de 0 a 5 (decimal con punto: 3.5)')
     if (input) {
-      const previo = (cambiosGrid[key] && cambiosGrid[key].valor !== null && cambiosGrid[key].valor !== undefined) ? cambiosGrid[key].valor : ''
-      input.value = previo
+      const pend = cambiosGrid[key]
+      const previo = (pend && pend.valor !== null && pend.valor !== undefined) ? pend.valor : valorGuardadoCelda(s, tipo, titulo)
+      input.value = (previo === null || previo === undefined) ? '' : previo
     }
     return
   }
@@ -5464,13 +5500,48 @@ const MENSAJES_CARGA = ['Verificando información…', 'Puliendo detalles…', '
 let _mensajeCargaTimer = null
 let _indiceMensajeCarga = 0
 
+// ─── Barra de progreso REALISTA ───
+// Salto rápido a 35% al empezar, avance lento hacia 88% mientras las
+// peticiones reales están en curso, y 100% SOLO cuando todas resolvieron
+// (el interceptor de fetch lo dispara). Nunca "termina" antes que los datos.
+let _cargaProgresoTimer = null
+let _cargaCiclo = 0
+function _avanzarProgresoCarga() {
+  const prog = document.querySelector('.carga-progreso')
+  if (!prog) return
+  const actual = parseFloat(prog.style.width) || 1
+  const siguiente = actual + (88 - actual) * 0.1
+  prog.style.width = siguiente + '%'
+}
+function _iniciarProgresoCarga() {
+  clearInterval(_cargaProgresoTimer)
+  _cargaCiclo++
+  const prog = document.querySelector('.carga-progreso')
+  if (prog) prog.style.width = '35%'
+  _cargaProgresoTimer = setInterval(_avanzarProgresoCarga, 200)
+}
+function _finalizarProgresoCarga() {
+  clearInterval(_cargaProgresoTimer)
+  _cargaProgresoTimer = null
+  const ciclo = _cargaCiclo
+  const prog = document.querySelector('.carga-progreso')
+  if (prog) prog.style.width = '100%'
+  // Breve pausa visual en 100% antes del fade-out. El ciclo evita que esta
+  // pausa oculte una NUEVA tanda de carga que haya arrancado en el ínterin.
+  setTimeout(() => {
+    if (ciclo !== _cargaCiclo) return
+    const p = document.getElementById('pantalla-carga')
+    if (p) p.style.display = 'none'
+    if (prog) { prog.style.width = '1%' }
+  }, 180)
+}
+
 function mostrarPantallaCarga(mostrar) {
   const p = document.getElementById('pantalla-carga')
-  if (p) p.style.display = mostrar ? 'flex' : 'none'
   if (mostrar) {
-    // Reiniciar barra y mensajes en cada aparición
-    const prog = document.querySelector('.carga-progreso')
-    if (prog) { prog.style.animation = 'none'; void prog.offsetWidth; prog.style.animation = '' }
+    if (p) p.style.display = 'flex'
+    // Reiniciar mensajes y arrancar la barra realista en cada aparición
+    _iniciarProgresoCarga()
     _indiceMensajeCarga = 0
     const m = document.getElementById('carga-mensaje')
     if (m) { m.classList.remove('saliendo'); m.textContent = MENSAJES_CARGA[0] }
@@ -5483,6 +5554,13 @@ function mostrarPantallaCarga(mostrar) {
     clearInterval(_mensajeCargaTimer)
     _mensajeCargaTimer = setInterval(ciclarMensajeCarga, 2000)
   } else {
+    // Si la barra estaba viva: llega a 100% y se oculta con su pausa breve.
+    // Si nunca se mostró (carga rápida <600ms): ocultar directo (no-op).
+    if (_cargaProgresoTimer) {
+      _finalizarProgresoCarga()
+    } else if (p) {
+      p.style.display = 'none'
+    }
     clearInterval(_mensajeCargaTimer)
     _mensajeCargaTimer = null
   }
@@ -5502,8 +5580,10 @@ function ciclarMensajeCarga() {
 const _fetchOriginal = window.fetch
 let _peticionesActivas = 0
 let _pantallaCargaTimer = null
+let _cargaErrores = 0
 window.fetch = function (...args) {
   const primera = _peticionesActivas === 0
+  if (primera) _cargaErrores = 0
   _peticionesActivas++
   if (primera) {
     clearTimeout(_pantallaCargaTimer)
@@ -5511,14 +5591,22 @@ window.fetch = function (...args) {
       if (_peticionesActivas > 0) mostrarPantallaCarga(true)
     }, 600)
   }
-  return _fetchOriginal.apply(this, args).finally(() => {
-    _peticionesActivas--
-    if (_peticionesActivas <= 0) {
-      _peticionesActivas = 0
-      clearTimeout(_pantallaCargaTimer)
-      mostrarPantallaCarga(false)
-    }
-  })
+  return _fetchOriginal.apply(this, args)
+    // Solo cuentan como fallo el error de red (fetch rechaza) y el 5xx del
+    // servidor; los 4xx son respuestas de negocio que cada pantalla ya
+    // muestra a su manera (login inválido, 403 de permisos, etc.)
+    .then(r => { if (!r || r.status >= 500) _cargaErrores++; return r })
+    .catch(e => { _cargaErrores++; throw e })
+    .finally(() => {
+      _peticionesActivas--
+      if (_peticionesActivas <= 0) {
+        _peticionesActivas = 0
+        clearTimeout(_pantallaCargaTimer)
+        mostrarPantallaCarga(false)
+        // La barra nunca queda trabada: si algo falló de verdad, aviso claro
+        if (_cargaErrores > 0) mostrarToast('error', 'Error de conexión con el servidor. Intenta de nuevo.')
+      }
+    })
 }
 
 // Al salir/refrescar con cambios pendientes: se envían al servidor ANTES

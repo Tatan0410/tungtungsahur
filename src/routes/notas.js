@@ -1,7 +1,7 @@
 const express = require('express')
 const jwt     = require('jsonwebtoken')
 const prisma  = require('../prisma')
-const { calcularReporteCorte } = require('../services/reporteCorte')
+const { calcularReporteCorte, calcularReporteCorteEstudiante } = require('../services/reporteCorte')
 const { calcularDefinitiva } = require('../services/calculoNotas')
 const { calcularConsolidado } = require('../services/consolidado')
 const { verificarDocenteAsignado, docentePuedeVerEstudiante } = require('../services/autorizacion')
@@ -887,11 +887,21 @@ router.post('/guardar-grid', async (req, res) => {
         }
       }
 
-      const cal = await prisma.calificacion.upsert({
-        where: { estudianteId_materiaId_periodo_anio: { estudianteId, materiaId, periodo: p, anio: a } },
-        update: {},
-        create: { estudianteId, materiaId, docenteId: req.usuario.docenteId, periodo: p, anio: a },
+      // Un _delete sobre una calificación inexistente no tiene nada que borrar:
+      // crear la fila solo para dejarla vacía genera "contenedores basura".
+      // Se busca primero; solo el guardado de notas reales usa upsert.
+      let cal = await prisma.calificacion.findUnique({
+        where: { estudianteId_materiaId_periodo_anio: { estudianteId, materiaId, periodo: p, anio: a } }
       })
+      if (_delete) {
+        if (!cal) continue
+      } else {
+        cal = await prisma.calificacion.upsert({
+          where: { estudianteId_materiaId_periodo_anio: { estudianteId, materiaId, periodo: p, anio: a } },
+          update: {},
+          create: { estudianteId, materiaId, docenteId: req.usuario.docenteId, periodo: p, anio: a },
+        })
+      }
 
       if (_delete) {
         if (tipo === 'EVALUACION') {
@@ -1237,7 +1247,9 @@ router.get('/mi-reporte-corte', async (req, res) => {
       return res.status(404).json({ error: 'Estudiante no encontrado' })
     }
     const curso = estudiante.curso
-    const rep = await calcularReporteCorte(curso, parseInt(periodo), parseInt(anio))
+    // RENDIMIENTO: versión por estudiante (3 queries) — antes calculaba el
+    // reporte del curso COMPLETO y filtraba 1: el N+1 de la "carga eterna"
+    const rep = await calcularReporteCorteEstudiante(req.usuario.estudianteId, curso, parseInt(periodo), parseInt(anio))
     const reporte = rep
       .filter(r => r.estudianteId === req.usuario.estudianteId)
       .map(r => ({

@@ -317,16 +317,30 @@ router.delete('/materias/:id', async (req, res) => {
     const materia = await prisma._db.prepare('SELECT id, nombre FROM materias WHERE id = ?').get(req.params.id)
     if (!materia) return res.status(404).json({ error: 'Materia no encontrada' })
 
-    // Si tiene calificaciones reales: RECHAZAR (no romper el histórico académico)
-    const conNotas = await prisma._db.prepare('SELECT COUNT(*) AS c FROM calificaciones WHERE materiaid = ?').get(req.params.id)
+    // Si tiene calificaciones REALES: RECHAZAR (no romper el histórico académico).
+    // Las "filas contenedoras vacías" (definitiva NULL y sin notas_items,
+    // que se crean solo con abrir el grid sin guardar nada) NO cuentan.
+    const conNotas = await prisma._db.prepare(`
+      SELECT COUNT(*) AS c FROM calificaciones c
+      WHERE c.materiaid = ?
+        AND (c.definitiva IS NOT NULL
+             OR EXISTS (SELECT 1 FROM notas_items WHERE calificacionid = c.id))
+    `).get(req.params.id)
     if (Number(conNotas.c) > 0) {
       return res.status(409).json({ error: 'No se puede eliminar: esta materia tiene ' + conNotas.c + ' calificaciones registradas. Contacta al desarrollador si de verdad necesitas borrarla.' })
     }
 
-    // Sin calificaciones: eliminar relaciones primero y luego la materia
+    // Sin notas reales: eliminar relaciones, filas vacías y luego la materia
     const asignaciones = await prisma._db.prepare('SELECT COUNT(*) AS c FROM docente_materias WHERE materiaid = ?').get(req.params.id)
     const enAreas = await prisma._db.prepare('SELECT COUNT(*) AS c FROM area_materias WHERE materiaid = ?').get(req.params.id)
     await prisma._db.transaction(async () => {
+      // Filas contenedoras vacías de esta materia: basura sin valor, se limpian
+      await prisma._db.prepare(`
+        DELETE FROM calificaciones
+        WHERE materiaid = ?
+          AND definitiva IS NULL
+          AND NOT EXISTS (SELECT 1 FROM notas_items WHERE calificacionid = calificaciones.id)
+      `).run(req.params.id)
       await prisma._db.prepare('DELETE FROM docente_materias WHERE materiaid = ?').run(req.params.id)
       await prisma._db.prepare('DELETE FROM area_materias WHERE materiaid = ?').run(req.params.id)
       await prisma._db.prepare('DELETE FROM materias WHERE id = ?').run(req.params.id)

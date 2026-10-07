@@ -95,3 +95,151 @@ test('package.json define start y test', () => {
   assert.ok(pkg.scripts.test, 'falta scripts.test')
   assert.equal(pkg.scripts.start, 'node src/index.js')
 })
+
+// ─── FASE 1: bug móvil de la nota de Responsabilidad ───
+// Las celdas del grid deben usar type="text" inputmode="decimal" (con
+// type="number" el navegador devuelve '' con coma decimal y un blur
+// accidental borraba la nota en silencio).
+test('las celdas de notas del grid usan inputmode=decimal, no type=number', () => {
+  const celdas = [...HTML.matchAll(/<input[^>]*class="excel-input cell-input"[^>]*>/g)]
+  assert.ok(celdas.length >= 2, 'debe haber celdas de notas en el grid')
+  for (const c of celdas) {
+    assert.match(c[0], /inputmode="decimal"/, 'la celda debe tener teclado decimal: ' + c[0])
+    assert.doesNotMatch(c[0], /type="number"/, 'la celda NO debe ser type=number (bug móvil): ' + c[0])
+  }
+})
+
+function contextoMarcarCambio() {
+  return new Function(`
+    let cambiosGrid = {}
+    const studentsData = [{
+      estudianteId: 'e1', nombre: 'JUAN PEREZ LOPEZ',
+      grupos: {
+        responsabilidad: { items: [{ descripcion: 'Responsabilidad', valor: 3.5 }] },
+        actividades: { items: [] },
+      },
+    }]
+    const selectedMateria = 'm1'
+    const currentPeriodo = 1
+    const TIPOS_LABEL = { RESPONSABILIDAD: 'Responsabilidad', ACTIVIDAD: 'Actividades' }
+    const toasts = []
+    const mostrarToast = (t, m) => toasts.push(m)
+    const confirmaciones = []
+    const confirmarAccion = (titulo, cb) => confirmaciones.push({ titulo, cb })
+    const claveApellidos = n => n
+    const guardarCambiosLocal = () => {}
+    ${extraerFuncion('valorGuardadoCelda')}
+    ${extraerFuncion('marcarCambio')}
+    return { marcarCambio, cambiosGrid, confirmaciones, toasts }
+  `)()
+}
+
+test('marcarCambio: coma decimal ("3,5") se normaliza y NO borra la nota', () => {
+  const ctx = contextoMarcarCambio()
+  const input = { value: '3,5' }
+  ctx.marcarCambio(0, 'RESPONSABILIDAD', 'Responsabilidad', '3,5', input)
+  assert.equal(ctx.confirmaciones.length, 0, 'no debe pedir confirmación al escribir')
+  const item = ctx.cambiosGrid['e1_RESPONSABILIDAD_Responsabilidad']
+  assert.ok(item, 'debe quedar cambio pendiente')
+  assert.equal(item.valor, 3.5, '"3,5" debe normalizarse a 3.5')
+  assert.notEqual(item._delete, true, 'no debe marcarse como borrado')
+})
+
+test('marcarCambio: vaciar una celda con nota guardada pide confirmación', () => {
+  const ctx = contextoMarcarCambio()
+  const input = { value: '' }
+
+  // Vaciar → NO marca el borrado aún, pide confirmación
+  ctx.marcarCambio(0, 'RESPONSABILIDAD', 'Responsabilidad', '', input)
+  assert.equal(ctx.confirmaciones.length, 1, 'debe pedir confirmación')
+  assert.match(ctx.confirmaciones[0].titulo, /Borrar/)
+  assert.equal(Object.keys(ctx.cambiosGrid).length, 0, 'nada se marca antes de confirmar')
+
+  // Cancelar → restaura el valor guardado en la celda
+  ctx.confirmaciones[0].cb(false)
+  assert.equal(input.value, 3.5, 'la celda se restaura con la nota guardada')
+  assert.equal(Object.keys(ctx.cambiosGrid).length, 0)
+
+  // Confirmar → recién ahí marca el borrado
+  ctx.marcarCambio(0, 'RESPONSABILIDAD', 'Responsabilidad', '', input)
+  ctx.confirmaciones[1].cb(true)
+  assert.equal(ctx.cambiosGrid['e1_RESPONSABILIDAD_Responsabilidad']._delete, true, 'confirma el borrado explícito')
+})
+
+test('marcarCambio: vaciar una celda SIN nota guardada no molesta', () => {
+  const ctx = contextoMarcarCambio()
+  ctx.marcarCambio(0, 'ACTIVIDAD', 'Tarea 1', '', { value: '' })
+  assert.equal(ctx.confirmaciones.length, 0, 'no debe pedir confirmación (no hay nota que perder)')
+  assert.equal(ctx.cambiosGrid['e1_ACTIVIDAD_Tarea 1']._delete, true, 'limpia el pendiente sin confirmar')
+})
+
+test('marcarCambio: valor inválido no borra y restaura la celda', () => {
+  const ctx = contextoMarcarCambio()
+  const input = { value: '7' }
+  ctx.marcarCambio(0, 'RESPONSABILIDAD', 'Responsabilidad', '7', input)
+  assert.equal(Object.keys(ctx.cambiosGrid).length, 0, 'no marca nada con valor inválido')
+  assert.equal(ctx.toasts.length, 1, 'muestra el error')
+  assert.equal(input.value, 3.5, 'restaura la nota guardada en la celda')
+})
+
+// ─── FASE 5: barra de carga realista ───
+// Ya no existe la animación CSS de timer fijo (cargaLlena 3.5s): el ancho
+// lo maneja JS según las peticiones reales.
+test('la barra de carga ya no usa animación de timer fijo', () => {
+  assert.ok(!/cargaLlena/.test(HTML), 'la keyframes cargaLlena debe eliminarse')
+  assert.match(HTML, /transition: width \.25s var\(--ease\)/, 'el ancho debe transicionar suave')
+  assert.ok(HTML.includes('function _iniciarProgresoCarga'), 'falta _iniciarProgresoCarga')
+  assert.ok(HTML.includes('function _finalizarProgresoCarga'), 'falta _finalizarProgresoCarga')
+  assert.ok(HTML.includes("r.status >= 500"), 'el interceptor debe contar 5xx como fallo')
+})
+
+test('barra de carga: salta a 35%, avanza lento y termina en 100% al ocultar', async () => {
+  const prog = { style: { width: '1%' } }
+  const pantalla = { style: { display: 'none' } }
+  const ctx = new Function('prog', 'pantalla', `
+    const document = {
+      querySelector: s => s === '.carga-progreso' ? prog : null,
+      getElementById: id => id === 'pantalla-carga' ? pantalla : null,
+    }
+    let _cargaProgresoTimer = null
+    let _cargaCiclo = 0
+    let _mensajeCargaTimer = null
+    let _indiceMensajeCarga = 0
+    const MENSAJES_CARGA = ['a', 'b']
+    const ciclarMensajeCarga = () => {}
+    ${extraerFuncion('_avanzarProgresoCarga')}
+    ${extraerFuncion('_iniciarProgresoCarga')}
+    ${extraerFuncion('_finalizarProgresoCarga')}
+    ${extraerFuncion('mostrarPantallaCarga')}
+    return { mostrarPantallaCarga, prog: () => prog.style.width, pantalla: () => pantalla.style.display, ciclo: () => _cargaCiclo }
+  `)(prog, pantalla)
+
+  // Mostrar: salto rápido a 35% y pantalla visible
+  ctx.mostrarPantallaCarga(true)
+  assert.equal(pantalla.style.display, 'flex')
+  assert.equal(prog.style.width, '35%')
+
+  // Avance lento: tras ~450ms debe haber avanzado pero sin pasarse de 88%
+  await new Promise(r => setTimeout(r, 450))
+  const intermedio = parseFloat(prog.style.width)
+  assert.ok(intermedio > 35, 'la barra avanza mientras espera: ' + intermedio)
+  assert.ok(intermedio <= 88, 'nunca llega a 90+ mientras carga: ' + intermedio)
+
+  // Ocultar: 100% primero, y la pantalla desaparece tras la pausa de 180ms
+  ctx.mostrarPantallaCarga(false)
+  assert.equal(prog.style.width, '100%')
+  assert.equal(pantalla.style.display, 'flex', 'la pantalla no se oculta antes de la pausa')
+  await new Promise(r => setTimeout(r, 260))
+  assert.equal(pantalla.style.display, 'none', 'tras la pausa se oculta')
+  assert.equal(prog.style.width, '1%', 'la barra queda reseteada para la próxima')
+
+  // Anti-carrera: la pausa de un ciclo viejo no puede ocultar un ciclo nuevo
+  ctx.mostrarPantallaCarga(true)
+  const cicloNuevo = ctx.ciclo()
+  ctx.mostrarPantallaCarga(false)
+  ctx.mostrarPantallaCarga(true)
+  await new Promise(r => setTimeout(r, 260))
+  assert.equal(pantalla.style.display, 'flex', 'el timeout del ciclo viejo no oculta la tanda nueva')
+  ctx.mostrarPantallaCarga(false)
+  await new Promise(r => setTimeout(r, 260))
+})
