@@ -5,6 +5,22 @@ const prisma  = require('../prisma')
 const { calcularReporteCorte } = require('../services/reporteCorte')
 const { calcularDefinitiva } = require('../services/calculoNotas')
 const { calcularConsolidado, calcularMinimoRequerido } = require('../services/consolidado')
+const { parsearExcel, analizarImportacion } = require('../services/importar-estudiantes')
+const multer = require('multer')
+
+// Multer: solo archivos .xlsx, máximo 10 MB, en memoria (buffer)
+const uploadExcel = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+        file.originalname.toLowerCase().endsWith('.xlsx')) {
+      cb(null, true)
+    } else {
+      cb(new Error('Solo se aceptan archivos .xlsx'))
+    }
+  },
+})
 
 const router = express.Router()
 
@@ -680,7 +696,7 @@ router.get('/estudiantes', async (req, res) => {
     const { curso, sede, grado, nombre, pagina = 1 } = req.query
     const limite = Math.min(Math.max(parseInt(req.query.limite) || 100, 1), 100)
     const offset = (parseInt(pagina) - 1) * limite
-    const where = []
+    const where = ["u.activo = 1"]
     const params = []
     if (curso) { where.push('e.curso = ?'); params.push(curso) }
     if (sede) { where.push('e.sede = ?'); params.push(sede) }
@@ -1112,6 +1128,201 @@ router.delete('/areas/:id/cursos/:curso', async (req, res) => {
     res.json({ mensaje: 'Área desasignada del curso' })
   } catch (error) {
     console.error('Error DELETE /areas/cursos:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// ─── IMPORTACIÓN ANUAL DE ESTUDIANTES (solo análisis, DRY-RUN) ───
+// Recibe un Excel .xlsx y clasifica cada fila contra la BD actual.
+// NO modifica nada: es solo lectura para que el admin revise antes de aplicar.
+router.post('/estudiantes/importar/analizar', uploadExcel.single('archivo'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Debes subir un archivo .xlsx en el campo "archivo"' })
+    }
+    const { estudiantes, errores } = parsearExcel(req.file.buffer)
+    if (!estudiantes.length) {
+      return res.status(400).json({
+        error: 'No se encontraron filas válidas en el Excel',
+        errores,
+      })
+    }
+    if (errores.length > 0) {
+      return res.status(400).json({
+        error: 'El Excel tiene filas con problemas (revisa y corrige el archivo)',
+        errores,
+      })
+    }
+    const analisis = await analizarImportacion(prisma._db, estudiantes)
+    res.json({
+      archivo: req.file.originalname,
+      ...analisis,
+      errores,
+    })
+  } catch (error) {
+    console.error('Error POST /estudiantes/importar/analizar:', error)
+    if (error.message.includes('Solo se aceptan') || error.message.includes('Excel')) {
+      return res.status(400).json({ error: error.message })
+    }
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// ─── IMPORTACIÓN ANUAL: APLICAR (con transacción, todo o nada) ───
+// Re-envía el MISMO archivo + confirmo: true. Todo dentro de una transacción:
+// crea nuevos, actualiza cursos, reactiva, desactiva los que faltan.
+// Registra en importaciones_log para auditoría.
+router.post('/estudiantes/importar/aplicar', uploadExcel.single('archivo'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Debes subir el mismo archivo .xlsx que analizaste' })
+    }
+    if (req.body.confirmo !== 'true' && req.body.confirmo !== true) {
+      return res.status(400).json({ error: 'Debes confirmar la importación (confirmo: true)' })
+    }
+
+    const { estudiantes: filasExcel, errores } = parsearExcel(req.file.buffer)
+    if (!filasExcel.length) {
+      return res.status(400).json({ error: 'No se encontraron filas válidas en el Excel' })
+    }
+    if (errores.length > 0) {
+      return res.status(400).json({ error: 'El Excel tiene filas con problemas', errores })
+    }
+
+    const analisis = await analizarImportacion(prisma._db, filasExcel)
+
+    // Ejecutar TODO en una transacción (todo o nada)
+    const crypto = require('crypto')
+    const bcryptHash = (v) => require('bcryptjs').hashSync(v, 10)
+
+    await prisma._db.transaction(async () => {
+      // 1. NUEVOS: crear usuario + estudiante (password = documento)
+      for (const fila of filasExcel) {
+        const yaExiste = await prisma._db.prepare('SELECT id FROM usuarios WHERE documento = ?').get(fila.documento)
+        if (yaExiste) continue // ya estaba (el análisis lo clasificó en otra categoría)
+        const idUsuario = crypto.randomUUID()
+        const idEstudiante = crypto.randomUUID()
+        await prisma._db.prepare(
+          'INSERT INTO usuarios (id, correo, password, rol, nombre, documento, activo) VALUES (?, NULL, ?, ?, ?, ?, 1)'
+        ).run(idUsuario, bcryptHash(fila.documento), 'ESTUDIANTE', fila.nombre, fila.documento)
+        await prisma._db.prepare(
+          'INSERT INTO estudiantes (id, usuarioId, documento, codigo, sede, jornada, grado, curso) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        ).run(idEstudiante, idUsuario, fila.documento, fila.documento, fila.sede || 'PPAL - TRIUNFO', fila.jornada || 'MAÑANA', fila.grado, fila.curso)
+      }
+
+      // 2. ACTUALIZADOS + REACTIVAR: actualizar curso/grado/sede/jornada
+      //    (REACTIVAR también pone activo=true)
+      const idsEnExcel = filasExcel.map(f => f.documento)
+      for (const fila of filasExcel) {
+        const actual = await prisma._db.prepare(
+          'SELECT u.id AS "usuarioId", u.activo, e.id AS "estudianteId" FROM usuarios u JOIN estudiantes e ON e.usuarioId = u.id WHERE u.documento = ?'
+        ).get(fila.documento)
+        if (!actual) continue // era NUEVO, ya se creó arriba
+
+        const cambios = []
+        const params = []
+        if (fila.curso) { cambios.push('curso = ?'); params.push(fila.curso) }
+        if (fila.grado) { cambios.push('grado = ?'); params.push(fila.grado) }
+        if (fila.sede) { cambios.push('sede = ?'); params.push(fila.sede) }
+        if (fila.jornada) { cambios.push('jornada = ?'); params.push(fila.jornada) }
+        if (cambios.length) {
+          params.push(actual.estudianteId)
+          await prisma._db.prepare(`UPDATE estudiantes SET ${cambios.join(', ')} WHERE id = ?`).run(...params)
+        }
+
+        // REACTIVAR si estaba desactivado
+        if (!actual.activo) {
+          await prisma._db.prepare('UPDATE usuarios SET activo = 1 WHERE id = ?').run(actual.usuarioId)
+        }
+      }
+
+      // 3. A_DESACTIVAR: activos que NO están en el Excel → activo = 0
+      //    (solo usuarios, NUNCA toca estudiantes/calificaciones/observaciones)
+      const activosActuales = await prisma._db.prepare(
+        'SELECT u.id, u.documento FROM usuarios u JOIN estudiantes e ON e.usuarioId = u.id WHERE u.activo = 1'
+      ).all()
+      const docsEnExcel = new Set(filasExcel.map(f => f.documento))
+      for (const act of activosActuales) {
+        if (!docsEnExcel.has(act.documento)) {
+          await prisma._db.prepare('UPDATE usuarios SET activo = 0 WHERE id = ?').run(act.id)
+        }
+      }
+
+      // 4. Registrar en importaciones_log
+      await prisma._db.prepare(
+        'INSERT INTO importaciones_log (id, fecha, adminid, archivo_nombre, nuevos, actualizados, reactivados, desactivados) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+      ).run(
+        crypto.randomUUID(), new Date().toISOString(), req.usuario.id,
+        req.file.originalname,
+        analisis.resumen.nuevos, analisis.resumen.actualizados,
+        analisis.resumen.reactivar, analisis.resumen.aDesactivar
+      )
+    })()
+
+    res.json({
+      mensaje: 'Importación aplicada',
+      resumen: analisis.resumen,
+      detalleNuevos: analisis.detalleNuevos,
+      detalleActualizados: analisis.detalleActualizados,
+      detalleReactivar: analisis.detalleReactivar,
+      detalleADesactivar: analisis.detalleADesactivar,
+    })
+  } catch (error) {
+    console.error('Error POST /estudiantes/importar/aplicar:', error)
+    res.status(500).json({ error: 'Error interno (nada quedó aplicado)' })
+  }
+})
+
+// ─── ESTUDIANTES DESACTIVADOS (búsqueda de graduados/retirados) ───
+router.get('/estudiantes/desactivados', async (req, res) => {
+  try {
+    const { busqueda, pagina = 1 } = req.query
+    const limite = 100
+    const offset = (parseInt(pagina) - 1) * limite
+    const where = ["u.activo = 0"]
+    const params = []
+    if (busqueda) {
+      const plegado = busqueda.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      where.push(`(${sqlNombrePlegado('u.nombre')} LIKE ? OR u.documento LIKE ?)`)
+      params.push('%' + plegado + '%', '%' + String(busqueda).trim() + '%')
+    }
+    const whereClause = 'WHERE ' + where.join(' AND ')
+
+    const total = await prisma._db.prepare(`
+      SELECT COUNT(*) AS c FROM usuarios u
+      JOIN estudiantes e ON e.usuarioId = u.id ${whereClause}
+    `).get(...params)
+
+    const rows = await prisma._db.prepare(`
+      SELECT e.id, u.nombre, e.documento, e.curso, e.grado, e.sede, e.jornada
+      FROM usuarios u
+      JOIN estudiantes e ON e.usuarioId = u.id ${whereClause}
+      ORDER BY u.nombre ASC
+      LIMIT ? OFFSET ?
+    `).all(...params, limite, offset)
+
+    res.json({ estudiantes: rows, total: total.c, pagina: parseInt(pagina), paginas: Math.ceil(total.c / limite) })
+  } catch (error) {
+    console.error('Error GET /estudiantes/desactivados:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// ─── REACTIVAR/DESACTIVAR ESTUDIANTE MANUALMENTE ───
+router.put('/estudiantes/:id/activo', async (req, res) => {
+  try {
+    const { activo } = req.body
+    if (activo === undefined || activo === null) {
+      return res.status(400).json({ error: 'activo es requerido (true/false)' })
+    }
+    const usuario = await prisma._db.prepare(
+      'SELECT u.id FROM usuarios u JOIN estudiantes e ON e.usuarioId = u.id WHERE e.id = ? OR u.id = ?'
+    ).get(req.params.id, req.params.id)
+    if (!usuario) return res.status(404).json({ error: 'Estudiante no encontrado' })
+    await prisma._db.prepare('UPDATE usuarios SET activo = ? WHERE id = ?').run(activo ? 1 : 0, req.params.id)
+    res.json({ mensaje: activo ? 'Estudiante reactivado' : 'Estudiante desactivado', activo: !!activo })
+  } catch (error) {
+    console.error('Error PUT /estudiantes/:id/activo:', error)
     res.status(500).json({ error: 'Error interno' })
   }
 })

@@ -179,7 +179,7 @@ router.get('/grupo', async (req, res) => {
     }
 
     const estudiantes = await prisma.estudiante.findMany({
-      where: { curso },
+      where: { curso, usuario: { activo: true } },
       include: {
         usuario: { select: { nombre: true } },
         calificaciones: {

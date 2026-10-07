@@ -42,7 +42,11 @@ const prisma = {
   },
   estudiante: {
     findMany: async ({ where, include, orderBy }) => {
-      const rows = await db.prepare('SELECT e.*, u.nombre FROM estudiantes e JOIN usuarios u ON u.id = e.usuarioId WHERE e.curso = ?').all(where.curso)
+      let sql = 'SELECT e.*, u.nombre FROM estudiantes e JOIN usuarios u ON u.id = e.usuarioId WHERE e.curso = ?'
+      if (where.usuario?.activo === true || where.usuario?.activo === 1) {
+        sql += ' AND u.activo = 1'
+      }
+      const rows = await db.prepare(sql).all(where.curso)
       const resultados = await Promise.all(rows.map(async row => {
         const est = { id: row.id, usuarioId: row.usuarioId, documento: row.documento, codigo: row.codigo, sede: row.sede, jornada: row.jornada, grado: row.grado, curso: row.curso, mesa: row.mesa }
         if (include?.usuario) est.usuario = { nombre: row.nombre }

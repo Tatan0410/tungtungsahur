@@ -1045,6 +1045,7 @@ body::before {
 
   <div id="admin-estudiantes-section" style="display:none;">
     <div style="font-size:15px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);margin-bottom:12px;"><span class="icon" data-icon="usuarios"></span> Estudiantes</div>
+    <div id="admin-estudiantes-activos">
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:16px;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px;">
       <div style="position:relative;">
         <div class="lbl">Nombre</div>
@@ -1053,8 +1054,11 @@ body::before {
       </div>
       <div><div class="lbl">Curso</div><input class="inp" id="admin-est-curso" placeholder="Ej: 301" style="width:80px;"></div>
       <div><div class="lbl">Grado</div><select class="sel" id="admin-est-grado"><option value="">Todos</option></select></div>
-      <div><button class="btn-sm primary" onclick="cargarAdminEstudiantes()" style="font-weight:600;">Filtrar</button>
-      <div><button class="btn-sm success" onclick="mostrarModalEstudianteNuevo()" style="font-weight:600;"><span class="icon" data-icon="mas"></span> Agregar estudiante</button></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn-sm primary" onclick="cargarAdminEstudiantes()" style="font-weight:600;">Filtrar</button>
+        <button class="btn-sm success" onclick="mostrarModalEstudianteNuevo()" style="font-weight:600;"><span class="icon" data-icon="mas"></span> Agregar estudiante</button>
+        <button class="btn-sm primary" onclick="mostrarModalImportar()" style="font-weight:600;"><span class="icon" data-icon="grafico"></span> Importar Excel</button>
+        <button class="btn-sm" id="btn-ver-desactivados" onclick="verDesactivados()" style="font-weight:600;"><span class="icon" data-icon="estado"></span> Ver desactivados</button>
       </div>
     </div>
     <div style="overflow-x:auto;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);">
@@ -1071,6 +1075,66 @@ body::before {
       </table>
     </div>
     <div id="admin-est-pagination" style="display:flex;gap:8px;justify-content:center;margin-top:12px;"></div>
+    </div>
+
+    <!-- Vista de desactivados (graduados/retirados) -->
+    <div id="admin-desactivados-view" style="display:none;">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-top:16px;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px;">
+        <div style="flex:1;min-width:200px;"><div class="lbl">Buscar desactivado</div><input class="inp" id="admin-des-busqueda" placeholder="Nombre o documento" style="width:100%;" autocomplete="off" onkeydown="if(event.key==='Enter')cargarTablaDesactivados(1)"></div>
+        <button class="btn-sm primary" onclick="cargarTablaDesactivados(1)" style="font-weight:600;">Buscar</button>
+        <button class="btn-sm" onclick="verActivos()" style="font-weight:600;"><span class="icon" data-icon="izq"></span> Volver a activos</button>
+      </div>
+      <div style="overflow-x:auto;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);margin-top:4px;">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:500px;">
+          <thead><tr style="background:var(--cream-100);">
+            <th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);">Nombre</th>
+            <th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);">Documento</th>
+            <th style="padding:10px 12px;text-align:center;border-bottom:1px solid var(--line);">Último curso</th>
+            <th style="padding:10px 12px;text-align:center;border-bottom:1px solid var(--line);">Grado</th>
+            <th style="padding:10px 12px;text-align:center;border-bottom:1px solid var(--line);">Acción</th>
+          </tr></thead>
+          <tbody id="admin-tb-desactivados"></tbody>
+        </table>
+      </div>
+      <div id="admin-des-pagination" style="display:flex;gap:8px;justify-content:center;margin-top:12px;"></div>
+    </div>
+  </div>
+
+  <!-- Modal Importar Excel (2 pasos: analizar → confirmar) -->
+  <div id="modal-importar" style="display:none;position:fixed;inset:0;z-index:100;background:rgba(0,0,0,0.4);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);align-items:center;justify-content:center;" onclick="if(event.target===this)cerrarModalImportar()">
+    <div style="background:var(--paper);border-radius:var(--r-lg);padding:24px;max-width:560px;width:92%;max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+      <div style="font-size:16px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);margin-bottom:4px;"><span class="icon" data-icon="grafico"></span> Importar estudiantes desde Excel</div>
+      <div style="font-size:12px;color:var(--ink-500);margin-bottom:16px;">Sube la planilla anual (.xlsx). Primero se analiza, luego confirmas.</div>
+
+      <!-- Paso 1: elegir archivo -->
+      <div id="importar-paso1">
+        <div class="inp-g"><div class="lbl">Archivo Excel (.xlsx) *</div><input class="inp" type="file" id="importar-archivo" accept=".xlsx" style="width:100%;padding:8px;"></div>
+        <div style="margin-top:8px;padding:8px 10px;background:var(--cream-100);border-radius:6px;font-size:11px;color:var(--ink-500);">
+          <span class="icon" data-icon="documento"></span> Columnas esperadas: <b>nombre, documento, curso, grado, sede, jornada</b>. El documento es la llave: los existentes se actualizan y los que no aparezcan se desactivan (nada se borra).
+        </div>
+        <div style="display:flex;gap:8px;justify-content:end;margin-top:16px;">
+          <button class="btn-sm" onclick="cerrarModalImportar()">Cancelar</button>
+          <button class="btn-sm primary" id="importar-btn-analizar" onclick="analizarImportacionUI()" style="font-weight:600;"><span class="icon" data-icon="grafico"></span> Analizar</button>
+        </div>
+      </div>
+
+      <!-- Paso 2: revisar y confirmar -->
+      <div id="importar-paso2" style="display:none;">
+        <div id="importar-resumen"></div>
+        <div id="importar-detalles" style="margin-top:12px;"></div>
+        <label style="display:flex;gap:8px;align-items:start;margin-top:16px;cursor:pointer;font-size:12px;color:var(--ink-700);">
+          <input type="checkbox" id="importar-confirmo" style="margin-top:2px;">
+          <span>Entiendo que se <b>crearán, actualizarán y desactivarán</b> estudiantes según el análisis de arriba, y que es mi responsabilidad haber revisado el archivo.</span>
+        </label>
+        <div style="display:flex;gap:8px;justify-content:end;margin-top:16px;">
+          <button class="btn-sm" onclick="volverPaso1Importar()">Elegir otro archivo</button>
+          <button class="btn-sm success" id="importar-btn-aplicar" onclick="aplicarImportacionUI()" style="font-weight:600;"><span class="icon" data-icon="check"></span> Aplicar importación</button>
+        </div>
+      </div>
+
+      <div class="error-msg" id="importar-error" style="display:none;margin-top:12px;"></div>
+      <div id="importar-exito" style="display:none;margin-top:16px;padding:12px;background:var(--green-100);border-radius:8px;font-size:13px;color:var(--green-700);font-weight:600;"></div>
+    </div>
   </div>
 
   <!-- Modal cambiar curso de estudiante -->
@@ -3009,6 +3073,236 @@ async function eliminarArea(areaId, nombre) {
 // ─── Crear estudiante (panel admin) ───
 function cerrarModalEstudianteNuevo() {
   cerrarModalSuave(document.getElementById('modal-estudiante-nuevo'))
+}
+
+// ─── IMPORTACIÓN ANUAL DE ESTUDIANTES (modal 2 pasos) ───
+let _importFile = null
+
+function mostrarModalImportar() {
+  _importFile = null
+  document.getElementById('importar-archivo').value = ''
+  document.getElementById('importar-error').style.display = 'none'
+  document.getElementById('importar-exito').style.display = 'none'
+  volverPaso1Importar()
+  abrirModalSuave(document.getElementById('modal-importar'))
+}
+
+function cerrarModalImportar() {
+  cerrarModalSuave(document.getElementById('modal-importar'))
+}
+
+function volverPaso1Importar() {
+  document.getElementById('importar-paso1').style.display = 'block'
+  document.getElementById('importar-paso2').style.display = 'none'
+  document.getElementById('importar-error').style.display = 'none'
+  document.getElementById('importar-confirmo').checked = false
+}
+
+function mostrarImportarError(m) {
+  const el = document.getElementById('importar-error')
+  el.textContent = m
+  el.style.display = 'block'
+}
+
+async function analizarImportacionUI() {
+  const inp = document.getElementById('importar-archivo')
+  const err = document.getElementById('importar-error')
+  err.style.display = 'none'
+  if (!inp.files || !inp.files[0]) return mostrarImportarError('Elige un archivo .xlsx')
+  const ext = inp.files[0].name.toLowerCase()
+  if (!ext.endsWith('.xlsx')) return mostrarImportarError('Solo se aceptan archivos .xlsx')
+
+  const btn = document.getElementById('importar-btn-analizar')
+  btn.disabled = true
+  btn.innerHTML = '<span class="icon" data-icon="horizonte"></span> Analizando\u2026'
+  poblarIconos()
+
+  try {
+    _importFile = inp.files[0]
+    const fd = new FormData()
+    fd.append('archivo', _importFile)
+    const res = await fetch(API + '/api/admin/estudiantes/importar/analizar', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + currentToken },
+      body: fd,
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      _importFile = null
+      return mostrarImportarError(data.error || 'Error al analizar el archivo')
+    }
+    renderAnalisisImportacion(data)
+    document.getElementById('importar-paso1').style.display = 'none'
+    document.getElementById('importar-paso2').style.display = 'block'
+  } catch (e) {
+    _importFile = null
+    mostrarImportarError('Error de conexión al analizar')
+  } finally {
+    btn.disabled = false
+    btn.innerHTML = '<span class="icon" data-icon="grafico"></span> Analizar'
+    poblarIconos()
+  }
+}
+
+function _badgeImportar(txt, n, fondo, color) {
+  return '<span style="background:var(--' + fondo + ');color:var(--' + color + ');padding:4px 12px;border-radius:14px;font-size:12px;font-weight:700;">' + txt + ': ' + n + '</span>'
+}
+
+function _listaDetalle(titulo, filas, colorVar, iconoVar) {
+  if (!filas.length) return ''
+  let html = '<details style="margin-top:8px;border:1px solid var(--line);border-radius:8px;padding:0 12px;background:var(--paper);">'
+  html += '<summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--' + colorVar + ');padding:10px 0;list-style:none;display:flex;align-items:center;gap:6px;">'
+  html += '<span class="icon" data-icon="' + iconoVar + '"></span> ' + titulo + ' (' + filas.length + ')</summary>'
+  html += '<div style="max-height:220px;overflow-y:auto;padding:2px 0 10px;">'
+  for (const f of filas) {
+    html += '<div style="font-size:12px;color:var(--ink-700);padding:4px 0;border-top:1px solid var(--line);">' + esc(f.nombre) + ' <span style="color:var(--ink-400);">(' + esc(String(f.documento)) + ')</span>'
+    if (f.cambios && f.cambios.length) {
+      html += ' <span style="color:var(--' + colorVar + ');">' + f.cambios.map(c => esc(String(c.campo)) + ': ' + esc(String(c.viejo)) + ' \u2192 ' + esc(String(c.nuevo))).join(', ') + '</span>'
+    } else if (f.cursoNuevo) {
+      html += ' <span style="color:var(--' + colorVar + ');">curso: ' + esc(String(f.cursoViejo || '')) + ' \u2192 ' + esc(String(f.cursoNuevo)) + '</span>'
+    } else if (f.curso) {
+      html += ' <span style="color:var(--ink-400);">curso ' + esc(String(f.curso)) + '</span>'
+    }
+    html += '</div>'
+  }
+  html += '</div></details>'
+  return html
+}
+
+function renderAnalisisImportacion(data) {
+  const r = data.resumen
+  let html = '<div style="font-size:12px;color:var(--ink-500);margin-bottom:10px;">Archivo: <b>' + esc(data.archivo || '') + '</b> \u00b7 ' + r.totalExcel + ' fila(s) en el Excel</div>'
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">'
+  html += _badgeImportar('Nuevos', r.nuevos, 'green-100', 'green-700')
+  html += _badgeImportar('Actualizados', r.actualizados, 'amber-100', 'amber-700')
+  html += _badgeImportar('Sin cambios', r.sinCambios, 'cream-100', 'ink-500')
+  html += _badgeImportar('Reactivar', r.reactivar, 'amber-100', 'amber-700')
+  html += _badgeImportar('A desactivar', r.aDesactivar, 'rose-100', 'burgundy-600')
+  html += '</div>'
+  document.getElementById('importar-resumen').innerHTML = html
+
+  let det = ''
+  det += _listaDetalle('Nuevos que se crear\u00e1n (contrase\u00f1a = documento)', data.detalleNuevos || [], 'green-700', 'mas')
+  det += _listaDetalle('Actualizados (cambio de curso/datos)', data.detalleActualizados || [], 'amber-700', 'lapiz')
+  det += _listaDetalle('Reactivados (estaban desactivados)', data.detalleReactivar || [], 'amber-700', 'estado')
+  det += _listaDetalle('Se desactivar\u00e1n (no aparecen en el Excel)', data.detalleADesactivar || [], 'burgundy-600', 'advertencia')
+  document.getElementById('importar-detalles').innerHTML = det
+  poblarIconos()
+}
+
+async function aplicarImportacionUI() {
+  const err = document.getElementById('importar-error')
+  err.style.display = 'none'
+  if (!_importFile) return mostrarImportarError('Vuelve a elegir el archivo')
+  if (!document.getElementById('importar-confirmo').checked) return mostrarImportarError('Debes marcar la casilla de confirmaci\u00f3n')
+
+  const btn = document.getElementById('importar-btn-aplicar')
+  btn.disabled = true
+  btn.innerHTML = '<span class="icon" data-icon="horizonte"></span> Aplicando\u2026'
+  poblarIconos()
+
+  try {
+    const fd = new FormData()
+    fd.append('archivo', _importFile)
+    fd.append('confirmo', 'true')
+    const res = await fetch(API + '/api/admin/estudiantes/importar/aplicar', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + currentToken },
+      body: fd,
+    })
+    const data = await res.json()
+    if (!res.ok) return mostrarImportarError(data.error || 'Error al aplicar la importaci\u00f3n')
+
+    const r = data.resumen
+    const exito = document.getElementById('importar-exito')
+    exito.innerHTML = icon('check') + ' Importaci\u00f3n aplicada: ' + r.nuevos + ' nuevo(s), ' + r.actualizados + ' actualizado(s), ' + r.reactivar + ' reactivado(s), ' + r.aDesactivar + ' desactivado(s).'
+    exito.style.display = 'block'
+    btn.innerHTML = '<span class="icon" data-icon="check"></span> \u00a1Listo!'
+    mostrarToast('ok', 'Importaci\u00f3n aplicada correctamente')
+    currentEstPage = 1
+    cargarTablaEstudiantes()
+  } catch (e) {
+    mostrarImportarError('Error de conexi\u00f3n al aplicar')
+  } finally {
+    btn.disabled = false
+    btn.innerHTML = '<span class="icon" data-icon="check"></span> Aplicar importaci\u00f3n'
+    poblarIconos()
+  }
+}
+
+// ─── ESTUDIANTES DESACTIVADOS ───
+function verDesactivados() {
+  document.getElementById('admin-estudiantes-activos').style.display = 'none'
+  document.getElementById('admin-desactivados-view').style.display = 'block'
+  document.getElementById('btn-ver-desactivados').style.display = 'none'
+  cargarTablaDesactivados(1)
+}
+
+function verActivos() {
+  document.getElementById('admin-desactivados-view').style.display = 'none'
+  document.getElementById('admin-estudiantes-activos').style.display = 'block'
+  document.getElementById('btn-ver-desactivados').style.display = 'inline-block'
+}
+
+async function cargarTablaDesactivados(pagina) {
+  const tb = document.getElementById('admin-tb-desactivados')
+  const pagEl = document.getElementById('admin-des-pagination')
+  tb.innerHTML = skeletonFilas(6)
+
+  const busqueda = document.getElementById('admin-des-busqueda').value.trim()
+  let url = API + '/api/admin/estudiantes/desactivados?pagina=' + pagina
+  if (busqueda) url += '&busqueda=' + encodeURIComponent(busqueda)
+
+  try {
+    const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + currentToken } })
+    if (!res.ok) { tb.innerHTML = errorReintentar(5, 'cargarTablaDesactivados', 'Error al cargar'); return }
+    const data = await res.json()
+    const rows = data.estudiantes || []
+
+    if (!rows.length) {
+      tb.innerHTML = '<tr><td colspan="5" style="padding:24px;text-align:center;color:var(--ink-400);">' + (busqueda ? 'Sin resultados para \u201c' + esc(busqueda) + '\u201d' : 'No hay estudiantes desactivados') + '</td></tr>'
+    } else {
+      tb.innerHTML = rows.map(e =>
+        '<tr>' +
+        '<td style="padding:10px 12px;border-bottom:1px solid var(--line);font-weight:600;">' + esc(e.nombre) + '</td>' +
+        '<td style="padding:10px 12px;border-bottom:1px solid var(--line);">' + esc(String(e.documento)) + '</td>' +
+        '<td style="padding:10px 12px;border-bottom:1px solid var(--line);text-align:center;">' + esc(String(e.curso || '—')) + '</td>' +
+        '<td style="padding:10px 12px;border-bottom:1px solid var(--line);text-align:center;">' + (e.grado ? esc(String(e.grado)) + '°' : '—') + '</td>' +
+        '<td style="padding:10px 12px;border-bottom:1px solid var(--line);text-align:center;"><button class="btn-sm success" onclick="reactivarEstudiante(\'' + e.id + '\', \'' + escArg(e.nombre) + '\')" style="font-weight:600;"><span class="icon" data-icon="estado"></span> Reactivar</button></td>' +
+        '</tr>'
+      ).join('')
+      poblarIconos()
+    }
+
+    // Paginación
+    let pag = '<span style="font-size:12px;color:var(--ink-400);align-self:center;">' + data.total + ' desactivado(s)</span>'
+    if (data.paginas > 1) {
+      for (let p = 1; p <= data.paginas; p++) {
+        pag += '<button class="btn-sm' + (p === data.pagina ? ' primary' : '') + '" onclick="cargarTablaDesactivados(' + p + ')">' + p + '</button>'
+      }
+    }
+    pagEl.innerHTML = pag
+  } catch (e) {
+    tb.innerHTML = errorReintentar(5, 'cargarTablaDesactivados', 'Error de conexión')
+  }
+}
+
+function reactivarEstudiante(id, nombre) {
+  confirmarAccion('\u00bfReactivar a ' + nombre + '? Podr\u00e1 volver a iniciar sesi\u00f3n con su documento.', async (ok) => {
+    if (!ok) return
+    try {
+      const res = await fetch(API + '/api/admin/estudiantes/' + id + '/activo', {
+        method: 'PUT',
+        headers: { 'Authorization': 'Bearer ' + currentToken, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ activo: true }),
+      })
+      if (!res.ok) { const d = await res.json(); return mostrarToast('error', d.error || 'Error al reactivar') }
+      mostrarToast('ok', nombre + ' reactivado')
+      cargarTablaDesactivados(1)
+    } catch (e) {
+      mostrarToast('error', 'Error de conexión')
+    }
+  })
 }
 
 function estNuevoCursoOtro(v) {
