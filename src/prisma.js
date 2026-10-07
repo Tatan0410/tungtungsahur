@@ -185,6 +185,12 @@ const prisma = {
       await db.prepare('INSERT INTO calificaciones (' + cols + ') VALUES (' + vals + ')').run(...Object.values(createData))
       return db.prepare('SELECT * FROM calificaciones WHERE id = ?').get(createData.id)
     },
+    // Borrado de calificaciones (lo usa la limpieza de filas contenedoras
+    // vacías en guardar-grid). Estilo idéntico al delete de notaItem.
+    delete: async ({ where }) => {
+      const key = Object.keys(where)[0]
+      await db.prepare('DELETE FROM calificaciones WHERE ' + col(key) + ' = ?').run(where[key])
+    },
   },
   notaItem: {
     create: async ({ data }) => {

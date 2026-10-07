@@ -280,3 +280,37 @@ test('GET /observaciones: el docente director de grupo ve a los estudiantes de s
   assert.equal(r.status, 200)
   assert.ok(Array.isArray(r.data))
 })
+
+// ═══════════════════════════════════════════════════════════════
+// REGRESIÓN 500: _delete del grid sobre una calificación contenedora
+// vacía (definitiva NULL, 0 items). El bloque de limpieza llama
+// prisma.calificacion.delete — el shim no lo tenía y reventaba en 500.
+// ═══════════════════════════════════════════════════════════════
+test('_delete sobre contenedor vacío: 200 y limpia la fila (antes 500)', async () => {
+  // Asignación real del docente + estudiante de ese curso SIN calificación P1
+  const asig = db.prepare('SELECT materiaId, curso FROM docente_materias WHERE docenteId = ? LIMIT 1').get(docId)
+  const anio = new Date().getFullYear()
+  const est = db.prepare(`
+    SELECT e.id FROM estudiantes e
+    WHERE e.curso = ?
+      AND NOT EXISTS (SELECT 1 FROM calificaciones c WHERE c.estudianteId = e.id AND c.materiaId = ? AND c.periodo = 1 AND c.anio = ?)
+    LIMIT 1
+  `).get(asig.curso, asig.materiaId, anio)
+  if (!est) return // curso sin estudiantes libres (improbable)
+
+  // Contenedor vacío: el estado exacto que reventaba
+  const calId = crypto.randomUUID()
+  db.prepare(
+    'INSERT INTO calificaciones (id, estudianteId, materiaId, docenteId, periodo, anio, definitiva, actualizadoEn) VALUES (?, ?, ?, ?, 1, ?, NULL, CURRENT_TIMESTAMP)'
+  ).run(calId, est.id, asig.materiaId, docId, anio)
+
+  const del = await api.post('/api/notas/guardar-grid', {
+    token: tokenDocente,
+    body: { items: [{ estudianteId: est.id, materiaId: asig.materiaId, periodo: 1, anio, tipo: 'EVALUACION', titulo: '', valor: null, _delete: true }] },
+  })
+  assert.equal(del.status, 200, 'debe dar 200, no 500: ' + JSON.stringify(del.data))
+
+  // La fila contenedora queda efectivamente borrada (propósito del bloque)
+  const fila = db.prepare('SELECT COUNT(*) c FROM calificaciones WHERE id = ?').get(calId)
+  assert.equal(Number(fila.c), 0, 'el contenedor vacío se limpia')
+})
