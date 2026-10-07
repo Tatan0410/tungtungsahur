@@ -4,6 +4,7 @@ const prisma  = require('../prisma')
 const { calcularReporteCorte } = require('../services/reporteCorte')
 const { calcularDefinitiva } = require('../services/calculoNotas')
 const { calcularConsolidado } = require('../services/consolidado')
+const { verificarDocenteAsignado, docentePuedeVerEstudiante } = require('../services/autorizacion')
 
 // Mismo adaptador que el resto de la app (SQLite local / Postgres en Supabase)
 const db = prisma._db
@@ -178,6 +179,11 @@ router.get('/grupo', async (req, res) => {
       return res.status(400).json({ error: 'Debes enviar curso y materiaId' })
     }
 
+    // SEGURIDAD: el docente solo ve el grupo si tiene la materia asignada en ese curso
+    if (req.usuario.rol === 'DOCENTE' && !(await verificarDocenteAsignado(prisma._db, req.usuario.docenteId, materiaId, curso))) {
+      return res.status(403).json({ error: 'No tienes asignada esa materia en ese curso' })
+    }
+
     const estudiantes = await prisma.estudiante.findMany({
       where: { curso, usuario: { activo: true } },
       include: {
@@ -275,6 +281,16 @@ if (tipo === 'EVALUACION') {
        }
      }
 
+    // SEGURIDAD: el docente solo agrega notas a calificaciones de sus materias/cursos
+    if (req.usuario.rol === 'DOCENTE') {
+      const cal = await prisma._db.prepare(
+        'SELECT c.materiaId, e.curso FROM calificaciones c JOIN estudiantes e ON e.id = c.estudianteId WHERE c.id = ?'
+      ).get(calificacionId)
+      if (!cal || !(await verificarDocenteAsignado(prisma._db, req.usuario.docenteId, cal.materiaId, cal.curso))) {
+        return res.status(403).json({ error: 'No tienes asignada esa materia en ese curso' })
+      }
+    }
+
     const item = await prisma.notaItem.create({
       data: {
         calificacionId,
@@ -319,6 +335,21 @@ router.put('/items/:id', async (req, res) => {
 
     if (valor !== undefined && (valor < 0 || valor > 5)) {
       return res.status(400).json({ error: 'La nota solo puede ir de 0 a 5' })
+    }
+
+    const itemExistente = await prisma.notaItem.findUnique({ where: { id } })
+    if (!itemExistente) {
+      return res.status(404).json({ error: 'Item no encontrado' })
+    }
+
+    // SEGURIDAD: el docente solo edita notas de sus materias/cursos
+    if (req.usuario.rol === 'DOCENTE') {
+      const cal = await prisma._db.prepare(
+        'SELECT c.materiaId, e.curso FROM calificaciones c JOIN estudiantes e ON e.id = c.estudianteId WHERE c.id = ?'
+      ).get(itemExistente.calificacionId)
+      if (!cal || !(await verificarDocenteAsignado(prisma._db, req.usuario.docenteId, cal.materiaId, cal.curso))) {
+        return res.status(403).json({ error: 'No tienes asignada esa materia en ese curso' })
+      }
     }
 
     const updateData = {}
@@ -367,6 +398,16 @@ router.delete('/items/:id', async (req, res) => {
       return res.status(404).json({ error: 'Item no encontrado' })
     }
 
+    // SEGURIDAD: el docente solo elimina notas de sus materias/cursos
+    if (req.usuario.rol === 'DOCENTE') {
+      const cal = await prisma._db.prepare(
+        'SELECT c.materiaId, e.curso FROM calificaciones c JOIN estudiantes e ON e.id = c.estudianteId WHERE c.id = ?'
+      ).get(item.calificacionId)
+      if (!cal || !(await verificarDocenteAsignado(prisma._db, req.usuario.docenteId, cal.materiaId, cal.curso))) {
+        return res.status(403).json({ error: 'No tienes asignada esa materia en ese curso' })
+      }
+    }
+
     await prisma.notaItem.delete({ where: { id } })
 
     const calificacion = await prisma.calificacion.findUnique({
@@ -405,8 +446,14 @@ router.put('/guardar', async (req, res) => {
       return res.status(400).json({ error: 'estudianteId, materiaId, periodo y anio son requeridos' })
     }
 
-    const est = await prisma._db.prepare('SELECT sede FROM estudiantes WHERE id = ?').get(estudianteId)
+    const est = await prisma._db.prepare('SELECT sede, curso FROM estudiantes WHERE id = ?').get(estudianteId)
     const sede = est?.sede || 'PPAL - TRIUNFO'
+
+    // SEGURIDAD: el docente solo guarda notas de sus materias/cursos
+    if (req.usuario.rol === 'DOCENTE' && !(await verificarDocenteAsignado(prisma._db, req.usuario.docenteId, materiaId, est?.curso))) {
+      return res.status(403).json({ error: 'No tienes asignada esa materia en ese curso' })
+    }
+
     if (!(await periodoAbierto(parseInt(anio), sede, parseInt(periodo)))) {
       return res.status(403).json({ error: 'Este período está cerrado para esta sede' })
     }
@@ -544,6 +591,17 @@ router.post('/bulk-update', async (req, res) => {
       const tiposValidos = ['ACTITUDINAL', 'RESPONSABILIDAD', 'ACTIVIDAD', 'EVALUACION']
       if (!tiposValidos.includes(tipo)) continue
 
+      // SEGURIDAD: el docente solo modifica notas de sus materias/cursos
+      if (req.usuario.rol === 'DOCENTE') {
+        const cal = await prisma._db.prepare(
+          'SELECT c.materiaId, e.curso FROM calificaciones c JOIN estudiantes e ON e.id = c.estudianteId WHERE c.id = ?'
+        ).get(calificacionId)
+        if (!cal || !(await verificarDocenteAsignado(prisma._db, req.usuario.docenteId, cal.materiaId, cal.curso))) {
+          resultados.push({ calificacionId, tipo, ignorado: true, error: 'No tienes asignada esa materia en ese curso' })
+          continue
+        }
+      }
+
       if (tipo === 'EVALUACION') {
         const existente = await prisma.notaItem.findFirst({
           where: { calificacionId, tipo: 'EVALUACION' }
@@ -583,7 +641,7 @@ router.post('/bulk-update', async (req, res) => {
       resultados.push({ calificacionId, tipo, valor: parseFloat(valor), creado: true, id: nuevoItem.id })
     }
 
-    const calIds = [...new Set(resultados.map(r => r.calificacionId))]
+    const calIds = [...new Set(resultados.filter(r => !r.ignorado).map(r => r.calificacionId))]
     for (const calId of calIds) {
       const calificacion = await prisma.calificacion.findUnique({
         where: { id: calId },
@@ -612,6 +670,11 @@ router.get('/columnas', async (req, res) => {
     }
     const { curso, materiaId, periodo = 1, anio = new Date().getFullYear() } = req.query
     if (!curso || !materiaId) return res.status(400).json({ error: 'curso y materiaId requeridos' })
+
+    // SEGURIDAD: el docente solo ve columnas de materias/cursos asignados
+    if (req.usuario.rol === 'DOCENTE' && !(await verificarDocenteAsignado(prisma._db, req.usuario.docenteId, materiaId, curso))) {
+      return res.status(403).json({ error: 'No tienes asignada esa materia en ese curso' })
+    }
 
     const TIPOS_CAT = ['ACTITUDINAL', 'RESPONSABILIDAD', 'ACTIVIDAD']
     const columnas = {}
@@ -657,6 +720,11 @@ router.post('/columna', async (req, res) => {
       return res.status(400).json({ error: 'Tipo inválido' })
     }
 
+    // SEGURIDAD: el docente solo crea columnas en materias/cursos asignados
+    if (req.usuario.rol === 'DOCENTE' && !(await verificarDocenteAsignado(prisma._db, req.usuario.docenteId, materiaId, curso))) {
+      return res.status(403).json({ error: 'No tienes asignada esa materia en ese curso' })
+    }
+
     const p = parseInt(periodo) || 1
     const a = parseInt(anio) || new Date().getFullYear()
 
@@ -683,6 +751,12 @@ router.put('/columna', async (req, res) => {
     if (tipo === 'EVALUACION') {
       return res.status(400).json({ error: 'No se puede renombrar la columna de Evaluación' })
     }
+
+    // SEGURIDAD: el docente solo renombra columnas de materias/cursos asignados
+    if (req.usuario.rol === 'DOCENTE' && !(await verificarDocenteAsignado(prisma._db, req.usuario.docenteId, materiaId, curso))) {
+      return res.status(403).json({ error: 'No tienes asignada esa materia en ese curso' })
+    }
+
     const p = parseInt(periodo) || 1
     const a = parseInt(anio) || new Date().getFullYear()
 
@@ -716,6 +790,12 @@ router.delete('/columna', async (req, res) => {
     if (tipo === 'EVALUACION') {
       return res.status(400).json({ error: 'No se puede eliminar la columna de Evaluación' })
     }
+
+    // SEGURIDAD: el docente solo elimina columnas de materias/cursos asignados
+    if (req.usuario.rol === 'DOCENTE' && !(await verificarDocenteAsignado(prisma._db, req.usuario.docenteId, materiaId, curso))) {
+      return res.status(403).json({ error: 'No tienes asignada esa materia en ese curso' })
+    }
+
     const p = parseInt(periodo) || 1
     const a = parseInt(anio) || new Date().getFullYear()
 
@@ -788,14 +868,9 @@ router.post('/guardar-grid', async (req, res) => {
       const cursoEstudiante = est.curso
 
       // SEGURIDAD: un docente NO puede guardar notas de una materia/curso que no tiene asignada
-      if (req.usuario.rol === 'DOCENTE') {
-        const asignacion = await prisma._db.prepare(
-          'SELECT id FROM docente_materias WHERE docenteId = ? AND materiaId = ? AND curso = ?'
-        ).get(req.usuario.docenteId, materiaId, cursoEstudiante)
-        if (!asignacion) {
-          advertencias.add('No tienes asignada la materia en el curso ' + cursoEstudiante + ' — se ignoró el cambio.')
-          continue
-        }
+      if (req.usuario.rol === 'DOCENTE' && !(await verificarDocenteAsignado(prisma._db, req.usuario.docenteId, materiaId, cursoEstudiante))) {
+        advertencias.add('No tienes asignada la materia en el curso ' + cursoEstudiante + ' — se ignoró el cambio.')
+        continue
       }
 
       // Periodo cerrado manualmente → saltar
@@ -893,6 +968,12 @@ router.post('/guardar-grid', async (req, res) => {
 
 router.get('/observaciones', async (req, res) => {
   try {
+    // SEGURIDAD: antes no había ni check de rol — cualquier usuario autenticado
+    // podía leer observaciones de cualquier estudiante (IDOR)
+    if (req.usuario.rol !== 'DOCENTE' && req.usuario.rol !== 'ADMIN') {
+      return res.status(403).json({ error: 'Solo docentes y administradores' })
+    }
+
     const estudianteId = req.query.estudianteId
     const docenteId = req.query.docenteId
     const where = []
@@ -900,6 +981,13 @@ router.get('/observaciones', async (req, res) => {
     if (estudianteId) { where.push('o.estudianteId = ?'); params.push(estudianteId) }
     if (docenteId) { where.push('o.docenteId = ?'); params.push(docenteId) }
     if (where.length === 0) return res.status(400).json({ error: 'Se requiere al menos estudianteId o docenteId' })
+
+    // SEGURIDAD: el docente solo consulta estudiantes de sus cursos
+    // (materia asignada o director de grupo); sus propias observaciones siempre
+    if (req.usuario.rol === 'DOCENTE' && estudianteId && !(await docentePuedeVerEstudiante(prisma._db, req.usuario.docenteId, estudianteId))) {
+      return res.status(403).json({ error: 'No tienes asignada ninguna materia en el curso de ese estudiante' })
+    }
+
     const rows = await prisma._db.prepare(`
       SELECT o.*, m.nombre AS "materiaNombre", u.nombre AS "docenteNombre"
       FROM observaciones o
@@ -929,13 +1017,8 @@ router.post('/observaciones', async (req, res) => {
     const estudiante = await prisma._db.prepare('SELECT curso FROM estudiantes WHERE id = ?').get(estudianteId)
     if (!estudiante) return res.status(404).json({ error: 'Estudiante no encontrado' })
 
-    if (req.usuario.rol !== 'ADMIN') {
-      const asignacion = await prisma._db.prepare(
-        'SELECT id FROM docente_materias WHERE docenteId = ? AND materiaId = ? AND curso = ?'
-      ).get(req.usuario.docenteId, materiaId, estudiante.curso)
-      if (!asignacion) {
-        return res.status(403).json({ error: 'No tienes asignada esta materia en el curso del estudiante' })
-      }
+    if (req.usuario.rol !== 'ADMIN' && !(await verificarDocenteAsignado(prisma._db, req.usuario.docenteId, materiaId, estudiante.curso))) {
+      return res.status(403).json({ error: 'No tienes asignada esta materia en el curso del estudiante' })
     }
 
     const id = require('crypto').randomUUID()
@@ -1284,11 +1367,8 @@ router.get('/consolidado', async (req, res) => {
     const periodoActual = parseInt(req.query.periodo) || 1
     if (!curso || !materiaId) return res.status(400).json({ error: 'Debes enviar curso y materiaId' })
 
-    if (req.usuario.rol === 'DOCENTE') {
-      const asignacion = await prisma._db.prepare(
-        'SELECT id FROM docente_materias WHERE docenteId = ? AND materiaId = ? AND curso = ?'
-      ).get(req.usuario.docenteId, materiaId, curso)
-      if (!asignacion) return res.status(403).json({ error: 'No tienes asignada esa materia en ese curso' })
+    if (req.usuario.rol === 'DOCENTE' && !(await verificarDocenteAsignado(prisma._db, req.usuario.docenteId, materiaId, curso))) {
+      return res.status(403).json({ error: 'No tienes asignada esa materia en ese curso' })
     }
 
     const estudiantes = await calcularConsolidado(prisma._db, curso, materiaId, anio, periodoActual)

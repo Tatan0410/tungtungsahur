@@ -1,10 +1,14 @@
 const { test, before, after } = require('node:test')
 const assert = require('node:assert/strict')
 const bcrypt = require('bcryptjs')
+const crypto = require('node:crypto')
 const { arrancarServidor } = require('./helpers/servidor')
 const { crearApi, login, ADMIN, DOCENTE } = require('./helpers/api')
 
 let srv, api, db, tokenAdmin, tokenDocente, tokenEstudiante, cursoDirector, cursoAjeno, correoEstudiante
+// Fixtures IDOR: estudiante + calificación + item en un curso (999) donde el
+// docente de prueba NO tiene asignaciones ni dirección de grupo
+let estudianteIdor, materiaIdor, calIdor, itemIdor, docId
 
 before(async () => {
   srv = await arrancarServidor()
@@ -39,6 +43,28 @@ before(async () => {
 
   const todos = db.prepare('SELECT DISTINCT curso FROM estudiantes').all().map(r => r.curso)
   cursoAjeno = todos.find(c => !dirige.some(d => d.curso === c)) || todos[0]
+
+  // ── Fixtures para las pruebas IDOR ──
+  // El curso '999' no existe para nadie: garantiza que el par
+  // (materia, '999') no esté asignado al docente de prueba
+  docId = doc.id
+  const uId = crypto.randomUUID()
+  db.prepare(
+    'INSERT INTO usuarios (id, correo, password, rol, nombre, documento, activo) VALUES (?, NULL, ?, ?, ?, ?, 1)'
+  ).run(uId, bcrypt.hashSync('Idor123', 10), 'ESTUDIANTE', 'EST IDOR PRUEBA', '88000123')
+  estudianteIdor = crypto.randomUUID()
+  db.prepare(
+    'INSERT INTO estudiantes (id, usuarioId, documento, codigo, sede, jornada, grado, curso) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(estudianteIdor, uId, '88000123', '88000123', 'PPAL - TRIUNFO', 'MAÑANA', 9, '999')
+  materiaIdor = db.prepare('SELECT id FROM materias LIMIT 1').get().id
+  calIdor = crypto.randomUUID()
+  db.prepare(
+    'INSERT INTO calificaciones (id, estudianteId, materiaId, docenteId, periodo, anio, definitiva, actualizadoEn) VALUES (?, ?, ?, ?, ?, ?, NULL, CURRENT_TIMESTAMP)'
+  ).run(calIdor, estudianteIdor, materiaIdor, doc.id, 1, new Date().getFullYear())
+  itemIdor = crypto.randomUUID()
+  db.prepare(
+    'INSERT INTO notas_items (id, calificacionId, tipo, valor, descripcion) VALUES (?, ?, ?, ?, ?)'
+  ).run(itemIdor, calIdor, 'ACTIVIDAD', 3.0, 'Columna IDOR test')
 })
 
 after(async () => { db.close(); await srv.cerrar() })
@@ -141,4 +167,116 @@ test('login de estudiante devuelve curso y sede', async () => {
   assert.equal(r.data.usuario.rol, 'ESTUDIANTE')
   assert.ok(r.data.usuario.curso, 'payload debe incluir curso')
   assert.ok(r.data.usuario.sede, 'payload debe incluir sede')
+})
+
+// ═══════════════════════════════════════════════════════════════
+// PRUEBAS IDOR: un docente SIN la asignación recibe 403 al intentar
+// operar sobre una materia/curso que no es suyo. El ADMIN pasa siempre.
+// Fixtures: estudiante del curso '999' + calificación + item, creados en before().
+// ═══════════════════════════════════════════════════════════════
+
+test('IDOR GET /grupo: docente 403 en curso/materia ajeno, admin 200', async () => {
+  const r = await api.get('/api/notas/grupo?curso=999&materiaId=' + materiaIdor, { token: tokenDocente })
+  assert.equal(r.status, 403)
+  assert.match(r.data.error, /asignada/)
+  const a = await api.get('/api/notas/grupo?curso=999&materiaId=' + materiaIdor, { token: tokenAdmin })
+  assert.equal(a.status, 200)
+})
+
+test('IDOR GET /columnas: docente 403 en curso/materia ajeno', async () => {
+  const r = await api.get('/api/notas/columnas?curso=999&materiaId=' + materiaIdor + '&periodo=1', { token: tokenDocente })
+  assert.equal(r.status, 403)
+  assert.match(r.data.error, /asignada/)
+})
+
+test('IDOR POST /columna: docente 403 y no crea la columna', async () => {
+  const body = { curso: '999', materiaId: materiaIdor, tipo: 'ACTIVIDAD', titulo: 'Col IDOR' }
+  const r = await api.post('/api/notas/columna', { token: tokenDocente, body })
+  assert.equal(r.status, 403)
+  assert.match(r.data.error, /asignada/)
+  const creada = db.prepare('SELECT id FROM columnas WHERE curso = ? AND materiaId = ? AND titulo = ?').get('999', materiaIdor, 'Col IDOR')
+  assert.equal(creada, undefined, 'la columna no debe existir')
+})
+
+test('IDOR PUT /columna: docente 403 en curso/materia ajeno', async () => {
+  const body = { curso: '999', materiaId: materiaIdor, tipo: 'ACTIVIDAD', tituloViejo: 'X', tituloNuevo: 'Y' }
+  const r = await api.put('/api/notas/columna', { token: tokenDocente, body })
+  assert.equal(r.status, 403)
+  assert.match(r.data.error, /asignada/)
+})
+
+test('IDOR DELETE /columna: docente 403 en curso/materia ajeno', async () => {
+  const body = { curso: '999', materiaId: materiaIdor, tipo: 'ACTIVIDAD', titulo: 'Col IDOR' }
+  const r = await api.delete('/api/notas/columna', { token: tokenDocente, body })
+  assert.equal(r.status, 403)
+  assert.match(r.data.error, /asignada/)
+})
+
+test('IDOR POST /items: docente 403 sobre calificación ajena', async () => {
+  const r = await api.post('/api/notas/items', { token: tokenDocente, body: { calificacionId: calIdor, tipo: 'ACTIVIDAD', valor: 4 } })
+  assert.equal(r.status, 403)
+  assert.match(r.data.error, /asignada/)
+})
+
+test('IDOR PUT /items/:id: docente 403 sobre item ajeno y no lo modifica', async () => {
+  const r = await api.put('/api/notas/items/' + itemIdor, { token: tokenDocente, body: { valor: 1 } })
+  assert.equal(r.status, 403)
+  assert.match(r.data.error, /asignada/)
+  const item = db.prepare('SELECT valor FROM notas_items WHERE id = ?').get(itemIdor)
+  assert.equal(item.valor, 3.0, 'el valor no debe cambiar')
+})
+
+test('IDOR DELETE /items/:id: docente 403 sobre item ajeno y no lo borra', async () => {
+  const r = await api.delete('/api/notas/items/' + itemIdor, { token: tokenDocente })
+  assert.equal(r.status, 403)
+  assert.match(r.data.error, /asignada/)
+  const item = db.prepare('SELECT id FROM notas_items WHERE id = ?').get(itemIdor)
+  assert.ok(item, 'el item no debe borrarse')
+})
+
+test('IDOR PUT /guardar: docente 403 sobre estudiante/materia ajeno', async () => {
+  const r = await api.put('/api/notas/guardar', {
+    token: tokenDocente,
+    body: { estudianteId: estudianteIdor, materiaId: materiaIdor, periodo: 1, anio: new Date().getFullYear() },
+  })
+  assert.equal(r.status, 403)
+  assert.match(r.data.error, /asignada/)
+})
+
+test('IDOR POST /bulk-update: docente ignora calificaciones ajenas', async () => {
+  const r = await api.post('/api/notas/bulk-update', {
+    token: tokenDocente,
+    body: [{ calificacionId: calIdor, tipo: 'ACTIVIDAD', valor: 5 }],
+  })
+  assert.equal(r.status, 200)
+  assert.equal(r.data.items.length, 1)
+  assert.equal(r.data.items[0].ignorado, true, 'el item debe venir marcado como ignorado')
+  const item = db.prepare('SELECT valor FROM notas_items WHERE id = ?').get(itemIdor)
+  assert.equal(item.valor, 3.0, 'el valor no debe cambiar')
+})
+
+test('IDOR GET /observaciones: estudiante 403 (sin rol), docente 403 ajeno, admin 200', async () => {
+  const est = await api.get('/api/notas/observaciones?estudianteId=' + estudianteIdor, { token: tokenEstudiante })
+  assert.equal(est.status, 403, 'un estudiante no puede leer observaciones de nadie')
+  const doc = await api.get('/api/notas/observaciones?estudianteId=' + estudianteIdor, { token: tokenDocente })
+  assert.equal(doc.status, 403)
+  assert.match(doc.data.error, /asignada/)
+  const adm = await api.get('/api/notas/observaciones?estudianteId=' + estudianteIdor, { token: tokenAdmin })
+  assert.equal(adm.status, 200)
+  assert.ok(Array.isArray(adm.data))
+})
+
+test('GET /observaciones: el docente puede consultar por su propio docenteId', async () => {
+  const r = await api.get('/api/notas/observaciones?docenteId=' + docId, { token: tokenDocente })
+  assert.equal(r.status, 200)
+  assert.ok(Array.isArray(r.data))
+})
+
+test('GET /observaciones: el docente director de grupo ve a los estudiantes de su curso', async () => {
+  if (!cursoDirector) return // el docente de prueba no dirige ningún curso
+  const est = db.prepare('SELECT id FROM estudiantes WHERE curso = ? LIMIT 1').get(cursoDirector)
+  if (!est) return // curso sin estudiantes
+  const r = await api.get('/api/notas/observaciones?estudianteId=' + est.id, { token: tokenDocente })
+  assert.equal(r.status, 200)
+  assert.ok(Array.isArray(r.data))
 })
