@@ -193,6 +193,18 @@ test('la barra de carga ya no usa animación de timer fijo', () => {
   assert.ok(HTML.includes("r.status >= 500"), 'el interceptor debe contar 5xx como fallo')
 })
 
+test('interceptor distingue fallo de red de error 5xx del servidor', () => {
+  // Fallo de red (el fetch rechazó, nunca hubo respuesta)
+  assert.ok(HTML.includes("'Sin conexión con el servidor. Intenta de nuevo.'"), 'falta el toast de red')
+  // 5xx (el servidor respondió con error interno) — mensaje distinto
+  assert.ok(HTML.includes("'Error del servidor al guardar. Intenta de nuevo.'"), 'falta el toast de 5xx')
+  // Contadores separados
+  assert.ok(HTML.includes('_cargaErroresRed'), 'falta el contador de errores de red')
+  assert.ok(HTML.includes('_cargaErroresServidor'), 'falta el contador de errores de servidor')
+  // El mensaje genérico anterior ya no existe
+  assert.ok(!HTML.includes("'Error de conexión con el servidor. Intenta de nuevo.'"), 'el mensaje antiguo debe eliminarse')
+})
+
 test('barra de carga: salta a 35%, avanza lento y termina en 100% al ocultar', async () => {
   const prog = { style: { width: '1%' } }
   const pantalla = { style: { display: 'none' } }

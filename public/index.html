@@ -5580,10 +5580,11 @@ function ciclarMensajeCarga() {
 const _fetchOriginal = window.fetch
 let _peticionesActivas = 0
 let _pantallaCargaTimer = null
-let _cargaErrores = 0
+let _cargaErroresRed = 0
+let _cargaErroresServidor = 0
 window.fetch = function (...args) {
   const primera = _peticionesActivas === 0
-  if (primera) _cargaErrores = 0
+  if (primera) { _cargaErroresRed = 0; _cargaErroresServidor = 0 }
   _peticionesActivas++
   if (primera) {
     clearTimeout(_pantallaCargaTimer)
@@ -5592,11 +5593,12 @@ window.fetch = function (...args) {
     }, 600)
   }
   return _fetchOriginal.apply(this, args)
-    // Solo cuentan como fallo el error de red (fetch rechaza) y el 5xx del
-    // servidor; los 4xx son respuestas de negocio que cada pantalla ya
-    // muestra a su manera (login inválido, 403 de permisos, etc.)
-    .then(r => { if (!r || r.status >= 500) _cargaErrores++; return r })
-    .catch(e => { _cargaErrores++; throw e })
+    // Se distingue: 5xx = el servidor SÍ respondió con error interno;
+    // rechazo del fetch = nunca llegó a responder (sin internet, CORS).
+    // Los 4xx son respuestas de negocio que cada pantalla ya muestra
+    // a su manera (login inválido, 403 de permisos, etc.)
+    .then(r => { if (!r || r.status >= 500) _cargaErroresServidor++; return r })
+    .catch(e => { _cargaErroresRed++; throw e })
     .finally(() => {
       _peticionesActivas--
       if (_peticionesActivas <= 0) {
@@ -5604,7 +5606,12 @@ window.fetch = function (...args) {
         clearTimeout(_pantallaCargaTimer)
         mostrarPantallaCarga(false)
         // La barra nunca queda trabada: si algo falló de verdad, aviso claro
-        if (_cargaErrores > 0) mostrarToast('error', 'Error de conexión con el servidor. Intenta de nuevo.')
+        // y con la causa correcta (no culpar al internet si fue el servidor)
+        if (_cargaErroresRed > 0) {
+          mostrarToast('error', 'Sin conexión con el servidor. Intenta de nuevo.')
+        } else if (_cargaErroresServidor > 0) {
+          mostrarToast('error', 'Error del servidor al guardar. Intenta de nuevo.')
+        }
       }
     })
 }
