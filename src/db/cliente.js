@@ -131,7 +131,12 @@ class ClientePostgres {
     const { Pool } = require('pg')
     const pool = new Pool({
       connectionString: url,
-      max: 10,
+      // Supavisor transaction mode (Supabase 6543) multiplexa de por sí: cada
+      // conexión del app es un slot de los ~200 del pooler Free. Con 10 por
+      // instancia serverless, ~20 instancias agotaban el pooler y caían
+      // errores "too many clients". Con 2 por instancia el límite real son
+      // las ~100 instancias. Las transacciones cortas apenas esperan.
+      max: 2,
       // Supavisor transaction mode (Supabase 6543): sin prepared statements
       prepare: false,
       statement_timeout: 20000,
@@ -180,7 +185,11 @@ class ClientePostgres {
   }
 
   exec(sql) {
-    if (transaccion.getStore()?.cliente) return this.pool.query(sql)
+    // Dentro de una transacción se usa SU cliente: ir al pool tomaría OTRA
+    // conexión (riesgo de espera mutua con pools chicos) y además la
+    // sentencia quedaría FUERA del BEGIN/COMMIT (sin rollback).
+    const enTx = transaccion.getStore()?.cliente
+    if (enTx) return enTx.query(sql)
     return this._ejecutar(sql, [])
   }
 
