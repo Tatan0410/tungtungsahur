@@ -108,3 +108,46 @@ test('cerrar/reabrir validan parámetros y rol', async () => {
   })
   assert.equal(sinRol.status, 403)
 })
+
+// ═══════════════════════════════════════════════════════════════
+// CACHÉ de GET /api/config/periodos (60 s): SOLO ese endpoint la usa.
+// Este test prueba las tres garantías: (1) la caché existe y sirve
+// datos de memoria, (2) cerrar desde el admin la invalida al instante,
+// (3) el guardado de notas lee la BD directamente — con la caché
+// caliente y desactualizada, guardar-grid sigue bloqueado de inmediato.
+// ═══════════════════════════════════════════════════════════════
+test('caché de periodos: sirve de memoria, se invalida al cerrar, y guardar-grid lee la BD directo', async () => {
+  const urlConfig = `/api/config/periodos?anio=${objetivo.anio}&sede=${encodeURIComponent(objetivo.sede)}`
+
+  // 1) Calentar la caché
+  const calienta = await api.get(urlConfig)
+  assert.equal(calienta.status, 200)
+
+  // 2) Cambio DIRECTO en la BD (sin pasar por el admin → sin invalidación):
+  //    la caché caliente debe seguir sirviendo el valor VIEJO (abierto)
+  db.prepare('UPDATE periodos_config SET abierto = 0 WHERE sede = ? AND periodo = ? AND anio = ?')
+    .run(objetivo.sede, objetivo.periodo, objetivo.anio)
+  const servidoDeCache = await api.get(urlConfig)
+  const enCache = servidoDeCache.data.find(p => p.periodo === objetivo.periodo)
+  assert.equal(enCache.abierto, 1, 'la caché de 60s sirve el valor previo (prueba de que existe)')
+  // y mientras tanto, guardar-grid YA está bloqueado (lee la BD directo)
+  const bloqueado = await guardar()
+  assert.equal(bloqueado.status, 403, 'guardar-grid usa la BD, no la caché: bloqueo inmediato')
+
+  // 3) Cerrar desde el admin → invalida la caché → el endpoint sirve la verdad
+  const cerrar = await api.post('/api/admin/periodos/cerrar', {
+    token: tokenAdmin, body: { sede: objetivo.sede, periodo: objetivo.periodo, anio: objetivo.anio },
+  })
+  assert.equal(cerrar.status, 200)
+  const trasCerrar = await api.get(urlConfig)
+  const cerrado = trasCerrar.data.find(p => p.periodo === objetivo.periodo)
+  assert.equal(cerrado.abierto, 0, 'la invalidación refleja el cierre al instante')
+
+  // Limpieza: reabrir desde el admin
+  await api.post('/api/admin/periodos/reabrir', {
+    token: tokenAdmin, body: { sede: objetivo.sede, periodo: objetivo.periodo, anio: objetivo.anio },
+  })
+  const trasReabrir = await api.get(urlConfig)
+  const abierto = trasReabrir.data.find(p => p.periodo === objetivo.periodo)
+  assert.equal(abierto.abierto, 1)
+})

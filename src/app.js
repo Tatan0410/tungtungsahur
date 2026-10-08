@@ -58,6 +58,7 @@ app.use(express.static(path.join(__dirname, '../public')))
 
 const { aplicarMigraciones } = require('./db/migraciones')
 const { crearCliente } = require('./db/cliente')
+const { obtenerPeriodos } = require('./services/cachePeriodos')
 const db = crearCliente()
 const migracionesAplicadas = aplicarMigraciones(db).then(nombres => {
   if (nombres.length > 0) {
@@ -94,18 +95,15 @@ app.get('/api/ping', (req, res) => {
   })
 })
 
-// Configuración pública de períodos (sin auth)
+// Configuración pública de períodos (sin auth) — con caché de 60 s en
+// memoria: cada carga de portal la consulta y la tabla casi nunca cambia.
+// SOLO este endpoint la usa; cerrar/reabrir/editar desde el admin la
+// invalida, y las validaciones de guardado leen la BD directo.
 app.get('/api/config/periodos', async (req, res) => {
   try {
     const anio = parseInt(req.query.anio) || new Date().getFullYear()
     const sede = req.query.sede
-    let rows
-    if (sede) {
-      rows = await db.prepare('SELECT * FROM periodos_config WHERE sede = ? AND anio = ? ORDER BY periodo').all(sede, anio)
-    } else {
-      rows = await db.prepare('SELECT * FROM periodos_config WHERE anio = ? ORDER BY sede, periodo').all(anio)
-    }
-    res.json(rows)
+    res.json(await obtenerPeriodos(db, anio, sede))
   } catch (error) {
     console.error('Error GET /config/periodos:', error)
     res.status(500).json({ error: 'Error interno' })

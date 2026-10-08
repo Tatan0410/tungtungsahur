@@ -6,6 +6,7 @@ const { calcularReporteCorte } = require('../services/reporteCorte')
 const { calcularDefinitiva } = require('../services/calculoNotas')
 const { calcularConsolidado, calcularMinimoRequerido } = require('../services/consolidado')
 const { parsearExcel, analizarImportacion } = require('../services/importar-estudiantes')
+const { invalidarCachePeriodos } = require('../services/cachePeriodos')
 const multer = require('multer')
 
 // Multer: solo archivos .xlsx, máximo 10 MB, en memoria (buffer)
@@ -521,6 +522,7 @@ router.put('/periodos/:id', async (req, res) => {
     if (updates.length === 0) return res.status(400).json({ error: 'Nada que actualizar' })
     params.push(req.params.id)
     await prisma._db.prepare(`UPDATE periodos_config SET ${updates.join(', ')} WHERE id = ?`).run(...params)
+    invalidarCachePeriodos()
     res.json({ mensaje: 'Período actualizado' })
   } catch (error) {
     console.error('Error PUT /periodos:', error)
@@ -540,6 +542,7 @@ router.post('/periodos/cerrar', async (req, res) => {
       'UPDATE periodos_config SET abierto = 0 WHERE sede = ? AND periodo = ? AND anio = ?'
     ).run(sede, parseInt(periodo), parseInt(anio))
     if (row.changes === 0) return res.status(404).json({ error: 'Período no encontrado' })
+    invalidarCachePeriodos()
     res.json({ mensaje: 'Período cerrado manualmente.' })
   } catch (error) {
     console.error('Error POST /periodos/cerrar:', error)
@@ -558,6 +561,7 @@ router.post('/periodos/reabrir', async (req, res) => {
     await prisma._db.prepare(
       'UPDATE periodos_config SET abierto = 1, reapertura_manual = 1 WHERE sede = ? AND periodo = ? AND anio = ?'
     ).run(sede, parseInt(periodo), parseInt(anio))
+    invalidarCachePeriodos()
     res.json({ mensaje: 'Período reabierto. Los profesores pueden volver a guardar notas aunque haya pasado la fecha de corte final.' })
   } catch (error) {
     console.error('Error POST /periodos/reabrir:', error)
