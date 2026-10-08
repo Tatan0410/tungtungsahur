@@ -905,6 +905,14 @@ router.post('/guardar-grid', async (req, res) => {
     const advertencias = new Set()
     const grupos = new Map() // gKey → { estudianteId, materiaId, periodo, anio, items }
 
+    // Memos POR PETICIÓN: una tanda típica repite el mismo estudiante (varias
+    // columnas), la misma asignación y el mismo período decenas de veces —
+    // validar cada item contra la BD era un N+1 (4 queries × N items).
+    const memoEst = new Map()
+    const memoAsignacion = new Map()
+    const memoPeriodo = new Map()
+    const memoCfg = new Map()
+
     // ── Fase 1: validaciones en JS, solo lecturas (nada se escribe aún) ──
     // Los fallos de esta fase se reportan por item sin tocar la BD.
     for (const item of items) {
@@ -923,7 +931,10 @@ router.post('/guardar-grid', async (req, res) => {
       const p = parseInt(periodo) || 1
       const a = parseInt(anio) || new Date().getFullYear()
 
-      const est = await prisma._db.prepare('SELECT sede, curso FROM estudiantes WHERE id = ?').get(estudianteId)
+      if (!memoEst.has(estudianteId)) {
+        memoEst.set(estudianteId, await prisma._db.prepare('SELECT sede, curso FROM estudiantes WHERE id = ?').get(estudianteId))
+      }
+      const est = memoEst.get(estudianteId)
       if (!est) {
         fallidos.push({ clave: claveDe(item), error: 'Estudiante no encontrado' })
         continue
@@ -931,19 +942,32 @@ router.post('/guardar-grid', async (req, res) => {
 
       // SEGURIDAD (IDOR): un docente NO puede guardar notas de una materia/
       // curso que no tiene asignada
-      if (req.usuario.rol === 'DOCENTE' && !(await verificarDocenteAsignado(prisma._db, req.usuario.docenteId, materiaId, est.curso))) {
-        fallidos.push({ clave: claveDe(item), error: 'No tienes asignada la materia en el curso ' + est.curso })
-        continue
+      if (req.usuario.rol === 'DOCENTE') {
+        const claveAsig = req.usuario.docenteId + '|' + materiaId + '|' + est.curso
+        if (!memoAsignacion.has(claveAsig)) {
+          memoAsignacion.set(claveAsig, await verificarDocenteAsignado(prisma._db, req.usuario.docenteId, materiaId, est.curso))
+        }
+        if (!memoAsignacion.get(claveAsig)) {
+          fallidos.push({ clave: claveDe(item), error: 'No tienes asignada la materia en el curso ' + est.curso })
+          continue
+        }
       }
 
       // Período cerrado manualmente → este item no se guarda
-      if (!(await periodoAbierto(a, est.sede, p))) {
+      const clavePeriodo = a + '|' + est.sede + '|' + p
+      if (!memoPeriodo.has(clavePeriodo)) {
+        memoPeriodo.set(clavePeriodo, await periodoAbierto(a, est.sede, p))
+      }
+      if (!memoPeriodo.get(clavePeriodo)) {
         fallidos.push({ clave: claveDe(item), error: 'El período ' + p + ' está cerrado para esta sede' })
         continue
       }
 
       // Fecha límite pasada pero período reabierto → advertir (informativo)
-      const cfg = await prisma._db.prepare('SELECT fecha_fin, reapertura_manual FROM periodos_config WHERE anio = ? AND sede = ? AND periodo = ?').get(a, est.sede, p)
+      if (!memoCfg.has(clavePeriodo)) {
+        memoCfg.set(clavePeriodo, await prisma._db.prepare('SELECT fecha_fin, reapertura_manual FROM periodos_config WHERE anio = ? AND sede = ? AND periodo = ?').get(a, est.sede, p))
+      }
+      const cfg = memoCfg.get(clavePeriodo)
       if (cfg?.fecha_fin) {
         const fechaFin = new Date(cfg.fecha_fin)
         if (fechaFin < new Date() && cfg.reapertura_manual) {
@@ -1386,26 +1410,58 @@ router.get('/mis-areas', async (req, res) => {
     `).all(cursoRow.curso)
 
     const resultado = []
-    for (const a of areas) {
-      const materias = await prisma._db.prepare(`
-        SELECT am.materiaid AS "materiaId", am.porcentaje, m.nombre AS "materiaNombre"
+    // RENDIMIENTO (antes: 1 query de materias por área + 1 de calificación y
+    // 1 de items POR materia — con 4 áreas × 5 materias eran 25-30 queries).
+    // Ahora: 3 consultas totales con IN, cruzadas en memoria.
+    let materiasPorArea = new Map()
+    let calPorMateria = new Map()
+    let itemsPorCal = new Map()
+    if (areas.length) {
+      const areasIds = areas.map(a => a.areaId)
+      const marcasA = areasIds.map(() => '?').join(',')
+      const todasMaterias = await prisma._db.prepare(`
+        SELECT am.areaid AS "areaId", am.materiaid AS "materiaId", am.porcentaje, m.nombre AS "materiaNombre"
         FROM area_materias am JOIN materias m ON m.id = am.materiaId
-        WHERE am.areaid = ?
+        WHERE am.areaid IN (${marcasA})
         ORDER BY am.porcentaje DESC, m.nombre ASC
-      `).all(a.areaId)
+      `).all(...areasIds)
+      for (const m of todasMaterias) {
+        if (!materiasPorArea.has(m.areaId)) materiasPorArea.set(m.areaId, [])
+        materiasPorArea.get(m.areaId).push(m)
+      }
+
+      // Todas las calificaciones del estudiante para el período, indexadas
+      // por materia; los items solo de las que no tienen definitiva cerrada
+      const calsEstudiante = await prisma._db.prepare(
+        'SELECT id, materiaId, definitiva FROM calificaciones WHERE estudianteId = ? AND periodo = ? AND anio = ?'
+      ).all(estudianteId, periodo, anio)
+      calPorMateria = new Map(calsEstudiante.map(c => [c.materiaId, c]))
+      const calsSinDefinitiva = calsEstudiante.filter(c => c.definitiva === null).map(c => c.id)
+      if (calsSinDefinitiva.length) {
+        const marcasC = calsSinDefinitiva.map(() => '?').join(',')
+        const items = await prisma._db.prepare(
+          `SELECT calificacionId, tipo, valor FROM notas_items WHERE calificacionId IN (${marcasC})`
+        ).all(...calsSinDefinitiva)
+        for (const it of items) {
+          if (!itemsPorCal.has(it.calificacionId)) itemsPorCal.set(it.calificacionId, [])
+          itemsPorCal.get(it.calificacionId).push({ tipo: it.tipo, valor: it.valor })
+        }
+      }
+    }
+
+    for (const a of areas) {
+      const materias = materiasPorArea.get(a.areaId) || []
 
       const materiasData = []
       let sumaPonderada = 0
       let sumaPorcentajes = 0
       let parciales = false
       for (const m of materias) {
-        const cal = await prisma._db.prepare(
-          'SELECT id, definitiva FROM calificaciones WHERE estudianteId = ? AND materiaId = ? AND periodo = ? AND anio = ?'
-        ).get(estudianteId, m.materiaId, periodo, anio)
+        const cal = calPorMateria.get(m.materiaId)
         let definitiva = cal ? cal.definitiva : null
         let provisional = false
         if (cal && definitiva === null) {
-          const items = await prisma._db.prepare('SELECT tipo, valor FROM notas_items WHERE calificacionId = ?').all(cal.id)
+          const items = itemsPorCal.get(cal.id) || []
           if (items.length) {
             definitiva = calcularDefinitiva(items)
             provisional = definitiva !== null

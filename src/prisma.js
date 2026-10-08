@@ -47,23 +47,46 @@ const prisma = {
         sql += ' AND u.activo = 1'
       }
       const rows = await db.prepare(sql).all(where.curso)
+
+      // RENDIMIENTO (antes: 1 query de calificaciones POR estudiante y 1 de
+      // items POR calificación — en un curso de 27 con 12 materias eran 350+
+      // queries por carga del grid). Ahora: 2 consultas totales con IN,
+      // agrupadas por estudiante y por calificación. El orden relativo por
+      // estudiante se conserva (mismo escaneo de tabla que antes).
+      let calsPorEst = new Map()
+      let itemsPorCal = new Map()
+      if (include?.calificaciones && rows.length) {
+        const w = include.calificaciones.where || {}
+        const ids = rows.map(r => r.id)
+        const marcas = ids.map(() => '?').join(',')
+        let sqlCals = `SELECT c.* FROM calificaciones c WHERE c.estudianteId IN (${marcas})`
+        const params = [...ids]
+        if (w.materiaId) { sqlCals += ' AND c.materiaId = ?'; params.push(w.materiaId) }
+        if (w.periodo) { sqlCals += ' AND c.periodo = ?'; params.push(w.periodo) }
+        if (w.anio) { sqlCals += ' AND c.anio = ?'; params.push(w.anio) }
+        const calRows = await db.prepare(sqlCals).all(...params)
+        for (const c of calRows) {
+          if (!calsPorEst.has(c.estudianteId)) calsPorEst.set(c.estudianteId, [])
+          calsPorEst.get(c.estudianteId).push(c)
+        }
+        if (include.calificaciones.include?.notasItems && calRows.length) {
+          const marcasC = calRows.map(() => '?').join(',')
+          const items = await db.prepare(`SELECT * FROM notas_items WHERE calificacionId IN (${marcasC})`).all(...calRows.map(c => c.id))
+          for (const it of items) {
+            if (!itemsPorCal.has(it.calificacionId)) itemsPorCal.set(it.calificacionId, [])
+            itemsPorCal.get(it.calificacionId).push(it)
+          }
+        }
+      }
+
       const resultados = await Promise.all(rows.map(async row => {
         const est = { id: row.id, usuarioId: row.usuarioId, documento: row.documento, codigo: row.codigo, sede: row.sede, jornada: row.jornada, grado: row.grado, curso: row.curso, mesa: row.mesa }
         if (include?.usuario) est.usuario = { nombre: row.nombre }
         if (include?.calificaciones) {
-          const w = include.calificaciones.where || {}
-          let sql = 'SELECT c.* FROM calificaciones c WHERE c.estudianteId = ?'
-          const params = [row.id]
-          if (w.materiaId) { sql += ' AND c.materiaId = ?'; params.push(w.materiaId) }
-          if (w.periodo) { sql += ' AND c.periodo = ?'; params.push(w.periodo) }
-          if (w.anio) { sql += ' AND c.anio = ?'; params.push(w.anio) }
-          const calRows = await db.prepare(sql).all(...params)
-          est.calificaciones = calRows.map(c => c)
-          if (include.calificaciones.include?.notasItems) {
-            for (const c of est.calificaciones) {
-              c.notasItems = await db.prepare('SELECT * FROM notas_items WHERE calificacionId = ?').all(c.id)
-            }
-          }
+          est.calificaciones = (calsPorEst.get(est.id) || []).map(c => {
+            if (include.calificaciones.include?.notasItems) c.notasItems = itemsPorCal.get(c.id) || []
+            return c
+          })
         }
         return est
       }))
@@ -130,8 +153,22 @@ const prisma = {
       const selectMateria = include?.materia ? ', m.nombre AS "materiaNombre", m.grado AS "materiaGrado"' : ''
       const order = orderBy?.materia?.nombre === 'asc' ? 'm.nombre ASC' : 'c.periodo ASC'
       const rows = await db.prepare('SELECT c.*' + selectMateria + ' FROM calificaciones c' + joinMateria + ' WHERE ' + conditions.join(' AND ') + ' ORDER BY ' + order).all(...params)
+      // RENDIMIENTO (antes: 1 query por calificación = N+1): todos los
+      // items de la tanda en UNA consulta IN, agrupados por calificación.
+      // El orden por calificación se conserva (el IN va ORDER BY creadoEn).
+      if (include?.notasItems) {
+        const porCal = new Map()
+        if (rows.length) {
+          const marcas = rows.map(() => '?').join(',')
+          const items = await db.prepare(`SELECT * FROM notas_items WHERE calificacionId IN (${marcas}) ORDER BY creadoEn ASC`).all(...rows.map(r => r.id))
+          for (const it of items) {
+            if (!porCal.has(it.calificacionId)) porCal.set(it.calificacionId, [])
+            porCal.get(it.calificacionId).push(it)
+          }
+        }
+        for (const r of rows) r.notasItems = porCal.get(r.id) || []
+      }
       for (const r of rows) {
-        if (include?.notasItems) r.notasItems = await db.prepare('SELECT * FROM notas_items WHERE calificacionId = ? ORDER BY creadoEn ASC').all(r.id)
         if (include?.materia) r.materia = { nombre: r.materiaNombre, grado: r.materiaGrado }
       }
       return rows

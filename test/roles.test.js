@@ -161,6 +161,48 @@ test('normalizarFila restaura las claves camelCase que Postgres pasa a minúscul
   assert.equal(normalizarFila(undefined), undefined)
 })
 
+test('las filas de las consultas IN batcheadas llegan camelCase y agrupan bien (Postgres)', () => {
+  // Las lecturas batcheadas (mis-notas, grupo, mis-areas) agrupan en memoria
+  // por it.calificacionId / c.estudianteId / c.materiaId. En Postgres esas
+  // columnas llegan en minúscula y normalizarFila debe restaurarlas ANTES
+  // de que el agrupado las use. Este test simula exactamente esas filas.
+  const { normalizarFilas } = require('../src/db/cliente')
+
+  // Fila de calificaciones tal como la devuelve PG: SELECT c.* → todo minúscula
+  const calPg = normalizarFilas([
+    { id: 'cal-1', estudianteid: 'est-1', materiaid: 'mat-1', docenteid: 'doc-1', periodo: 1, anio: 2026, definitiva: null, creadoEn: null, actualizadoen: 'x' },
+  ])
+  // Fila de notas_items del IN: SELECT * FROM notas_items WHERE calificacionId IN (...)
+  const itemsPg = normalizarFilas([
+    { id: 'i1', calificacionid: 'cal-1', tipo: 'ACTIVIDAD', valor: 3.5, descripcion: 'Tarea', creadoen: '2026-01-01 10:00:00' },
+    { id: 'i2', calificacionid: 'cal-1', tipo: 'EVALUACION', valor: 4, descripcion: null, creadoEn: null, creadoEn2: null },
+  ])
+
+  // El agrupado del batching: por calificacionId
+  const porCal = new Map()
+  for (const it of itemsPg) {
+    if (!porCal.has(it.calificacionId)) porCal.set(it.calificacionId, [])
+    porCal.get(it.calificacionId).push(it)
+  }
+  assert.equal(porCal.get('cal-1').length, 2, 'los items agrupan por calificacionId restaurado')
+  assert.equal(porCal.get('cal-1')[0].creadoEn, '2026-01-01 10:00:00', 'creadoEn restaurado para el ORDER BY')
+
+  // El agrupado por estudiante (estudiante.findMany batcheada)
+  const porEst = new Map()
+  for (const c of calPg) {
+    if (!porEst.has(c.estudianteId)) porEst.set(c.estudianteId, [])
+    porEst.get(c.estudianteId).push(c)
+  }
+  assert.ok(porEst.has('est-1'), 'las calificaciones agrupan por estudianteId restaurado')
+  assert.equal(porEst.get('est-1')[0].materiaId, 'mat-1', 'materiaId restaurado')
+
+  // mis-areas: las columnas con alias explícito ("areaId", "materiaId")
+  // llegan bien de PG sin necesitar normalizarFila — se verifica que no rompe
+  const areaFila = normalizarFilas([{ areaId: 'a1', materiaId: 'm1', porcentaje: 3 }])
+  assert.equal(areaFila[0].areaId, 'a1', 'los alias explícitos no se tocan')
+  assert.equal(areaFila[0].materiaId, 'm1')
+})
+
 test('login de estudiante devuelve curso y sede', async () => {
   const r = await api.post('/api/auth/login', { body: { documento: correoEstudiante, password: 'Estudiante123', aceptaTerminos: true } })
   assert.equal(r.status, 200)
