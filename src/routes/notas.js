@@ -81,66 +81,281 @@ function calcularEstado(definitiva) {
   return 'REPROBADO'
 }
 
+// ─── BOOTSTRAP DEL PORTAL DEL ESTUDIANTE ───
+// Una sola llamada devuelve todo el portal (notas, áreas, corte, observaciones,
+// período activo). Reduce la ráfaga de resultados de 5 requests por estudiante
+// a 2 (login + bootstrap): el checkpoint de Vercel cuenta requests por IP, así
+// la ráfaga de 800 pasa de ~4.000 requests a ~1.600.
+// Las funciones compartidas garantizan respuestas IDÉNTICAS a los endpoints
+// individuales, que siguen vivos para el selector de períodos P1-P4.
+
+// Período activo con las mismas reglas del frontend (portadas al servidor):
+//   1. El período que contenga HOY entre fecha_inicio y fecha_fin
+//   2. El de MAYOR número con abierto=true (cubre reabiertos)
+//   3. El de mayor número configurado
+//   4. 1 (solo si no hay configuración)
+// Lee por la caché de 60 s de /api/config/periodos (obtenerPeriodos) — es la
+// MISMA tabla; cerrar/reabrir desde el admin la invalida igual.
+const { obtenerPeriodos } = require('../services/cachePeriodos')
+
+async function determinarPeriodoActivoServidor(db, sede, anio) {
+  let periodos = await obtenerPeriodos(db, anio, sede)
+  if (!periodos.length && sede) periodos = await obtenerPeriodos(db, anio)
+  if (!periodos.length) return 1
+  const hoy = new Date().toISOString().slice(0, 10)
+  const dentro = periodos.find(p => p.abierto && p.fecha_inicio && p.fecha_fin && hoy >= p.fecha_inicio && hoy <= p.fecha_fin)
+  if (dentro) return dentro.periodo
+  const abiertos = periodos.filter(p => p.abierto)
+  if (abiertos.length) return Math.max(...abiertos.map(p => p.periodo))
+  return Math.max(...periodos.map(p => p.periodo))
+}
+
+// Núcleo de GET /mis-notas (sin el role-check): compartido con el bootstrap
+async function obtenerMisNotas(estudianteId, periodo, anio) {
+  // Upsert ATOMICO: findUnique->create->update tenia carrera con refrescos
+  // rapidos (dos peticiones concurrentes creaban la consulta y una reventaba
+  // con UNIQUE -> 500 intermitente). El upsert es una sola operacion.
+  const consulta = await prisma.consultaEstudiante.upsert({
+    where: { estudianteId_periodo_anio: { estudianteId, periodo, anio } },
+    update: { cantidad: { increment: 1 } },
+    create: { estudianteId, periodo, anio, cantidad: 1 },
+  })
+
+  const calificaciones = await prisma.calificacion.findMany({
+    where: { estudianteId, periodo, anio },
+    include: {
+      materia: { select: { nombre: true, grado: true } },
+      notasItems: true,
+    },
+    orderBy: {
+      materia: { nombre: 'asc' }
+    }
+  })
+
+  const notas = calificaciones
+    .map(c => c.definitiva)
+    .filter(n => n !== null)
+
+  const promedio = notas.length > 0
+    ? (notas.reduce((a, b) => a + b, 0) / notas.length).toFixed(2)
+    : null
+
+  return {
+    periodo,
+    anio,
+    consultasUsadas: consulta.cantidad,
+    promedio,
+    calificaciones: calificaciones.map(c => {
+      const grupos = agruparItems(c.notasItems)
+      return {
+        materia:         c.materia.nombre,
+        items:           c.notasItems,
+        grupos: {
+          actitudinal:   { items: grupos.ACTITUDINAL,   promedio: promediarGrupo(grupos.ACTITUDINAL) },
+          responsabilidad: { items: grupos.RESPONSABILIDAD, promedio: promediarGrupo(grupos.RESPONSABILIDAD) },
+          actividades:   { items: grupos.ACTIVIDAD,     promedio: promediarGrupo(grupos.ACTIVIDAD) },
+          evaluacion:    { items: grupos.EVALUACION,    promedio: promediarGrupo(grupos.EVALUACION) },
+        },
+        definitiva:      c.definitiva,
+        estado:          calcularEstado(c.definitiva),
+      }
+    }),
+  }
+}
+
+// Núcleo de GET /mis-areas (sin el role-check): compartido con el bootstrap
+async function obtenerMisAreas(estudianteId, periodo, anio) {
+  const cursoRow = await prisma._db.prepare('SELECT curso FROM estudiantes WHERE id = ?').get(estudianteId)
+  if (!cursoRow) return { areas: [] }
+
+  const areas = await prisma._db.prepare(`
+    SELECT a.id AS "areaId", a.nombre
+    FROM area_cursos ac JOIN areas a ON a.id = ac.areaid
+    WHERE ac.curso = ?
+    ORDER BY a.nombre ASC, a.creadoen ASC
+  `).all(cursoRow.curso)
+
+    const resultado = []
+    // RENDIMIENTO (antes: 1 query de materias por área + 1 de calificación y
+    // 1 de items POR materia — con 4 áreas × 5 materias eran 25-30 queries).
+    // Ahora: 3 consultas totales con IN, cruzadas en memoria.
+    let materiasPorArea = new Map()
+    let calPorMateria = new Map()
+    let itemsPorCal = new Map()
+    if (areas.length) {
+      const areasIds = areas.map(a => a.areaId)
+      const marcasA = areasIds.map(() => '?').join(',')
+      const todasMaterias = await prisma._db.prepare(`
+        SELECT am.areaid AS "areaId", am.materiaid AS "materiaId", am.porcentaje, m.nombre AS "materiaNombre"
+        FROM area_materias am JOIN materias m ON m.id = am.materiaId
+        WHERE am.areaid IN (${marcasA})
+        ORDER BY am.porcentaje DESC, m.nombre ASC
+      `).all(...areasIds)
+      for (const m of todasMaterias) {
+        if (!materiasPorArea.has(m.areaId)) materiasPorArea.set(m.areaId, [])
+        materiasPorArea.get(m.areaId).push(m)
+      }
+
+      // Todas las calificaciones del estudiante para el período, indexadas
+      // por materia; los items solo de las que no tienen definitiva cerrada
+      const calsEstudiante = await prisma._db.prepare(
+        'SELECT id, materiaId, definitiva FROM calificaciones WHERE estudianteId = ? AND periodo = ? AND anio = ?'
+      ).all(estudianteId, periodo, anio)
+      calPorMateria = new Map(calsEstudiante.map(c => [c.materiaId, c]))
+      const calsSinDefinitiva = calsEstudiante.filter(c => c.definitiva === null).map(c => c.id)
+      if (calsSinDefinitiva.length) {
+        const marcasC = calsSinDefinitiva.map(() => '?').join(',')
+        const items = await prisma._db.prepare(
+          `SELECT calificacionId, tipo, valor FROM notas_items WHERE calificacionId IN (${marcasC})`
+        ).all(...calsSinDefinitiva)
+        for (const it of items) {
+          if (!itemsPorCal.has(it.calificacionId)) itemsPorCal.set(it.calificacionId, [])
+          itemsPorCal.get(it.calificacionId).push({ tipo: it.tipo, valor: it.valor })
+        }
+      }
+    }
+
+    for (const a of areas) {
+      const materias = materiasPorArea.get(a.areaId) || []
+
+      const materiasData = []
+      let sumaPonderada = 0
+      let sumaPorcentajes = 0
+      let parciales = false
+      for (const m of materias) {
+        const cal = calPorMateria.get(m.materiaId)
+        let definitiva = cal ? cal.definitiva : null
+        let provisional = false
+        if (cal && definitiva === null) {
+          const items = itemsPorCal.get(cal.id) || []
+          if (items.length) {
+            definitiva = calcularDefinitiva(items)
+            provisional = definitiva !== null
+          }
+        }
+        if (definitiva !== null) {
+          sumaPonderada += definitiva * m.porcentaje
+          sumaPorcentajes += m.porcentaje
+          if (provisional) parciales = true
+        }
+        materiasData.push({
+          materiaId: m.materiaId,
+          materiaNombre: m.materiaNombre,
+          porcentaje: m.porcentaje,
+          definitiva,
+          provisional,
+          estado: definitiva === null ? 'SIN_NOTA' : (definitiva < 3.0 ? 'RIESGO' : 'APROBADO'),
+        })
+      }
+
+      // Promedio ponderado por I.H.S.: Σ(nota × horas) / Σ(horas).
+      // El campo "porcentaje" en la BD ahora son horas semanales (I.H.S.),
+      // y el % de cada materia se deriva automáticamente:
+      //   % = horas_materia / total_horas × 100
+      // La fórmula es la misma: Σ(nota×peso)/Σ(pesos) — solo cambia
+      // la interpretación del campo (horas, no % pre-calculado).
+      const promedio = sumaPorcentajes > 0 ? parseFloat((sumaPonderada / sumaPorcentajes).toFixed(2)) : null
+      const todasConNota = materiasData.every(md => md.definitiva !== null)
+      resultado.push({
+        areaId: a.areaId,
+        nombre: a.nombre,
+        promedio,
+        // Parcial: el promedio no es definitivo — o faltan materias o alguna
+        // definitiva es provisional (calculada desde notas a medias)
+        provisional: promedio !== null && (parciales || !todasConNota),
+        completo: todasConNota,
+        estado: promedio === null ? 'SIN_NOTA' : (promedio < 3.0 ? 'RIESGO' : 'APROBADO'),
+        materias: materiasData,
+      })
+    }
+    return { areas: resultado }
+}
+
+// Núcleo de GET /mi-reporte-corte (sin el role-check): compartido con el bootstrap
+async function obtenerMiReporteCorte(estudianteId, periodo, anio) {
+  const estudiante = await prisma._db.prepare('SELECT curso FROM estudiantes WHERE id = ?').get(estudianteId)
+  if (!estudiante) {
+    return { error: 404, mensaje: 'Datos de estudiante no encontrados' }
+  }
+  // RENDIMIENTO: versión por estudiante (3 queries) — antes calculaba el
+  // reporte del curso COMPLETO y filtraba 1: el N+1 de la "carga eterna"
+  const rep = await calcularReporteCorteEstudiante(estudianteId, estudiante.curso, parseInt(periodo), parseInt(anio))
+  const reporte = rep
+    .filter(r => r.estudianteId === estudianteId)
+    .map(r => ({
+      materiaId: r.materiaId,
+      materiaNombre: r.materiaNombre,
+      definitiva: r.definitiva,
+      estado: r.estado
+    }))
+
+  const sedeRow = await prisma._db.prepare('SELECT sede FROM estudiantes WHERE curso = ? LIMIT 1').get(estudiante.curso)
+  const sede = sedeRow ? sedeRow.sede : 'PPAL - TRIUNFO'
+  const cfg = await prisma._db.prepare(
+    'SELECT fecha_corte FROM periodos_config WHERE sede = ? AND periodo = ? AND anio = ?'
+  ).get(sede, parseInt(periodo), parseInt(anio))
+  const fechaCorte = cfg?.fecha_corte || null
+  const yaPaso = fechaCorte ? new Date(fechaCorte) <= new Date() : false
+  return { reporte, fechaCorte, yaPaso }
+}
+
+// Núcleo de GET /mis-observaciones (sin el role-check): compartido con el bootstrap
+async function obtenerMisObservaciones(estudianteId) {
+  return prisma._db.prepare(`
+    SELECT o.id, o.texto, o.tipo, o.fecha, o.creadoEn, m.nombre AS "materiaNombre", u.nombre AS "docenteNombre"
+    FROM observaciones o
+    LEFT JOIN materias m ON m.id = o.materiaId
+    LEFT JOIN docentes d ON d.id = o.docenteId
+    LEFT JOIN usuarios u ON u.id = d.usuarioId
+    WHERE o.estudianteId = ?
+    ORDER BY o.fecha DESC, o.creadoEn DESC
+  `).all(estudianteId)
+}
+
+// BOOTSTRAP: todo el portal del estudiante en UNA llamada
+router.get('/mi-bootstrap', async (req, res) => {
+  try {
+    if (req.usuario.rol !== 'ESTUDIANTE' || !req.usuario.estudianteId) {
+      return res.status(403).json({ error: 'Solo para estudiantes' })
+    }
+    const estudianteId = req.usuario.estudianteId
+    const anio = parseInt(req.query.anio) || new Date().getFullYear()
+
+    // Período activo (las mismas reglas del frontend, con la caché de 60 s)
+    const est = await prisma._db.prepare('SELECT sede FROM estudiantes WHERE id = ?').get(estudianteId)
+    const periodo = await determinarPeriodoActivoServidor(prisma._db, est ? est.sede : null, anio)
+
+    const [notas, areas, corte, observaciones] = await Promise.all([
+      obtenerMisNotas(estudianteId, periodo, anio),
+      obtenerMisAreas(estudianteId, periodo, anio),
+      obtenerMiReporteCorte(estudianteId, periodo, anio),
+      obtenerMisObservaciones(estudianteId),
+    ])
+
+    if (corte.error) return res.status(corte.error).json({ error: corte.mensaje })
+    res.json({
+      periodoActivo: periodo,
+      ...notas,
+      areas: areas.areas,
+      corte,
+      observaciones,
+    })
+  } catch (error) {
+    console.error('Error GET /mi-bootstrap:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// Los endpoints individuales quedan como wrappers finos de las mismas
+// funciones del bootstrap: respuestas idénticas por construcción
 router.get('/mis-notas', async (req, res) => {
   try {
     if (req.usuario.rol !== 'ESTUDIANTE') {
       return res.status(403).json({ error: 'Esta ruta es solo para estudiantes' })
     }
-
-    const estudianteId = req.usuario.estudianteId
-    const periodo      = parseInt(req.query.periodo) || 1
-    const anio         = parseInt(req.query.anio)    || new Date().getFullYear()
-
-    // Upsert ATOMICO: findUnique->create->update tenia carrera con refrescos
-    // rapidos (dos peticiones concurrentes creaban la consulta y una reventaba
-    // con UNIQUE -> 500 intermitente). El upsert es una sola operacion.
-    const consulta = await prisma.consultaEstudiante.upsert({
-      where: { estudianteId_periodo_anio: { estudianteId, periodo, anio } },
-      update: { cantidad: { increment: 1 } },
-      create: { estudianteId, periodo, anio, cantidad: 1 },
-    })
-
-    const calificaciones = await prisma.calificacion.findMany({
-      where: { estudianteId, periodo, anio },
-      include: {
-        materia: { select: { nombre: true, grado: true } },
-        notasItems: true,
-      },
-      orderBy: {
-        materia: { nombre: 'asc' }
-      }
-    })
-
-    const notas = calificaciones
-      .map(c => c.definitiva)
-      .filter(n => n !== null)
-
-    const promedio = notas.length > 0
-      ? (notas.reduce((a, b) => a + b, 0) / notas.length).toFixed(2)
-      : null
-
-    res.json({
-      periodo,
-      anio,
-      consultasUsadas:   consulta.cantidad,
-      promedio,
-      calificaciones: calificaciones.map(c => {
-        const grupos = agruparItems(c.notasItems)
-        return {
-          materia:         c.materia.nombre,
-          items:           c.notasItems,
-          grupos: {
-            actitudinal:   { items: grupos.ACTITUDINAL,   promedio: promediarGrupo(grupos.ACTITUDINAL) },
-            responsabilidad: { items: grupos.RESPONSABILIDAD, promedio: promediarGrupo(grupos.RESPONSABILIDAD) },
-            actividades:   { items: grupos.ACTIVIDAD,     promedio: promediarGrupo(grupos.ACTIVIDAD) },
-            evaluacion:    { items: grupos.EVALUACION,    promedio: promediarGrupo(grupos.EVALUACION) },
-          },
-          definitiva:      c.definitiva,
-          estado:          calcularEstado(c.definitiva),
-        }
-      })
-    })
-
+    const periodo = parseInt(req.query.periodo) || 1
+    const anio = parseInt(req.query.anio) || new Date().getFullYear()
+    res.json(await obtenerMisNotas(req.usuario.estudianteId, periodo, anio))
   } catch (error) {
     console.error('Error al obtener notas:', error)
     res.status(500).json({ error: 'Error interno del servidor' })
@@ -1212,16 +1427,7 @@ router.get('/mis-observaciones', async (req, res) => {
     if (req.usuario.rol !== 'ESTUDIANTE') {
       return res.status(403).json({ error: 'Solo para estudiantes' })
     }
-    const rows = await prisma._db.prepare(`
-      SELECT o.id, o.texto, o.tipo, o.fecha, o.creadoEn, m.nombre AS "materiaNombre", u.nombre AS "docenteNombre"
-      FROM observaciones o
-      LEFT JOIN materias m ON m.id = o.materiaId
-      LEFT JOIN docentes d ON d.id = o.docenteId
-      LEFT JOIN usuarios u ON u.id = d.usuarioId
-      WHERE o.estudianteId = ?
-      ORDER BY o.fecha DESC, o.creadoEn DESC
-    `).all(req.usuario.estudianteId)
-    res.json(rows)
+    res.json(await obtenerMisObservaciones(req.usuario.estudianteId))
   } catch (error) {
     console.error('Error GET /mis-observaciones:', error)
     res.status(500).json({ error: 'Error interno' })
@@ -1352,35 +1558,9 @@ router.get('/mi-reporte-corte', async (req, res) => {
     if (!req.usuario.estudianteId) {
       return res.status(404).json({ error: 'Datos de estudiante no encontrados' })
     }
-
-    const estudiante = await prisma._db.prepare('SELECT curso FROM estudiantes WHERE id = ?').get(req.usuario.estudianteId)
-    if (!estudiante) {
-      return res.status(404).json({ error: 'Estudiante no encontrado' })
-    }
-    const curso = estudiante.curso
-    // RENDIMIENTO: versión por estudiante (3 queries) — antes calculaba el
-    // reporte del curso COMPLETO y filtraba 1: el N+1 de la "carga eterna"
-    const rep = await calcularReporteCorteEstudiante(req.usuario.estudianteId, curso, parseInt(periodo), parseInt(anio))
-    const reporte = rep
-      .filter(r => r.estudianteId === req.usuario.estudianteId)
-      .map(r => ({
-        materiaId: r.materiaId,
-        materiaNombre: r.materiaNombre,
-        definitiva: r.definitiva,
-        estado: r.estado
-      }))
-
-    const sedeRow = await prisma._db.prepare('SELECT sede FROM estudiantes WHERE curso = ? LIMIT 1').get(curso)
-    const sede = sedeRow ? sedeRow.sede : 'PPAL - TRIUNFO'
-    const cfg = await prisma._db.prepare(
-      'SELECT fecha_corte FROM periodos_config WHERE sede = ? AND periodo = ? AND anio = ?'
-    ).get(sede, parseInt(periodo), parseInt(anio))
-    const fechaCorte = cfg?.fecha_corte || null
-    const yaPaso = fechaCorte ? new Date(fechaCorte) <= new Date() : false
-
-    res.json({ reporte, fechaCorte, yaPaso })
+    res.json(await obtenerMiReporteCorte(req.usuario.estudianteId, periodo, anio))
   } catch (error) {
-    console.error('Error GET /mi-reporte-corte:', error)
+    console.error('Error GET /reporte-corte:', error)
     res.status(500).json({ error: 'Error interno' })
   }
 })
@@ -1395,116 +1575,11 @@ router.get('/mis-areas', async (req, res) => {
     if (!req.usuario || !req.usuario.estudianteId) {
       return res.status(403).json({ error: 'Solo estudiantes' })
     }
-    const estudianteId = req.usuario.estudianteId
     const periodo = parseInt(req.query.periodo) || 1
     const anio = parseInt(req.query.anio) || new Date().getFullYear()
-
-    const cursoRow = await prisma._db.prepare('SELECT curso FROM estudiantes WHERE id = ?').get(estudianteId)
-    if (!cursoRow) return res.json({ areas: [] })
-
-    const areas = await prisma._db.prepare(`
-      SELECT a.id AS "areaId", a.nombre
-      FROM area_cursos ac JOIN areas a ON a.id = ac.areaid
-      WHERE ac.curso = ?
-      ORDER BY a.nombre ASC, a.creadoen ASC
-    `).all(cursoRow.curso)
-
-    const resultado = []
-    // RENDIMIENTO (antes: 1 query de materias por área + 1 de calificación y
-    // 1 de items POR materia — con 4 áreas × 5 materias eran 25-30 queries).
-    // Ahora: 3 consultas totales con IN, cruzadas en memoria.
-    let materiasPorArea = new Map()
-    let calPorMateria = new Map()
-    let itemsPorCal = new Map()
-    if (areas.length) {
-      const areasIds = areas.map(a => a.areaId)
-      const marcasA = areasIds.map(() => '?').join(',')
-      const todasMaterias = await prisma._db.prepare(`
-        SELECT am.areaid AS "areaId", am.materiaid AS "materiaId", am.porcentaje, m.nombre AS "materiaNombre"
-        FROM area_materias am JOIN materias m ON m.id = am.materiaId
-        WHERE am.areaid IN (${marcasA})
-        ORDER BY am.porcentaje DESC, m.nombre ASC
-      `).all(...areasIds)
-      for (const m of todasMaterias) {
-        if (!materiasPorArea.has(m.areaId)) materiasPorArea.set(m.areaId, [])
-        materiasPorArea.get(m.areaId).push(m)
-      }
-
-      // Todas las calificaciones del estudiante para el período, indexadas
-      // por materia; los items solo de las que no tienen definitiva cerrada
-      const calsEstudiante = await prisma._db.prepare(
-        'SELECT id, materiaId, definitiva FROM calificaciones WHERE estudianteId = ? AND periodo = ? AND anio = ?'
-      ).all(estudianteId, periodo, anio)
-      calPorMateria = new Map(calsEstudiante.map(c => [c.materiaId, c]))
-      const calsSinDefinitiva = calsEstudiante.filter(c => c.definitiva === null).map(c => c.id)
-      if (calsSinDefinitiva.length) {
-        const marcasC = calsSinDefinitiva.map(() => '?').join(',')
-        const items = await prisma._db.prepare(
-          `SELECT calificacionId, tipo, valor FROM notas_items WHERE calificacionId IN (${marcasC})`
-        ).all(...calsSinDefinitiva)
-        for (const it of items) {
-          if (!itemsPorCal.has(it.calificacionId)) itemsPorCal.set(it.calificacionId, [])
-          itemsPorCal.get(it.calificacionId).push({ tipo: it.tipo, valor: it.valor })
-        }
-      }
-    }
-
-    for (const a of areas) {
-      const materias = materiasPorArea.get(a.areaId) || []
-
-      const materiasData = []
-      let sumaPonderada = 0
-      let sumaPorcentajes = 0
-      let parciales = false
-      for (const m of materias) {
-        const cal = calPorMateria.get(m.materiaId)
-        let definitiva = cal ? cal.definitiva : null
-        let provisional = false
-        if (cal && definitiva === null) {
-          const items = itemsPorCal.get(cal.id) || []
-          if (items.length) {
-            definitiva = calcularDefinitiva(items)
-            provisional = definitiva !== null
-          }
-        }
-        if (definitiva !== null) {
-          sumaPonderada += definitiva * m.porcentaje
-          sumaPorcentajes += m.porcentaje
-          if (provisional) parciales = true
-        }
-        materiasData.push({
-          materiaId: m.materiaId,
-          materiaNombre: m.materiaNombre,
-          porcentaje: m.porcentaje,
-          definitiva,
-          provisional,
-          estado: definitiva === null ? 'SIN_NOTA' : (definitiva < 3.0 ? 'RIESGO' : 'APROBADO'),
-        })
-      }
-
-      // Promedio ponderado por I.H.S.: Σ(nota × horas) / Σ(horas).
-      // El campo "porcentaje" en la BD ahora son horas semanales (I.H.S.),
-      // y el % de cada materia se deriva automáticamente:
-      //   % = horas_materia / total_horas × 100
-      // La fórmula es la misma: Σ(nota×peso)/Σ(pesos) — solo cambia
-      // la interpretación del campo (horas, no % pre-calculado).
-      const promedio = sumaPorcentajes > 0 ? parseFloat((sumaPonderada / sumaPorcentajes).toFixed(2)) : null
-      const todasConNota = materiasData.every(md => md.definitiva !== null)
-      resultado.push({
-        areaId: a.areaId,
-        nombre: a.nombre,
-        promedio,
-        // Parcial: el promedio no es definitivo — o faltan materias o alguna
-        // definitiva es provisional (calculada desde notas a medias)
-        provisional: promedio !== null && (parciales || !todasConNota),
-        completo: todasConNota,
-        estado: promedio === null ? 'SIN_NOTA' : (promedio < 3.0 ? 'RIESGO' : 'APROBADO'),
-        materias: materiasData,
-      })
-    }
-    res.json({ areas: resultado })
+    res.json(await obtenerMisAreas(req.usuario.estudianteId, periodo, anio))
   } catch (error) {
-    console.error('Error GET /notas/mis-areas:', error)
+    console.error('Error GET /mis-areas:', error)
     res.status(500).json({ error: 'Error interno' })
   }
 })

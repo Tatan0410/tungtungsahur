@@ -13,8 +13,15 @@ function extraerFuncion(nombre) {
   const inicioAsync = HTML.indexOf(`async function ${nombre}(`)
   const inicio = inicioAsync >= 0 ? inicioAsync : HTML.indexOf(`function ${nombre}(`)
   assert.ok(inicio >= 0, `no se encontró la función ${nombre}`)
+  // Saltar la lista de parámetros antes de contar llaves: valores por
+  // defecto como "opciones = {}" tienen llaves que NO son del cuerpo
+  let paren = HTML.indexOf('(', inicio), nivelP = 0
+  for (; paren < HTML.length; paren++) {
+    if (HTML[paren] === '(') nivelP++
+    else if (HTML[paren] === ')') { nivelP--; if (nivelP === 0) break }
+  }
   let nivel = 0, fin = -1
-  for (let i = HTML.indexOf('{', inicio); i < HTML.length; i++) {
+  for (let i = HTML.indexOf('{', paren); i < HTML.length; i++) {
     if (HTML[i] === '{') nivel++
     else if (HTML[i] === '}') { nivel--; if (nivel === 0) { fin = i; break } }
   }
@@ -385,4 +392,84 @@ test('item fallido: queda pendiente, marcado y con aviso visible (incluso en aut
   await ctx.guardarGrid(true) // autosave silencioso: el fallo TAMBIÉN se avisa
   assert.ok(ctx.cambiosGrid['e1_ACTIVIDAD_Tarea'], 'el item fallido queda pendiente para reintentar')
   assert.ok(ctx.toasts.some(t => /no se guardaron/.test(t)), 'aviso visible al docente')
+})
+
+// ═══════════════════════════════════════════════════════════════
+// BOOTSTRAP + RETRY ANTI-CHECKPOINT: la ráfaga de resultados baja de
+// 5 a 2 requests por estudiante, y los 403 de HTML (challenge de
+// Vercel) se reintentan solos; los 403 de JSON (negocio) no.
+// ═══════════════════════════════════════════════════════════════
+
+function contextoReintento(respuestas) {
+  // respuestas: array de Response-like, una por llamada a fetch
+  return new Function('respuestas', `
+    let llamadas = 0
+    const fetch = (url, opts) => {
+      const r = respuestas[Math.min(llamadas, respuestas.length - 1)]
+      llamadas++
+      return Promise.resolve(r)
+    }
+    let pantallas = []
+    const mostrarPantallaCarga = (m) => pantallas.push(m)
+    const document = {
+      getElementById: id => id === 'pantalla-carga' ? { style: {} } : null,
+    }
+    ${extraerFuncion('fetchConReintentoCheckpoint')}
+    return { fetchConReintentoCheckpoint, llamadas: () => llamadas, pantallas: () => pantallas }
+  `)(respuestas)
+}
+
+const respuesta = (status, headers = {}) => ({
+  ok: status >= 200 && status < 300,
+  status,
+  headers: { get: (k) => headers[k.toLowerCase()] ?? headers[k] ?? null },
+})
+
+test('retry: 403 con HTML (challenge de Vercel) reintenta hasta pasar', async () => {
+  const ctx = contextoReintento([
+    respuesta(403, { 'content-type': 'text/html' }),
+    respuesta(403, { 'content-type': 'text/html' }),
+    respuesta(200, { 'content-type': 'application/json' }),
+  ])
+  const res = await ctx.fetchConReintentoCheckpoint('/api/x', {}, 0, [5, 5]) // esperas de 5ms para el test
+  assert.equal(res.status, 200, 'al tercer intento pasa')
+  assert.equal(ctx.llamadas(), 3, 'hizo 2 reintentos')
+  assert.ok(ctx.pantallas().filter(Boolean).length >= 2, 'la barra de carga se mantuvo viva durante las esperas')
+})
+
+test('retry: 403 con JSON (error de negocio) NO reintenta', async () => {
+  const ctx = contextoReintento([
+    respuesta(403, { 'content-type': 'application/json' }),
+    respuesta(200),
+  ])
+  const res = await ctx.fetchConReintentoCheckpoint('/api/x', {}, 0, [5, 5])
+  assert.equal(res.status, 403, 'el error de negocio se devuelve tal cual')
+  assert.equal(ctx.llamadas(), 1, 'sin reintentos')
+})
+
+test('retry: 200 y 500 pasan sin reintentar; agota intentos si el challenge persiste', async () => {
+  const ok200 = contextoReintento([respuesta(200)])
+  assert.equal((await ok200.fetchConReintentoCheckpoint('/api/x')).status, 200)
+  assert.equal(ok200.llamadas(), 1)
+
+  const e500 = contextoReintento([respuesta(500, { 'content-type': 'text/html' })])
+  assert.equal((await e500.fetchConReintentoCheckpoint('/api/x', {}, 0, [5])).status, 500)
+  assert.equal(e500.llamadas(), 1, 'el 500 no es challenge: no se reintenta')
+
+  const persistente = contextoReintento([respuesta(403, { 'content-type': 'text/html' })])
+  const res = await persistente.fetchConReintentoCheckpoint('/api/x', {}, 0, [5, 5])
+  assert.equal(res.status, 403, 'tras agotar intentos devuelve el 403')
+  assert.equal(persistente.llamadas(), 3, '1 original + 2 reintentos')
+})
+
+test('el portal usa el bootstrap de 2 requests y el login va con retry', () => {
+  const carga = extraerFuncion('cargarDatosEstudiante')
+  assert.match(carga, /mi-bootstrap/, 'la carga del portal usa el endpoint compuesto')
+  assert.match(carga, /fetchConReintentoCheckpoint/, 'la carga va protegida con retry')
+  assert.match(carga, /cargarDatosEstudiantePorPartes/, 'hay fallback al flujo clásico de 5 requests')
+  assert.match(HTML, /function pintarNotasEstudiante\(/, 'el render de notas es compartido')
+  assert.match(HTML, /function pintarEstadoCorte\(/, 'el render del corte es compartido')
+  assert.match(HTML, /function pintarObservacionesEstudiante\(/, 'el render de observaciones es compartido')
+  const login = extraerFuncion('doLogin')
+  assert.match(login, /fetchConReintentoCheckpoint/, 'el login reintenta si Vercel lo challengea')
 })
