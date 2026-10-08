@@ -1584,6 +1584,134 @@ router.get('/mis-areas', async (req, res) => {
   }
 })
 
+// ─── BOLETÍN DEL PERÍODO (piloto 11-04) ───
+// Documento académico formal por período: áreas y materias ASIGNADAS AL CURSO
+// del estudiante (nada más), notas P1-P3, nivel de desempeño, promedio y
+// puesto en el salon (estilo deportivo: empates comparten puesto y el
+// siguiente salta). Solo lecturas.
+
+function nivelDeDesempeno(definitiva) {
+  if (definitiva === null || definitiva === undefined) return '—'
+  if (definitiva < 3) return 'Desempeño Bajo'
+  if (definitiva < 4) return 'Desempeño Básico'
+  if (definitiva < 4.6) return 'Desempeño Alto'
+  return 'Desempeño Superior'
+}
+
+router.get('/mi-boletin', async (req, res) => {
+  try {
+    if (req.usuario.rol !== 'ESTUDIANTE' || !req.usuario.estudianteId) {
+      return res.status(403).json({ error: 'Solo para estudiantes' })
+    }
+    const estudianteId = req.usuario.estudianteId
+    const periodo = parseInt(req.query.periodo) || 1
+    const anio = parseInt(req.query.anio) || new Date().getFullYear()
+
+    // Datos del estudiante
+    const est = await prisma._db.prepare(`
+      SELECT u.nombre, e.curso, e.grado, e.jornada, e.sede
+      FROM estudiantes e JOIN usuarios u ON u.id = e.usuarioId
+      WHERE e.id = ?
+    `).get(estudianteId)
+    if (!est) return res.status(404).json({ error: 'Estudiante no encontrado' })
+
+    // Director de grupo del curso (para la firma del coordinador)
+    const director = await prisma._db.prepare(`
+      SELECT u.nombre AS "directorNombre"
+      FROM directores_grupo dg
+      JOIN docentes d ON d.id = dg.docenteId
+      JOIN usuarios u ON u.id = d.usuarioId
+      WHERE dg.curso = ?
+    `).get(est.curso)
+
+    // Áreas del curso en el orden del boletín físico (creación) + sus materias
+    const areas = await prisma._db.prepare(`
+      SELECT a.id AS "areaId", a.nombre
+      FROM area_cursos ac JOIN areas a ON a.id = ac.areaid
+      WHERE ac.curso = ?
+      ORDER BY a.creadoen ASC, a.nombre ASC
+    `).all(est.curso)
+
+    let areasMaterias = new Map()
+    let notasPorMateria = new Map()
+    if (areas.length) {
+      const areasIds = areas.map(a => a.areaId)
+      const marcasA = areasIds.map(() => '?').join(',')
+      const materias = await prisma._db.prepare(`
+        SELECT am.areaid AS "areaId", am.materiaid AS "materiaId", am.porcentaje, m.nombre AS "materiaNombre"
+        FROM area_materias am JOIN materias m ON m.id = am.materiaid
+        WHERE am.areaid IN (${marcasA})
+        ORDER BY m.nombre ASC
+      `).all(...areasIds)
+      for (const m of materias) {
+        if (!areasMaterias.has(m.areaId)) areasMaterias.set(m.areaId, [])
+        areasMaterias.get(m.areaId).push({ materiaId: m.materiaId, nombre: m.materiaNombre, ihs: m.porcentaje })
+      }
+
+      // Todas las calificaciones del año del estudiante (P1-P3, columnas del boletín)
+      const cals = await prisma._db.prepare(`
+        SELECT c.materiaId, c.periodo, c.definitiva
+        FROM calificaciones c
+        WHERE c.estudianteId = ? AND c.anio = ? AND c.periodo <= 3
+      `).all(estudianteId, anio)
+      for (const c of cals) {
+        notasPorMateria.set(c.materiaId + '|' + c.periodo, c.definitiva)
+      }
+    }
+
+    const areasBoletin = areas.map(a => ({
+      nombre: a.nombre,
+      materias: (areasMaterias.get(a.areaId) || []).map(m => {
+        const definitiva = notasPorMateria.get(m.materiaId + '|' + periodo)
+        return {
+          nombre: m.nombre,
+          ihs: m.ihs,
+          p1: notasPorMateria.get(m.materiaId + '|1'),
+          p2: notasPorMateria.get(m.materiaId + '|2'),
+          p3: notasPorMateria.get(m.materiaId + '|3'),
+          definitiva,
+          nivel: nivelDeDesempeno(definitiva),
+        }
+      }),
+    }))
+
+    // Promedio general del período (simple, como el que el estudiante ve en el portal)
+    const propia = await prisma._db.prepare(`
+      SELECT AVG(definitiva) prom FROM calificaciones
+      WHERE estudianteId = ? AND periodo = ? AND anio = ? AND definitiva IS NOT NULL
+    `).get(estudianteId, periodo, anio)
+    const promedio = propia && propia.prom !== null ? parseFloat(Number(propia.prom).toFixed(2)) : null
+
+    // Puesto en el salon: RANK() estilo deportivo (1,2,2,4) entre los
+    // estudiantes del curso con al menos una nota en el período
+    const ranking = await prisma._db.prepare(`
+      WITH promedios AS (
+        SELECT c.estudianteId, AVG(c.definitiva) AS prom
+        FROM calificaciones c
+        JOIN estudiantes e ON e.id = c.estudianteId
+        WHERE e.curso = ? AND c.periodo = ? AND c.anio = ? AND c.definitiva IS NOT NULL
+        GROUP BY c.estudianteId
+      )
+      SELECT estudianteId, RANK() OVER (ORDER BY prom DESC) AS puesto
+      FROM promedios
+    `).all(est.curso, periodo, anio)
+    const fila = ranking.find(r => r.estudianteId === estudianteId)
+
+    res.json({
+      estudiante: { nombre: est.nombre, curso: est.curso, grado: est.grado, jornada: est.jornada, sede: est.sede },
+      directorNombre: director ? director.directorNombre : null,
+      periodo, anio,
+      areas: areasBoletin,
+      promedio,
+      puesto: fila ? Number(fila.puesto) : null,
+      totalRankeados: ranking.length,
+    })
+  } catch (error) {
+    console.error('Error GET /mi-boletin:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
 // ─── CONSOLIDADO (docente) ───
 // La nota mínima que necesita cada estudiante para llegar a 3.0 en la
 // materia seleccionada. Solo materias que el docente tiene asignadas.

@@ -473,3 +473,31 @@ test('el portal usa el bootstrap de 2 requests y el login va con retry', () => {
   const login = extraerFuncion('doLogin')
   assert.match(login, /fetchConReintentoCheckpoint/, 'el login reintenta si Vercel lo challengea')
 })
+
+// ═══════════════════════════════════════════════════════════════
+// BOLETÍN (piloto): botón en el portal, vista imprimible formal,
+// estructura de 6 columnas y CSS de impresión tamaño carta.
+// ═══════════════════════════════════════════════════════════════
+
+test('boletín: estructura del documento e impresión en el HTML', () => {
+  assert.match(HTML, /id="boletin-view"/, 'la vista del boletín existe')
+  assert.match(HTML, /onclick="verBoletin\(\)"/, 'el botón del portal dispara el boletín')
+  const pintar = extraerFuncion('pintarBoletin')
+  assert.match(pintar, /Asignaturas/, 'columna Asignaturas')
+  assert.match(pintar, /I\.H\.S\./, 'columna I.H.S.')
+  assert.match(pintar, /P\\u00b0 1/, 'columnas de períodos P°1-3 (escape en el código fuente)')
+  assert.match(pintar, /Nivel de desempe/, 'columna Nivel de desempeño')
+  assert.match(pintar, /boletin-area/, 'un tbody por área (no se corta al imprimir)')
+  assert.match(pintar, /Escala de valoraci/, 'leyenda de la escala')
+  assert.match(pintar, /Rector/, 'firma del Rector')
+  assert.match(pintar, /Coordinador\(a\) de grupo/, 'firma del coordinador')
+  assert.match(pintar, /puestoTxt/, 'el puesto se muestra')
+  // CSS de impresión: solo el boletín en papel carta
+  assert.match(HTML, /body > \*:not\(#boletin-view\) \{ display: none !important/, 'la impresión oculta todo menos el boletín')
+  assert.match(HTML, /@page \{ size: letter/, 'tamaño carta')
+  assert.match(HTML, /page-break-inside: avoid/, 'las áreas no se parten entre páginas')
+  // esc() en los datos dinámicos del boletín (sin XSS)
+  assert.match(pintar, /esc\(e\.nombre\)/, 'el nombre del estudiante va escapado')
+  assert.match(pintar, /esc\(area\.nombre\)/, 'los nombres de áreas van escapados')
+  assert.match(pintar, /esc\(m\.nombre\)/, 'los nombres de materias van escapados')
+})
