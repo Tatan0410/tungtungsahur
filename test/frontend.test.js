@@ -9,7 +9,9 @@ const HTML = fs.readFileSync(path.join(RAIZ, 'public', 'index.html'), 'utf8')
 
 // Extrae una función completa del HTML contando llaves, para poder probarla aislada
 function extraerFuncion(nombre) {
-  const inicio = HTML.indexOf(`function ${nombre}(`)
+  // Funciones async: el indexOf normal partiría el "async" y el await reventaría
+  const inicioAsync = HTML.indexOf(`async function ${nombre}(`)
+  const inicio = inicioAsync >= 0 ? inicioAsync : HTML.indexOf(`function ${nombre}(`)
   assert.ok(inicio >= 0, `no se encontró la función ${nombre}`)
   let nivel = 0, fin = -1
   for (let i = HTML.indexOf('{', inicio); i < HTML.length; i++) {
@@ -109,6 +111,11 @@ test('las celdas de notas del grid usan inputmode=decimal, no type=number', () =
   }
 })
 
+// Input de prueba con el classList que marcarCambio usa para marcar pendientes
+function inputPrueba(valor) {
+  return { value: valor, classList: { add() {}, remove() {}, toggle() {} } }
+}
+
 function contextoMarcarCambio() {
   return new Function(`
     let cambiosGrid = {}
@@ -128,6 +135,9 @@ function contextoMarcarCambio() {
     const confirmarAccion = (titulo, cb) => confirmaciones.push({ titulo, cb })
     const claveApellidos = n => n
     const guardarCambiosLocal = () => {}
+    let _clavesFallidas = new Set()
+    const actualizarIndicadorGuardado = () => {}
+    const marcarCeldasPendientes = () => {}
     ${extraerFuncion('valorGuardadoCelda')}
     ${extraerFuncion('marcarCambio')}
     return { marcarCambio, cambiosGrid, confirmaciones, toasts }
@@ -136,7 +146,7 @@ function contextoMarcarCambio() {
 
 test('marcarCambio: coma decimal ("3,5") se normaliza y NO borra la nota', () => {
   const ctx = contextoMarcarCambio()
-  const input = { value: '3,5' }
+  const input = inputPrueba('3,5')
   ctx.marcarCambio(0, 'RESPONSABILIDAD', 'Responsabilidad', '3,5', input)
   assert.equal(ctx.confirmaciones.length, 0, 'no debe pedir confirmación al escribir')
   const item = ctx.cambiosGrid['e1_RESPONSABILIDAD_Responsabilidad']
@@ -147,7 +157,7 @@ test('marcarCambio: coma decimal ("3,5") se normaliza y NO borra la nota', () =>
 
 test('marcarCambio: vaciar una celda con nota guardada pide confirmación', () => {
   const ctx = contextoMarcarCambio()
-  const input = { value: '' }
+  const input = inputPrueba('')
 
   // Vaciar → NO marca el borrado aún, pide confirmación
   ctx.marcarCambio(0, 'RESPONSABILIDAD', 'Responsabilidad', '', input)
@@ -168,14 +178,14 @@ test('marcarCambio: vaciar una celda con nota guardada pide confirmación', () =
 
 test('marcarCambio: vaciar una celda SIN nota guardada no molesta', () => {
   const ctx = contextoMarcarCambio()
-  ctx.marcarCambio(0, 'ACTIVIDAD', 'Tarea 1', '', { value: '' })
+  ctx.marcarCambio(0, 'ACTIVIDAD', 'Tarea 1', '', inputPrueba(''))
   assert.equal(ctx.confirmaciones.length, 0, 'no debe pedir confirmación (no hay nota que perder)')
   assert.equal(ctx.cambiosGrid['e1_ACTIVIDAD_Tarea 1']._delete, true, 'limpia el pendiente sin confirmar')
 })
 
 test('marcarCambio: valor inválido no borra y restaura la celda', () => {
   const ctx = contextoMarcarCambio()
-  const input = { value: '7' }
+  const input = inputPrueba('7')
   ctx.marcarCambio(0, 'RESPONSABILIDAD', 'Responsabilidad', '7', input)
   assert.equal(Object.keys(ctx.cambiosGrid).length, 0, 'no marca nada con valor inválido')
   assert.equal(ctx.toasts.length, 1, 'muestra el error')
@@ -259,4 +269,120 @@ test('barra de carga: salta a 35%, avanza lento y termina en 100% al ocultar', a
   assert.equal(pantalla.style.display, 'flex', 'el timeout del ciclo viejo no oculta la tanda nueva')
   ctx.mostrarPantallaCarga(false)
   await new Promise(r => setTimeout(r, 260))
+})
+
+// ═══════════════════════════════════════════════════════════════
+// GUARDADO SIN PERDER NOTAS: las 3 carreras del planilla (snapshot
+// quirúrgico, mutex de guardado, cache sincronizado con el servidor)
+// ═══════════════════════════════════════════════════════════════
+
+function contextoGuardarGrid(fetchStub) {
+  return new Function('fetchStub', `
+    let cambiosGrid = {}
+    let studentsData = []
+    let _guardandoGrid = false
+    let _encadenarManual = false
+    let _ultimoGuardadoOk = null
+    let _clavesFallidas = new Set()
+    const API = ''
+    const currentToken = 'tok'
+    const currentUser = null
+    const selectedMateria = 'm1'
+    const currentPeriodo = 1
+    const TIPOS_LABEL = { ACTIVIDAD: 'Actividades', RESPONSABILIDAD: 'Responsabilidad' }
+    const claveApellidos = n => n
+    const toasts = []
+    const mostrarToast = (t, m) => toasts.push(m)
+    const guardarCambiosLocal = () => {}
+    const cargarGrupo = () => {}
+    const mostrarSinConexion = () => {}
+    const icon = () => ''
+    const confirmaciones = []
+    const confirmarAccion = (titulo, cb) => confirmaciones.push({ titulo, cb })
+    const document = {
+      getElementById: id => id === 'save-status' ? { style: {}, textContent: '' } : null,
+      get activeElement() { return null },
+      querySelectorAll: () => [],
+    }
+    let _fetches = 0
+    const fetch = (url, opts) => { _fetches++; return fetchStub(_fetches, url, opts) }
+    ${extraerFuncion('claveDeItem')}
+    ${extraerFuncion('aplicarGuardadoEnCache')}
+    ${extraerFuncion('actualizarIndicadorGuardado')}
+    ${extraerFuncion('marcarCeldasPendientes')}
+    ${extraerFuncion('guardarGrid')}
+    ${extraerFuncion('valorGuardadoCelda')}
+    ${extraerFuncion('marcarCambio')}
+    return { guardarGrid, marcarCambio, cambiosGrid, studentsData, toasts, confirmaciones, fetches: () => _fetches }
+  `)(fetchStub)
+}
+
+const RESPUESTA_OK = clave => Promise.resolve({ ok: true, json: async () => ({ guardados: clave ? [clave] : [], fallidos: [] }) })
+
+test('carrera 1: un cambio marcado a mitad del fetch SOBREVIVE al guardado', async () => {
+  let resolver
+  const ctx = contextoGuardarGrid(() => new Promise(r => { resolver = r }))
+  ctx.cambiosGrid['e1_ACTIVIDAD_Tarea'] = { estudianteId: 'e1', tipo: 'ACTIVIDAD', titulo: 'Tarea', valor: 3 }
+  const p = ctx.guardarGrid(false)
+  // El docente edita OTRA celda mientras el fetch está en vuelo
+  ctx.cambiosGrid['e2_EVALUACION_'] = { estudianteId: 'e2', tipo: 'EVALUACION', titulo: '', valor: 4 }
+  resolver({ ok: true, json: async () => ({ guardados: ['e1_ACTIVIDAD_Tarea'], fallidos: [] }) })
+  await p
+  assert.ok(!ctx.cambiosGrid['e1_ACTIVIDAD_Tarea'], 'lo enviado se retira')
+  assert.ok(ctx.cambiosGrid['e2_EVALUACION_'], 'lo marcado DURANTE el vuelo sobrevive (antes se perdía)')
+})
+
+test('carrera 1: la MISMA celda re-editada durante el vuelo conserva el valor NUEVO', async () => {
+  let resolver
+  const ctx = contextoGuardarGrid(() => new Promise(r => { resolver = r }))
+  ctx.cambiosGrid['e1_ACTIVIDAD_Tarea'] = { estudianteId: 'e1', tipo: 'ACTIVIDAD', titulo: 'Tarea', valor: 3 }
+  const p = ctx.guardarGrid(false)
+  // El docente corrige la misma celda de 3 a 4.5 durante el vuelo
+  ctx.cambiosGrid['e1_ACTIVIDAD_Tarea'] = { estudianteId: 'e1', tipo: 'ACTIVIDAD', titulo: 'Tarea', valor: 4.5 }
+  resolver({ ok: true, json: async () => ({ guardados: ['e1_ACTIVIDAD_Tarea'], fallidos: [] }) })
+  await p
+  assert.ok(ctx.cambiosGrid['e1_ACTIVIDAD_Tarea'], 'la clave no se retira: cambió durante el vuelo')
+  assert.equal(ctx.cambiosGrid['e1_ACTIVIDAD_Tarea'].valor, 4.5, 'conserva el valor MÁS NUEVO')
+})
+
+test('carrera 3: autosave en vuelo se salta; el guardado manual se encadena', async () => {
+  let res1, res2
+  const ctx = contextoGuardarGrid(n => n === 1 ? new Promise(r => { res1 = r }) : new Promise(r => { res2 = r }))
+  ctx.cambiosGrid['e1_ACTIVIDAD_Tarea'] = { estudianteId: 'e1', tipo: 'ACTIVIDAD', titulo: 'Tarea', valor: 3 }
+
+  const p1 = ctx.guardarGrid(true)   // autosave en vuelo
+  await ctx.guardarGrid(true)         // segundo autosave → se salta
+  ctx.guardarGrid(false)              // manual → se encadena al actual
+  assert.equal(ctx.fetches(), 1, 'no hay fetch concurrente mientras uno está en vuelo')
+
+  res1({ ok: true, json: async () => ({ guardados: [], fallidos: [] }) })
+  await p1
+  await new Promise(r => setTimeout(r, 30))
+  assert.equal(ctx.fetches(), 2, 'el manual encadenado arranca al terminar el vuelo anterior')
+  if (res2) res2({ ok: true, json: async () => ({ guardados: [], fallidos: [] }) })
+  await new Promise(r => setTimeout(r, 10))
+})
+
+test('carrera 2: tras guardar SIN reload, vaciar la celda recién guardada PIDE confirmación', async () => {
+  const ctx = contextoGuardarGrid(() => RESPUESTA_OK('e1_ACTIVIDAD_Tarea'))
+  ctx.studentsData.push({ estudianteId: 'e1', nombre: 'JUAN PEREZ LOPEZ', grupos: {} })
+  ctx.cambiosGrid['e1_ACTIVIDAD_Tarea'] = { estudianteId: 'e1', tipo: 'ACTIVIDAD', titulo: 'Tarea', valor: 3.5 }
+  await ctx.guardarGrid(true)  // guarda (cargarGrupo es no-op = "sin reload")
+
+  // El docente vacía la celda por accidente: la nota YA está en el servidor
+  // y el cache sincronizado debe exigir la confirmación (antes: borrado mudo)
+  ctx.marcarCambio(0, 'ACTIVIDAD', 'Tarea', '', inputPrueba(''))
+  assert.equal(ctx.confirmaciones.length, 1, 'debe pedir confirmación de borrado')
+  assert.match(ctx.confirmaciones[0].titulo, /Borrar la nota/)
+})
+
+test('item fallido: queda pendiente, marcado y con aviso visible (incluso en autosave)', async () => {
+  const ctx = contextoGuardarGrid(() => Promise.resolve({
+    ok: true,
+    json: async () => ({ guardados: [], fallidos: [{ clave: 'e1_ACTIVIDAD_Tarea', error: 'El período 1 está cerrado para esta sede' }] }),
+  }))
+  ctx.cambiosGrid['e1_ACTIVIDAD_Tarea'] = { estudianteId: 'e1', tipo: 'ACTIVIDAD', titulo: 'Tarea', valor: 3 }
+  await ctx.guardarGrid(true) // autosave silencioso: el fallo TAMBIÉN se avisa
+  assert.ok(ctx.cambiosGrid['e1_ACTIVIDAD_Tarea'], 'el item fallido queda pendiente para reintentar')
+  assert.ok(ctx.toasts.some(t => /no se guardaron/.test(t)), 'aviso visible al docente')
 })

@@ -242,6 +242,19 @@ body::before {
 .btn-ojo:hover { background:var(--cream-100); color:var(--ink-600); }
 .btn-ojo .icon svg { width:1.1em; height:1.1em; }
 
+/* ---------- Celdas de la planilla: cambio pendiente y fallo al guardar ---------- */
+.cell-input.celda-pendiente {
+  border-color: var(--gold-600);
+  box-shadow: inset 0 0 0 1px var(--gold-600);
+}
+.cell-input.celda-fallida {
+  border-color: var(--red-500);
+  box-shadow: inset 0 0 0 1px var(--red-500);
+}
+.cell-input.celda-fallida:focus {
+  outline: 2px solid var(--red-500);
+}
+
 /* ---------- Micro-interacciones: skeleton, spinner, shake, salida de modales ---------- */
 @keyframes skeletonPulse {
   0%, 100% { opacity: .45; }
@@ -785,6 +798,7 @@ body::before {
     <select class="sel" id="sel-curso"><option value="">Seleccionar curso</option></select>
     <select class="sel" id="sel-materia"><option value="">Seleccionar materia</option></select>
     <button class="btn-sm success" id="btn-save-all" style="margin-left: auto; font-weight: 600; padding: 8px 14px;" onclick="guardarGrid()"><span class="icon" data-icon="guardar"></span> Guardar todos los cambios</button>
+    <span id="save-status" style="font-size:12px;font-weight:600;color:var(--ink-500);align-self:center;white-space:nowrap;"></span>
     <button class="btn-sm" onclick="abrirMiCuenta()" style="font-weight:600;"><span class="icon" data-icon="engranaje"></span> Mi cuenta</button>
     <button class="btn-sm" id="btn-director-obs" style="display:none;font-weight:600;" onclick="mostrarObservacionesCursoDirector()"><span class="icon" data-icon="ojo"></span> Observaciones de mi curso</button>
     <button class="btn-sm" id="btn-director-reporte" style="display:none;font-weight:600;" onclick="mostrarReporteCorte()"><span class="icon" data-icon="advertencia"></span> Reporte de corte</button>
@@ -2367,7 +2381,9 @@ function marcarCambio(studentIdx, tipo, titulo, valor, input) {
     const aplicarBorrado = () => {
       cambiosGrid[key] = { estudianteId: s.estudianteId, materiaId: selectedMateria, periodo: currentPeriodo, anio: new Date().getFullYear(), tipo, titulo, valor: null, _delete: true }
       guardarCambiosLocal()
-      if (input) input.value = ''
+      if (input) { input.value = ''; input.classList.add('celda-pendiente'); input.classList.remove('celda-fallida') }
+      _clavesFallidas.delete(key)
+      actualizarIndicadorGuardado()
     }
     // SEGURIDAD (bug móvil): vaciar por accidente NUNCA borra una nota ya
     // guardada sin confirmación explícita. Sin nota guardada es inocuo.
@@ -2403,6 +2419,9 @@ function marcarCambio(studentIdx, tipo, titulo, valor, input) {
   }
   cambiosGrid[key] = { estudianteId: s.estudianteId, materiaId: selectedMateria, periodo: currentPeriodo, anio: new Date().getFullYear(), tipo, titulo, valor: v }
   guardarCambiosLocal()
+  if (input) { input.classList.add('celda-pendiente'); input.classList.remove('celda-fallida') }
+  _clavesFallidas.delete(key)
+  actualizarIndicadorGuardado()
 }
 
 async function agregarColumna(tipo) {
@@ -2428,15 +2447,115 @@ async function agregarColumna(tipo) {
   })
 }
 
+// ─── Guardado sin perder notas: snapshot quirúrgico + mutex ───
+// Carrera 1 (reversión de notas): el guardado hace SNAPSHOT de lo que envía
+// y al terminar solo retira las claves enviadas cuyo valor actual no cambió
+// durante el vuelo. NUNCA hace cambiosGrid = {}.
+// Carrera 3 (solapamiento): _guardandoGrid evita guardados concurrentes; el
+// autosave se salta, el manual se encadena al actual.
+let _guardandoGrid = false
+let _encadenarManual = false
+let _ultimoGuardadoOk = null
+let _clavesFallidas = new Set()
+
+function claveDeItem(it) {
+  return it.estudianteId + '_' + it.tipo + '_' + (it.titulo || '')
+}
+
+// Sincroniza studentsData con lo que el servidor acaba de aceptar: altas,
+// cambios y borrados. Así valorGuardadoCelda() (la confirmación de borrado)
+// decide con la verdad aunque el re-render se difiera (carrera 2).
+function aplicarGuardadoEnCache(items) {
+  for (const it of items) {
+    const s = studentsData.find(x => x.estudianteId === it.estudianteId)
+    if (!s) continue
+    const key = it.tipo === 'ACTIVIDAD' ? 'actividades' : it.tipo.toLowerCase()
+    if (!s.grupos) s.grupos = {}
+    const cat = s.grupos[key] || { items: [], promedio: 0 }
+    cat.items = cat.items || []
+    if (it._delete) {
+      // Evaluación es la única columna fija: se vacía entera
+      cat.items = it.tipo === 'EVALUACION' ? [] : cat.items.filter(x => x.descripcion !== it.titulo)
+    } else {
+      let objetivo = it.tipo === 'EVALUACION' ? cat.items[0] : cat.items.find(x => x.descripcion === it.titulo)
+      if (!objetivo) {
+        objetivo = { descripcion: it.titulo || null, valor: null }
+        cat.items.push(objetivo)
+      }
+      objetivo.valor = parseFloat(it.valor)
+    }
+    s.grupos[key] = cat
+  }
+}
+
+// Indicador junto al botón de guardar (FASE 5)
+function actualizarIndicadorGuardado() {
+  const el = document.getElementById('save-status')
+  if (!el) return
+  if (_guardandoGrid) {
+    el.textContent = 'Guardando…'
+    el.style.color = 'var(--amber-700)'
+    return
+  }
+  const n = Object.keys(cambiosGrid).length
+  if (n > 0) {
+    el.textContent = 'Cambios sin guardar (' + n + ')'
+    el.style.color = 'var(--amber-700)'
+    return
+  }
+  if (_clavesFallidas.size > 0) {
+    el.textContent = _clavesFallidas.size + ' nota(s) con error al guardar'
+    el.style.color = 'var(--red-700)'
+    return
+  }
+  if (_ultimoGuardadoOk) {
+    el.textContent = 'Guardado ✓ ' + _ultimoGuardadoOk.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })
+    el.style.color = 'var(--green-700)'
+    return
+  }
+  el.textContent = ''
+}
+
+// Marca visual de las celdas: pendiente (borde dorado) y fallida (rojo)
+function marcarCeldasPendientes() {
+  const pendientes = new Set(Object.keys(cambiosGrid))
+  const inputs = document.querySelectorAll('#gtbody input.cell-input')
+  for (const inp of inputs) {
+    const oc = inp.getAttribute('onchange') || ''
+    const m = oc.match(/marcarCambio\((\d+),'([A-Z]+)','(.*)',/)
+    if (!m) continue
+    const est = studentsData[Number(m[1])]
+    if (!est) continue
+    const clave = est.estudianteId + '_' + m[2] + '_' + (m[3] || '')
+    inp.classList.toggle('celda-pendiente', pendientes.has(clave))
+    inp.classList.toggle('celda-fallida', _clavesFallidas.has(clave))
+  }
+}
+
 async function guardarGrid(silencioso) {
-  const items = Object.values(cambiosGrid)
-  if (items.length === 0) {
-    if (!silencioso) mostrarToast('error', 'No hay cambios para guardar')
+  // Carrera 3: ya hay un guardado en vuelo — el autosave se salta, el
+  // manual se encadena (guardará lo pendiente apenas termine el actual)
+  if (_guardandoGrid) {
+    if (silencioso) return
+    _encadenarManual = true
     return
   }
 
+  const items = Object.values(cambiosGrid)
+  if (items.length === 0) {
+    if (!silencioso) mostrarToast('error', 'No hay cambios para guardar')
+    actualizarIndicadorGuardado()
+    return
+  }
+
+  // Carrera 1: SNAPSHOT de lo que se envía — al terminar solo se retiran
+  // estas claves si su valor actual sigue siendo el enviado
+  const snapshot = new Map(items.map(it => [claveDeItem(it), it]))
+
+  _guardandoGrid = true
   const btn = document.getElementById('btn-save-all')
   if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Guardando...' }
+  actualizarIndicadorGuardado()
 
   try {
     const res = await fetch(API + '/api/notas/guardar-grid', {
@@ -2446,14 +2565,43 @@ async function guardarGrid(silencioso) {
     })
     if (res.ok) {
       const data = await res.json()
-      cambiosGrid = {}
-      guardarCambiosLocal()
-      if (!silencioso) {
-        mostrarToast('ok', data.advertencia || 'Todos los cambios guardados')
+      const guardados = data.guardados || []
+      const fallidos = data.fallidos || []
+
+      // Wipe quirúrgico: solo se retiran las claves enviadas y confirmadas
+      // por el servidor CUYO VALOR ACTUAL SIGUE SIENDO EL ENVIADO. Si la
+      // celda se volvió a editar durante el vuelo, sobrevive con el valor
+      // nuevo para la próxima tanda.
+      for (const clave of guardados) {
+        const enviado = snapshot.get(clave)
+        const actual = cambiosGrid[clave]
+        if (actual && enviado && actual.valor === enviado.valor && !!actual._delete === !!enviado._delete) {
+          delete cambiosGrid[clave]
+          _clavesFallidas.delete(clave)
+        }
       }
+      for (const f of fallidos) _clavesFallidas.add(f.clave)
+
+      // Carrera 2: la copia local refleja lo que el servidor aceptó (con el
+      // valor ENVIADO — el re-editado queda como pendiente encima)
+      aplicarGuardadoEnCache(guardados.map(c => snapshot.get(c)).filter(Boolean))
+
+      guardarCambiosLocal()
+      _ultimoGuardadoOk = new Date()
+
+      const hayPendientes = Object.keys(cambiosGrid).length > 0
+      if (fallidos.length > 0) {
+        const primerError = fallidos[0].error || 'Error desconocido'
+        mostrarToast('error', fallidos.length + ' nota(s) no se guardaron: ' + primerError)
+      } else if (!silencioso) {
+        mostrarToast('ok', data.advertencia || (hayPendientes ? 'Guardado — quedan ' + Object.keys(cambiosGrid).length + ' cambio(s) recientes' : 'Todos los cambios guardados'))
+      }
+
       // En el autosave silencioso: si el docente está escribiendo en una
-      // celda, no recargar la grid (perdería el foco a mitad de escritura)
-      const escribiendoCelda = silencioso && document.activeElement && document.activeElement.classList && document.activeElement.classList.contains('cell-input')
+      // celda, no recargar la grid (perdería el foco a mitad de escritura).
+      // El render (cargarGrupo → renderGrid) re-aplica los pendientes que
+      // sobrevivieron, así que el reload nunca pisa valores nuevos.
+      const escribiendoCelda = document.activeElement && document.activeElement.classList && document.activeElement.classList.contains('cell-input')
       if (!escribiendoCelda) cargarGrupo()
       if (currentUser && currentUser.rol === 'ESTUDIANTE') {
         cargarNotasEstudiante()
@@ -2468,9 +2616,18 @@ async function guardarGrid(silencioso) {
     // pendientes quedan en localStorage (se reenvían al reconectar)
     mostrarSinConexion()
   } finally {
+    _guardandoGrid = false
     if (btn) {
       btn.disabled = false
       btn.innerHTML = icon('guardar') + ' Guardar todos los cambios'
+    }
+    actualizarIndicadorGuardado()
+    marcarCeldasPendientes()
+    // Guardado manual encadenado: ahora que el vuelo anterior terminó,
+    // se envía lo que quedó pendiente (incluye ediciones hechas a mitad)
+    if (_encadenarManual) {
+      _encadenarManual = false
+      guardarGrid(false)
     }
   }
 }
@@ -5397,6 +5554,8 @@ function restaurarCambiosLocal() {
 
 // Aplica visualmente los cambios pendientes sobre la tabla recién renderizada
 function aplicarCambiosPendientesAlGrid() {
+  // Re-pinta las marcas de pendiente/fallida sobre el render fresco
+  marcarCeldasPendientes()
   const pendientes = Object.values(cambiosGrid)
   if (!pendientes.length) return
   const inputs = document.querySelectorAll('#gtbody input.cell-input')
@@ -5634,6 +5793,15 @@ function enviarPendientesAlSalir() {
 }
 window.addEventListener('pagehide', enviarPendientesAlSalir)
 window.addEventListener('beforeunload', enviarPendientesAlSalir)
+
+// Aviso antes de cerrar/navegar si quedan notas sin guardar (el envío
+// keepalive de arriba sigue corriendo; esto solo pregunta al docente)
+window.addEventListener('beforeunload', (e) => {
+  if (Object.keys(cambiosGrid).length > 0) {
+    e.preventDefault()
+    e.returnValue = ''
+  }
+})
 
 restaurarSesion()
 iniciarAutoenvio()

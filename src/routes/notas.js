@@ -886,43 +886,64 @@ router.post('/guardar-grid', async (req, res) => {
       return res.status(400).json({ error: 'Se requiere un arreglo de items' })
     }
 
-    const calIdsActualizados = new Set()
-    const advertencias = new Set()
-
+    // Defensa en profundidad: la nota solo puede ir de 0 a 5 (el frontend
+    // ya lo restringe). Se valida TODA la tanda antes de tocar la BD:
+    // una nota inválida no guarda nada, ni siquiera los items previos.
     for (const item of items) {
-      const { estudianteId, materiaId, periodo, anio, tipo, titulo, valor, _delete } = item
-      if (!estudianteId || !materiaId || !tipo) continue
-
-      // Defensa en profundidad: la nota solo puede ir de 0 a 5 (el frontend
-      // ya lo restringe con mensaje; esto evita que llegue cualquier otra cosa)
+      const { valor } = item
       if (valor !== null && valor !== undefined && valor !== '') {
         const vNota = parseFloat(valor)
         if (isNaN(vNota) || vNota < 0 || vNota > 5) {
           return res.status(400).json({ error: 'La nota solo puede ir de 0 a 5' })
         }
       }
+    }
+
+    const claveDe = it => it.estudianteId + '_' + it.tipo + '_' + (it.titulo || '')
+    const guardados = []
+    const fallidos = []
+    const advertencias = new Set()
+    const grupos = new Map() // gKey → { estudianteId, materiaId, periodo, anio, items }
+
+    // ── Fase 1: validaciones en JS, solo lecturas (nada se escribe aún) ──
+    // Los fallos de esta fase se reportan por item sin tocar la BD.
+    for (const item of items) {
+      const { estudianteId, materiaId, periodo, anio, tipo, titulo, _delete } = item
+      if (!estudianteId || !materiaId || !tipo) {
+        fallidos.push({ clave: claveDe(item), error: 'Item incompleto (falta estudianteId, materiaId o tipo)' })
+        continue
+      }
+      // La planilla es un modelo de columnas: sin título el item sería
+      // invisible (Evaluación es la única columna fija, no lleva título)
+      if (!_delete && tipo !== 'EVALUACION' && (!titulo || !titulo.trim())) {
+        fallidos.push({ clave: claveDe(item), error: 'El título de la nota es requerido en esta columna' })
+        continue
+      }
 
       const p = parseInt(periodo) || 1
       const a = parseInt(anio) || new Date().getFullYear()
 
       const est = await prisma._db.prepare('SELECT sede, curso FROM estudiantes WHERE id = ?').get(estudianteId)
-      if (!est) continue
-      const sede = est.sede
-      const cursoEstudiante = est.curso
-
-      // SEGURIDAD: un docente NO puede guardar notas de una materia/curso que no tiene asignada
-      if (req.usuario.rol === 'DOCENTE' && !(await verificarDocenteAsignado(prisma._db, req.usuario.docenteId, materiaId, cursoEstudiante))) {
-        advertencias.add('No tienes asignada la materia en el curso ' + cursoEstudiante + ' — se ignoró el cambio.')
+      if (!est) {
+        fallidos.push({ clave: claveDe(item), error: 'Estudiante no encontrado' })
         continue
       }
 
-      // Periodo cerrado manualmente → saltar
-      if (!(await periodoAbierto(a, sede, p))) {
+      // SEGURIDAD (IDOR): un docente NO puede guardar notas de una materia/
+      // curso que no tiene asignada
+      if (req.usuario.rol === 'DOCENTE' && !(await verificarDocenteAsignado(prisma._db, req.usuario.docenteId, materiaId, est.curso))) {
+        fallidos.push({ clave: claveDe(item), error: 'No tienes asignada la materia en el curso ' + est.curso })
         continue
       }
 
-      // Fecha límite pasada pero período aún abierto → advertir
-      const cfg = await prisma._db.prepare('SELECT fecha_fin, reapertura_manual FROM periodos_config WHERE anio = ? AND sede = ? AND periodo = ?').get(a, sede, p)
+      // Período cerrado manualmente → este item no se guarda
+      if (!(await periodoAbierto(a, est.sede, p))) {
+        fallidos.push({ clave: claveDe(item), error: 'El período ' + p + ' está cerrado para esta sede' })
+        continue
+      }
+
+      // Fecha límite pasada pero período reabierto → advertir (informativo)
+      const cfg = await prisma._db.prepare('SELECT fecha_fin, reapertura_manual FROM periodos_config WHERE anio = ? AND sede = ? AND periodo = ?').get(a, est.sede, p)
       if (cfg?.fecha_fin) {
         const fechaFin = new Date(cfg.fecha_fin)
         if (fechaFin < new Date() && cfg.reapertura_manual) {
@@ -930,83 +951,106 @@ router.post('/guardar-grid', async (req, res) => {
         }
       }
 
-      // Un _delete sobre una calificación inexistente no tiene nada que borrar:
-      // crear la fila solo para dejarla vacía genera "contenedores basura".
-      // Se busca primero; solo el guardado de notas reales usa upsert.
-      let cal = await prisma.calificacion.findUnique({
-        where: { estudianteId_materiaId_periodo_anio: { estudianteId, materiaId, periodo: p, anio: a } }
-      })
-      if (_delete) {
-        if (!cal) continue
-      } else {
-        cal = await prisma.calificacion.upsert({
-          where: { estudianteId_materiaId_periodo_anio: { estudianteId, materiaId, periodo: p, anio: a } },
-          update: {},
-          create: { estudianteId, materiaId, docenteId: req.usuario.docenteId, periodo: p, anio: a },
-        })
+      // Agrupar por calificación: una sola transacción corta por grupo
+      const gKey = estudianteId + '|' + materiaId + '|' + p + '|' + a
+      if (!grupos.has(gKey)) {
+        grupos.set(gKey, { estudianteId, materiaId, periodo: p, anio: a, items: [] })
       }
-
-      if (_delete) {
-        if (tipo === 'EVALUACION') {
-          const existente = await prisma.notaItem.findFirst({
-            where: { calificacionId: cal.id, tipo: 'EVALUACION' }
-          })
-          if (existente) {
-            await prisma.notaItem.delete({ where: { id: existente.id } })
-          }
-        } else if (titulo && titulo.trim()) {
-          const existente = await prisma.notaItem.findFirst({
-            where: { calificacionId: cal.id, tipo, descripcion: titulo.trim() }
-          })
-          if (existente) {
-            await prisma.notaItem.delete({ where: { id: existente.id } })
-          }
-        }
-        // Si la calificación quedó sin items y sin definitiva cerrada:
-        // borrar también la fila contenedora (la BD no acumula filas vacías).
-        // Si tiene definitiva cerrada, se queda (el docente la cerró).
-        const restantes = await prisma.notaItem.findMany({ where: { calificacionId: cal.id } })
-        if (restantes.length === 0 && cal.definitiva === null) {
-          await prisma.calificacion.delete({ where: { id: cal.id } })
-        }
-      } else {
-        if (valor === undefined || valor === null) continue
-        // El 0 es válido (rango 0-5, coherente con el frontend)
-        if (valor < 0 || valor > 5) continue
-
-        if (tipo === 'EVALUACION') {
-          const existente = await prisma.notaItem.findFirst({
-            where: { calificacionId: cal.id, tipo: 'EVALUACION' }
-          })
-          if (existente) {
-            await prisma.notaItem.update({ where: { id: existente.id }, data: { valor: parseFloat(valor) } })
-          } else {
-            await prisma.notaItem.create({ data: { calificacionId: cal.id, tipo: 'EVALUACION', valor: parseFloat(valor), descripcion: null } })
-          }
-        } else if (titulo && titulo.trim()) {
-          const existente = await prisma.notaItem.findFirst({
-            where: { calificacionId: cal.id, tipo, descripcion: titulo.trim() }
-          })
-          if (existente) {
-            await prisma.notaItem.update({ where: { id: existente.id }, data: { valor: parseFloat(valor) } })
-          } else {
-            await prisma.notaItem.create({ data: { calificacionId: cal.id, tipo, valor: parseFloat(valor), descripcion: titulo.trim() } })
-          }
-        }
-      }
-
-      calIdsActualizados.add(cal.id)
+      grupos.get(gKey).items.push(item)
     }
 
-    for (const calId of calIdsActualizados) {
-      const cal = await prisma.calificacion.findUnique({ where: { id: calId }, include: { notasItems: true } })
-      if (cal) {
-        const definitiva = calcularDefinitiva(cal.notasItems)
-        await prisma.calificacion.update({ where: { id: calId }, data: { definitiva } })
+    // ── Fase 2: una transacción CORTA por calificación ──
+    // El pooler de Supabase mata transacciones largas: cada grupo son pocos
+    // round-trips y commitea solo. Un error SQL revienta la transacción del
+    // grupo (rollback completo de ESA unidad) y se reporta como fallido de
+    // sus items; los demás grupos ya commiteados no se deshacen. NUNCA se
+    // captura por sentencia dentro de la transacción: en Postgres una
+    // sentencia fallida aborta toda la transacción.
+    for (const grupo of grupos.values()) {
+      const clavesGrupo = grupo.items.map(claveDe)
+      try {
+        await prisma._db.transaction(async () => {
+          let cal = await prisma.calificacion.findUnique({
+            where: { estudianteId_materiaId_periodo_anio: { estudianteId: grupo.estudianteId, materiaId: grupo.materiaId, periodo: grupo.periodo, anio: grupo.anio } }
+          })
+
+          for (const item of grupo.items) {
+            const { tipo, titulo, valor, _delete } = item
+
+            if (_delete) {
+              // Un _delete sobre una calificación inexistente no tiene nada
+              // que borrar: crear la fila solo para dejarla vacía genera
+              // "contenedores basura"
+              if (!cal) continue
+              if (tipo === 'EVALUACION') {
+                const existente = await prisma.notaItem.findFirst({ where: { calificacionId: cal.id, tipo: 'EVALUACION' } })
+                if (existente) await prisma.notaItem.delete({ where: { id: existente.id } })
+              } else if (titulo && titulo.trim()) {
+                const existente = await prisma.notaItem.findFirst({ where: { calificacionId: cal.id, tipo, descripcion: titulo.trim() } })
+                if (existente) await prisma.notaItem.delete({ where: { id: existente.id } })
+              }
+              // Si la calificación quedó sin items y sin definitiva cerrada:
+              // borrar también la fila contenedora. Si tiene definitiva
+              // cerrada, se queda (el docente la cerró).
+              const restantes = await prisma.notaItem.findMany({ where: { calificacionId: cal.id } })
+              if (restantes.length === 0 && cal.definitiva === null) {
+                await prisma.calificacion.delete({ where: { id: cal.id } })
+                cal = null
+              }
+            } else {
+              if (valor === undefined || valor === null) continue
+              // El 0 es válido (rango 0-5, coherente con el frontend)
+              if (valor < 0 || valor > 5) continue
+              if (!cal) {
+                cal = await prisma.calificacion.create({
+                  data: { estudianteId: grupo.estudianteId, materiaId: grupo.materiaId, docenteId: req.usuario.docenteId, periodo: grupo.periodo, anio: grupo.anio }
+                })
+              }
+              if (tipo === 'EVALUACION') {
+                const existente = await prisma.notaItem.findFirst({ where: { calificacionId: cal.id, tipo: 'EVALUACION' } })
+                if (existente) {
+                  await prisma.notaItem.update({ where: { id: existente.id }, data: { valor: parseFloat(valor) } })
+                } else {
+                  await prisma.notaItem.create({ data: { calificacionId: cal.id, tipo: 'EVALUACION', valor: parseFloat(valor), descripcion: null } })
+                }
+              } else {
+                const existente = await prisma.notaItem.findFirst({ where: { calificacionId: cal.id, tipo, descripcion: titulo.trim() } })
+                if (existente) {
+                  await prisma.notaItem.update({ where: { id: existente.id }, data: { valor: parseFloat(valor) } })
+                } else {
+                  await prisma.notaItem.create({ data: { calificacionId: cal.id, tipo, valor: parseFloat(valor), descripcion: titulo.trim() } })
+                }
+              }
+            }
+          }
+
+          // Recalcular la definitiva dentro de la MISMA transacción (pocos
+          // round-trips) — si el grupo quedó sin calificación, nada que
+          // recalcular
+          if (cal) {
+            const calCompleta = await prisma.calificacion.findUnique({ where: { id: cal.id }, include: { notasItems: true } })
+            const definitiva = calcularDefinitiva(calCompleta.notasItems)
+            await prisma.calificacion.update({ where: { id: cal.id }, data: { definitiva } })
+          }
+        })()
+
+        for (const clave of clavesGrupo) guardados.push(clave)
+      } catch (err) {
+        // Error SQL real: la transacción del grupo hizo rollback completo —
+        // nada de esta calificación quedó a medias. Los demás grupos siguen.
+        console.error('Error SQL al guardar calificación en guardar-grid:', err)
+        for (const clave of clavesGrupo) {
+          fallidos.push({ clave, error: 'Error del servidor al guardar esta calificación — inténtalo de nuevo' })
+        }
       }
     }
 
-    const respuesta = { mensaje: `Guardados ${items.length} cambios`, actualizados: calIdsActualizados.size }
+    const respuesta = {
+      mensaje: `Guardados ${guardados.length} de ${items.length} cambios`,
+      actualizados: guardados.length,
+      guardados,
+      fallidos,
+    }
     if (advertencias.size > 0) {
       respuesta.advertencia = [...advertencias].join(' ')
     }
