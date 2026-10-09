@@ -487,18 +487,18 @@ test('boletín: publicación condiciona el botón, columnas dinámicas y firma v
   assert.match(botón, /boletinesDisponibles\.length/, 'visible solo si hay publicados')
   assert.match(HTML, /function membreteBoletin\(/, 'el membrete es un bloque aislado (fácil de cambiar)')
   const pintar = extraerFuncion('pintarBoletin')
-  assert.match(pintar, /membreteBoletin\(d, columnas\)/, 'pintar usa el membrete aislado')
+  assert.match(pintar, /membreteBoletin\(d\)/, 'pintar usa el membrete aislado')
   assert.match(pintar, /d\.periodos/, 'las columnas salen de periodos del backend (P°1..P°N, nunca futuros)')
   assert.match(pintar, /m\.notas\[String\(p\)\]/, 'cada columna pinta SOLO las notas que el backend envió')
   assert.match(pintar, /area\.promedio/, 'la fila del área lleva su promedio ponderado')
   assert.match(pintar, /area\.nivel/, 'la fila del área lleva su nivel')
   assert.match(pintar, /toUpperCase\(\)/, 'las áreas van en MAYÚSCULAS')
   assert.match(pintar, /rectorFirma/, 'la firma virtual del rector se renderiza')
-  assert.match(pintar, /COORDINADOR\(A\) DE GRUPO/, 'firma del coordinador')
+  assert.match(pintar, /Coordinador\(a\) de grupo/, 'firma del coordinador')
   assert.match(pintar, /Escala de valoraci/, 'leyenda de la escala en una línea')
-  // Sin cuadrícula: ninguna regla de border:1px en las celdas del boletín
-  const css = HTML.slice(HTML.indexOf('.boletin-doc table.boletin-tabla'), HTML.indexOf('.boletin-doc .b-titulo'))
-  assert.ok(!/border:\s*1px/.test(css), 'la tabla no es una cuadrícula de bordes')
+  // El diseño oficial SÍ tiene bordes: 1px negro en todas las celdas
+  const css = HTML.slice(HTML.indexOf('.boletin-doc table.boletin-tabla'), HTML.indexOf('.boletin-doc .b-cols'))
+  assert.ok(/border:\s*1px\s+solid\s+#000/.test(css), 'la tabla tiene borde negro 1px en las celdas')
   // El admin publica/retira y sube la firma
   assert.match(HTML, /function adminPublicarBoletin/, 'UI de publicación')
   assert.match(HTML, /function adminRetirarBoletin/, 'UI de retiro')

@@ -255,51 +255,89 @@ body::before {
   outline: 2px solid var(--red-500);
 }
 
-/* ---------- Boletín: documento formal digital (estética del original) ---------- */
+/* ---------- Boletín: documento oficial con membrete y colores exactos ---------- */
 #boletin-view {
   display: none; position: fixed; inset: 0; z-index: 150;
   background: #fff; color: #000; overflow-y: auto;
   font-family: Arial, Helvetica, sans-serif;
 }
 #boletin-view.abierto { display: block; }
-.boletin-doc { max-width: 780px; margin: 0 auto; padding: 18px 16px 32px; }
+.boletin-doc { max-width: 816px; margin: 0 auto; padding: 8px; }
 .boletin-controles {
   display: flex; gap: 10px; justify-content: flex-end; align-items: center;
-  padding: 10px 0; margin-bottom: 6px;
+  padding: 8px 0; margin-bottom: 4px;
 }
 .boletin-controles select { border: 1px solid #555; padding: 5px 8px; font-size: 12px; background: #fff; color: #000; }
 .boletin-controles button { border: 1px solid #333; background: #eee; color: #000; padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer; border-radius: 4px; }
-.boletin-doc table.boletin-tabla { width: 100%; border-collapse: collapse; font-size: 11px; }
-/* Sin cuadrícula: la jerarquía la dan las MAYÚSCULAS, la negrita, la
-   alineación y el espacio — como el documento original */
-.boletin-doc table.boletin-tabla th, .boletin-doc table.boletin-tabla td {
-  border: none; padding: 2px 4px; vertical-align: top;
+
+/* Tabla del boletín oficial: borde negro 1px, border-collapse */
+.boletin-doc table.boletin-tabla {
+  width: 90%; border-collapse: collapse; font-size: 9pt; margin: 0 auto;
+  font-family: Arial, Helvetica, sans-serif;
 }
-.boletin-doc .b-titulo { text-align: center; font-size: 12.5px; font-weight: 700; letter-spacing: .4px; padding-bottom: 4px; }
-.boletin-doc .b-datos { font-size: 10.5px; }
-.boletin-doc .b-datos b { font-weight: 700; }
-.boletin-doc .b-cols { font-weight: 700; font-size: 10.5px; border-top: 1px solid #000; border-bottom: 1px solid #000; }
-.boletin-doc .b-cols th { padding: 3px 4px; }
-.boletin-doc .b-area td { font-weight: 700; font-size: 10.5px; padding-top: 10px; }
-.boletin-doc .b-area td:first-child { letter-spacing: .3px; }
-.boletin-doc .b-num { text-align: center; }
-.boletin-doc tfoot td { font-weight: 700; border-top: 1px solid #000; padding-top: 4px; }
-.boletin-doc .boletin-escala { font-size: 10px; margin-top: 10px; }
-.boletin-doc .boletin-obs { margin-top: 14px; font-size: 11px; }
-.boletin-doc .boletin-obs .b-linea { border-bottom: 1px solid #000; height: 20px; margin-top: 10px; }
-.boletin-doc .boletin-firmas { display: flex; justify-content: space-between; margin-top: 40px; font-size: 10.5px; text-align: center; }
-.boletin-doc .boletin-firmas .firma { width: 42%; display: flex; flex-direction: column; justify-content: flex-end; }
-.boletin-doc .boletin-firmas .firma .linea { border-top: 1px solid #000; padding-top: 4px; font-weight: 600; letter-spacing: .3px; }
+.boletin-doc table.boletin-tabla th,
+.boletin-doc table.boletin-tabla td {
+  border: 1px solid #000; padding: 2px 4px; vertical-align: middle;
+}
+/* Encabezado de columnas */
+.boletin-doc .b-cols th {
+  background: #fff; font-weight: bold; font-size: 10pt; text-align: center;
+}
+/* FILA DE ÁREA: fondo #c1d8eb, MAYÚSCULAS negrita */
+.boletin-doc .b-area td {
+  background: #c1d8eb; font-weight: bold; font-size: 9pt; text-align: center;
+  text-transform: uppercase;
+}
+.boletin-doc .b-area .b-area-nivel { text-transform: uppercase; }
+/* FILA DE MATERIA: fondo #eaf4fc, MAYÚSCULAS negrita a la izquierda */
+.boletin-doc .b-materia td {
+  background: #eaf4fc; font-weight: bold; font-size: 9pt;
+}
+.boletin-doc .b-materia td:first-child { text-align: left; text-transform: uppercase; }
+.boletin-doc .b-materia .b-num { text-align: center; font-weight: bold; }
+.boletin-doc .b-materia .b-num:first-of-type { font-weight: normal; }
+/* FILAS DE INDICADORES: fondo blanco, ~7pt, alineadas a la izquierda */
+.boletin-doc .b-indicador td {
+  background: #fff; font-size: 7pt; font-weight: normal; text-align: left; padding: 1px 4px;
+}
+/* Notas y niveles centrados en negrita */
+.boletin-doc .b-nota { text-align: center; font-weight: bold; }
+.boletin-doc .b-nivel { text-align: center; font-weight: bold; text-transform: uppercase; }
+
+/* Membrete */
+.boletin-doc .b-membrete { margin: 0 auto; width: 100%; }
+
+/* Pie del boletín */
+.boletin-doc .boletin-escala { font-size: 6.5pt; margin: 8px auto 0; width: 90%; }
+.boletin-doc .boletin-escala b { font-weight: bold; }
+.boletin-doc .boletin-obs { margin: 12px auto 0; width: 90%; font-size: 10pt; }
+.boletin-doc .boletin-obs .b-linea { border-bottom: 1px solid #000; height: 18px; margin-top: 8px; }
+.boletin-doc .boletin-firmas {
+  display: flex; justify-content: space-between; width: 80%; margin: 36px auto 0;
+  font-size: 8pt; text-align: center;
+}
+.boletin-doc .boletin-firmas .firma { width: 38%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; }
+.boletin-doc .boletin-firmas .firma .firma-nombre {
+  font-style: italic; font-weight: bold; font-size: 8pt;
+  text-decoration: underline; min-height: 20px; display: flex; align-items: center;
+}
+.boletin-doc .boletin-firmas .firma .firma-espacio { min-height: 20px; }
+.boletin-doc .boletin-firmas .firma .linea {
+  border-top: 1px solid #000; padding-top: 3px; font-weight: bold; width: 100%;
+}
 .boletin-area { page-break-inside: avoid; }
 
+/* Impresión: carta con margen 0 para el membrete a ancho completo */
 @media print {
   body > *:not(#boletin-view) { display: none !important; }
   #boletin-view { display: block !important; position: static; overflow: visible; background: #fff; }
-  .boletin-doc { max-width: none; padding: 0; }
+  .boletin-doc { max-width: none; padding: 0; width: 100%; }
   .boletin-controles { display: none !important; }
   .boletin-area, .boletin-escala, .boletin-obs, .boletin-firmas { page-break-inside: avoid; }
-  @page { size: letter; margin: 12mm 11mm; }
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  @page { size: letter; margin: 0; }
 }
+
 /* ---------- Micro-interacciones: skeleton, spinner, shake, salida de modales ---------- */
 @keyframes skeletonPulse {
   0%, 100% { opacity: .45; }
@@ -961,14 +999,30 @@ body::before {
     <div id="bol-tabla-publicaciones"></div>
 
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-top:20px;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px;">
+      <div style="flex:1;min-width:200px;">
+        <div class="lbl">Nombre del rector (sale en el boletín)</div>
+        <input class="inp" id="bol-rector-nombre" placeholder="Ej: JUAN CARLOS GÓMEZ" style="width:100%;">
+      </div>
+      <div><button class="btn-sm success" id="bol-btn-rector-nombre" onclick="adminGuardarRectorNombre()" style="font-weight:600;">Guardar nombre</button></div>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-top:10px;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px;">
       <div style="flex:1;min-width:220px;">
-        <div class="lbl">Firma virtual del rector (imagen PNG/JPG, máx. 300 KB)</div>
+        <div class="lbl">Firma virtual del rector (imagen PNG/JPG, máx. 300 KB) — opcional</div>
         <input class="inp" type="file" id="bol-firma-archivo" accept="image/png,image/jpeg,image/webp" style="padding:8px;">
       </div>
       <div><button class="btn-sm success" id="bol-btn-firma" onclick="adminGuardarFirmaRector()" style="font-weight:600;">Guardar firma</button></div>
       <div><button class="btn-sm" onclick="adminEliminarFirmaRector()" style="font-weight:600;color:var(--red-700);">Eliminar firma</button></div>
     </div>
     <div id="bol-firma-preview" style="margin-top:10px;"></div>
+
+    <!-- Impresión masiva por curso -->
+    <div style="font-size:14px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);margin:20px 0 10px;"><span class="icon" data-icon="documento"></span> Impresión masiva por curso</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:10px;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);padding:12px;">
+      <div><div class="lbl">Curso</div><select class="sel" id="bol-masiva-curso"><option value="">Elegir curso...</option></select></div>
+      <div><div class="lbl">Período</div><select class="sel" id="bol-masiva-periodo"><option value="1">P1</option><option value="2">P2</option><option value="3">P3</option><option value="4">P4</option></select></div>
+      <div><button class="btn-sm primary" id="bol-masiva-btn" onclick="adminImprimirBoletinesCurso()" style="font-weight:600;"><span class="icon" data-icon="documento"></span> Imprimir boletines del curso</button></div>
+    </div>
+    <div id="bol-masiva-progreso" style="display:none;font-size:13px;color:var(--ink-500);padding:8px;"></div>
   </div>
 
   <div id="admin-reporte-corte-section" style="display:none;">
@@ -2915,85 +2969,107 @@ function actualizarBotonBoletin(periodos) {
 
 // MEMBRETE del boletín — bloque aislado: cuando defina qué lleva el
 // boletín original (escudo, logo, texto), se cambia solo esta función.
-function membreteBoletin(d, columnas) {
-  return '<tr><th colspan="' + columnas + '" class="b-titulo">INSTITUCIÓN EDUCATIVA SAGRADO CORAZÓN<br>BOLETÍN DE CALIFICACIONES</th></tr>'
+// MEMBRETE del boletín — bloque aislado: la imagen ya trae el escudo,
+// nombre del colegio, resolución, decreto, teléfono, correo y la banda
+// verde con las etiquetas. Los 5 valores del estudiante se superponen
+// con position:absolute dentro de las casillas de la banda.
+function membreteBoletin(d) {
+  const e = d.estudiante
+  const nombreCurso = (e.grado ? e.grado + '\u00b0' + String(e.curso).slice(-2) : e.curso)
+  const vals = [
+    esc(e.nombre),
+    esc(nombreCurso),
+    esc(e.jornada || ''),
+    d.periodo + '\u00b0',
+    String(d.anio),
+  ]
+  let html = '<div class="b-membrete" style="position:relative;width:100%;">'
+  html += '<img src="/img/membrete-boletin.png" style="width:100%;display:block;border:none;" alt="Membrete">'
+  // Los 5 valores superpuestos en las casillas de la banda verde
+  // (posiciones aproximadas del boletín oficial, ajustables)
+  const posiciones = [
+    { left: '2.2%', width: '34%', top: '84.5%', size: '8pt', bold: true },
+    { left: '38.8%', width: '12%', top: '84.5%', size: '8pt', bold: false },
+    { left: '53%', width: '13%', top: '84.5%', size: '8pt', bold: false },
+    { left: '69%', width: '8%', top: '84.5%', size: '8pt', bold: false },
+    { left: '79%', width: '17%', top: '84.5%', size: '8pt', bold: false },
+  ]
+  for (let i = 0; i < vals.length; i++) {
+    const p = posiciones[i]
+    html += '<div style="position:absolute;left:' + p.left + ';top:' + p.top + ';width:' + p.width + ';text-align:center;font-size:' + p.size + ';font-family:Arial,Helvetica,sans-serif;color:#000;' + (p.bold ? 'font-weight:bold;' : '') + 'line-height:1.2;padding-top:1px;">' + vals[i] + '</div>'
+  }
+  html += '</div>'
+  return html
 }
 
 function pintarBoletin(d) {
   const doc = document.getElementById('boletin-doc')
   const e = d.estudiante
-  const nombreCurso = (e.grado ? e.grado + '°' + String(e.curso).slice(-2) : e.curso)
-  const puestoTxt = d.puesto ? ('Puesto ' + d.puesto + ' de ' + d.totalRankeados) : 'Sin notas en este período'
   const ps = d.periodos || []
   const columnas = 2 + ps.length + 1 // Asignaturas + I.H.S. + P°1..P°N + Nivel
-  // Nota sin ceros de relleno: 4.00 → 4, 3.50 → 3.5
-  const nf = v => v === null || v === undefined ? '—' : String(parseFloat(Number(v).toFixed(2)))
+  // Nota sin ceros de relleno: 4.00 → 4, 3.50 → 3.5; SIN NOTA = celda VACÍA
+  const nf = v => v === null || v === undefined ? '' : String(parseFloat(Number(v).toFixed(2)))
 
-  let html = '<table class="boletin-tabla">'
+  let html = membreteBoletin(d)
+  html += '<table class="boletin-tabla">'
   html += '<thead>'
-  html += membreteBoletin(d, columnas)
-  // Franja administrativa: nombre a la izquierda, resto distribuido a la derecha
-  html += '<tr><th colspan="' + columnas + '" class="b-datos"><div style="display:flex;justify-content:space-between;gap:12px;align-items:baseline;">' +
-    '<span style="flex:1;text-align:left;"><b>Estudiante:</b> ' + esc(e.nombre) + '</span>' +
-    '<span><b>Grado y grupo:</b> ' + esc(nombreCurso) + '</span>' +
-    '<span><b>Jornada:</b> ' + esc(e.jornada || '—') + '</span>' +
-    '<span><b>Período:</b> ' + d.periodo + '°</span>' +
-    '<span><b>Año lectivo:</b> ' + d.anio + '</span>' +
-    '</div></th></tr>'
   html += '<tr class="b-cols"><th style="text-align:left;">Asignaturas</th><th>I.H.S.</th>'
-  for (const p of ps) html += '<th>P° ' + p + '</th>'
-  html += '<th>Nivel de desempeño</th></tr>'
+  for (const p of ps) html += '<th>P\u00b0 ' + p + '</th>'
+  html += '<th>Nivel de desempe\u00f1o</th></tr>'
   html += '</thead>'
 
-  // Colgroup: anchos proporcionales del original (Asignaturas ancha,
-  // I.H.S. estrecha, períodos uniformes, nivel a la derecha)
-  html += '<colgroup><col style="width:44%"><col style="width:6%">'
-  for (const p of ps) html += '<col style="width:7%">'
-  html += '<col style="width:22%"></colgroup>'
+  // Colgroup: anchos del boletín oficial (41.6 / 11.9 / 9.5\u00d7N / 17.9)
+  // Si N<3, el sobrante va a Asignaturas
+  const wAsig = ps.length < 3 ? (41.6 + (3 - ps.length) * 9.5) : 41.6
+  html += '<colgroup><col style="width:' + wAsig + '%"><col style="width:11.9%">'
+  for (const p of ps) html += '<col style="width:9.5%">'
+  html += '<col style="width:17.9%"></colgroup>'
 
-  // Un tbody por área: nunca se corta a la mitad al imprimir. El área va
-  // en MAYÚSCULAS negrita hacia la zona media con su promedio I.H.S. y nivel
   for (const area of (d.areas || [])) {
     html += '<tbody class="boletin-area">'
+    // FILA DE ÁREA: fondo #c1d8eb, MAYÚSCULAS negrita, colspan Asignaturas+IHS,
+    // promedio ponderado en las columnas de períodos, nivel en su columna
     html += '<tr class="b-area">'
-    html += '<td colspan="' + (1 + ps.length) + '">' + esc(area.nombre).toUpperCase() + '</td>'
-    html += '<td colspan="' + (ps.length - 1) + '"></td>'
-    html += '<td class="b-num">' + (area.promedio !== null ? nf(area.promedio) + ' · ' + esc(area.nivel) : '—') + '</td>'
+    html += '<td colspan="2">' + esc(area.nombre).toUpperCase() + '</td>'
+    for (const p of ps) {
+      html += '<td class="b-num">' + (p === d.periodo && area.promedio !== null ? nf(area.promedio) : '') + '</td>'
+    }
+    html += '<td class="b-num b-area-nivel">' + (area.nivel !== null ? esc(area.nivel) : '') + '</td>'
     html += '</tr>'
     for (const m of area.materias) {
-      html += '<tr>' +
-        '<td>' + esc(m.nombre) + '</td>' +
-        '<td class="b-num">' + (m.ihs ?? '—') + '</td>'
-      for (const p of ps) html += '<td class="b-num">' + nf(m.notas[String(p)]) + '</td>'
-      html += '<td class="b-num">' + esc(m.nivel) + '</td>' +
-        '</tr>'
+      html += '<tr class="b-materia">'
+      html += '<td>' + esc(m.nombre).toUpperCase() + '</td>'
+      html += '<td class="b-num">' + (m.ihs ?? '') + '</td>'
+      for (const p of ps) html += '<td class="b-num b-nota">' + nf(m.notas[String(p)]) + '</td>'
+      html += '<td class="b-num b-nivel">' + (m.nivel !== null ? esc(m.nivel) : '') + '</td>'
+      html += '</tr>'
+      // FILAS DE INDICADORES (solo si hay data — el piloto NO trae ninguna)
+      for (const ind of (m.indicadores || [])) {
+        html += '<tr class="b-indicador"><td colspan="' + columnas + '">- ' + esc(ind) + '</td></tr>'
+      }
     }
     html += '</tbody>'
   }
 
-  html += '<tfoot><tr>' +
-    '<td colspan="' + (columnas - 1) + '">Promedio general del período ' + d.periodo + '°: <b>' + (d.promedio ?? '—') + '</b></td>' +
-    '<td class="b-num"><b>' + puestoTxt + '</b></td>' +
-    '</tr></tfoot>'
   html += '</table>'
 
-  // Escala de valoración: una línea informativa
-  html += '<div class="boletin-escala">Escala de valoración: 1 a 2.9 = Desempeño Bajo; 3 a 3.9 = Desempeño Básico; 4 a 4.5 = Desempeño Alto; 4.6 a 5 = Desempeño Superior.</div>'
+  // Escala de valoración: una línea ~6.5pt
+  html += '<div class="boletin-escala"><b>Escala de valoraci\u00f3n:</b> 1 a 2.9 = Desempe\u00f1o Bajo; 3 a 3.9 = Desempe\u00f1o B\u00e1sico; 4 a 4.5 = Desempe\u00f1o Alto; 4.6 a 5 = Desempe\u00f1o Superior.</div>'
 
-  // Observaciones (espacio para registro manual/digital)
+  // Observaciones
   html += '<div class="boletin-obs"><b>Observaciones:</b>' +
     '<div class="b-linea"></div><div class="b-linea"></div><div class="b-linea"></div><div class="b-linea"></div>' +
     '</div>'
 
-  // FIRMAS VIRTUALES: el boletín es digital. La firma del rector es la
-  // imagen subida desde el panel; la del director, su nombre tipográfico.
+  // FIRMAS: nombre en cursiva subrayado + cargo debajo
   html += '<div class="boletin-firmas">' +
     '<div class="firma">' +
-    (d.rectorFirma ? '<img src="' + esc(d.rectorFirma) + '" alt="Firma del rector" style="max-height:64px;max-width:200px;object-fit:contain;">' : '') +
+    (d.rectorFirma ? '<img src="' + esc(d.rectorFirma) + '" alt="Firma" style="max-height:48px;max-width:160px;object-fit:contain;">' : '') +
+    (d.rectorNombre ? '<div class="firma-nombre">' + esc(d.rectorNombre) + '</div>' : '<div class="firma-espacio"></div>') +
     '<div class="linea">RECTOR</div></div>' +
     '<div class="firma">' +
-    (d.directorNombre ? '<div style="font-family:\'Segoe Script\',\'Brush Script MT\',cursive;font-size:15px;min-height:22px;">' + esc(d.directorNombre) + '</div>' : '<div style="min-height:22px;"></div>') +
-    '<div class="linea">COORDINADOR(A) DE GRUPO</div></div>' +
+    (d.directorNombre ? '<div class="firma-nombre">' + esc(d.directorNombre) + '</div>' : '<div class="firma-espacio"></div>') +
+    '<div class="linea">Coordinador(a) de grupo</div></div>' +
     '</div>'
 
   doc.innerHTML = html
@@ -4403,6 +4479,7 @@ async function cargarAdminPeriodos() {
   document.getElementById('admin-areas-section').style.display = 'none'
   actualizarNavActivo('nav-periodos')
   cargarAdminBoletines() // misma sección: boletines publicados + firma del rector
+  cargarCursosMasiva() // selector de impresión masiva
   try {
     const sedesRes = await fetch(API + '/api/admin/sedes', { headers: { 'Authorization': 'Bearer ' + currentToken } })
     const sedes = sedesRes.ok ? await sedesRes.json() : []
@@ -4498,11 +4575,14 @@ async function cargarAdminBoletines() {
             '<td style="padding:8px 12px;border-bottom:1px solid var(--line);text-align:center;"><button class="btn-sm" onclick="adminRetirarBoletin(\'' + p.id + '\', ' + p.periodo + ', \'' + escArg(p.curso) + '\')" style="color:var(--red-700);font-weight:600;">Retirar</button></td></tr>'
         }).join('') + '</tbody></table></div>'
     }
-    // Estado de la firma del rector
+    // Estado de la firma y nombre del rector
     const prev = document.getElementById('bol-firma-preview')
     prev.innerHTML = data.rectorFirma
       ? '<div style="background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);padding:12px;font-size:12px;color:var(--ink-500);display:flex;align-items:center;gap:12px;">Firma actual: <img src="' + esc(data.rectorFirma) + '" style="max-height:50px;max-width:160px;object-fit:contain;border:1px solid var(--line);border-radius:4px;padding:2px;background:#fff;"></div>'
-      : '<div style="font-size:12px;color:var(--ink-400);">Sin firma configurada — el boletín muestra solo la línea con "RECTOR".</div>'
+      : '<div style="font-size:12px;color:var(--ink-400);">Sin firma configurada — el boletín muestra solo el nombre en texto.</div>'
+    if (data.rectorNombre) {
+      document.getElementById('bol-rector-nombre').value = data.rectorNombre
+    }
   } catch (e) {
     tb.innerHTML = ''
   }
@@ -4583,6 +4663,133 @@ async function adminEliminarFirmaRector() {
       else mostrarToast('error', 'Error al eliminar')
     } catch (e) { mostrarToast('error', 'Error de conexión') }
   })
+}
+
+// Nombre del rector (texto): sale en la firma del boletín
+async function adminGuardarRectorNombre() {
+  const nombre = document.getElementById('bol-rector-nombre').value.trim()
+  if (!nombre) return mostrarToast('error', 'Escribe el nombre del rector')
+  try {
+    const res = await fetch(API + '/api/admin/rector', {
+      method: 'PUT',
+      headers: { 'Authorization': 'Bearer ' + currentToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nombre })
+    })
+    if (res.ok) { mostrarToast('ok', 'Nombre del rector guardado'); cargarAdminBoletines() }
+    else { const d = await res.json(); mostrarToast('error', d.error || 'Error') }
+  } catch (e) { mostrarToast('error', 'Error de conexión') }
+}
+
+// ─── IMPRESIÓN MASIVA DE BOLETINES POR CURSO ───
+// Pide lotes de 10 en secuencia, arma todo en una vista de impresión y
+// llama window.print() al final. Retry de 1 por lote; si falla, avisa
+// cuál estudiante sin perder los ya cargados.
+async function adminImprimirBoletinesCurso() {
+  const curso = document.getElementById('bol-masiva-curso').value
+  const periodo = document.getElementById('bol-masiva-periodo').value
+  if (!curso) return mostrarToast('error', 'Elige un curso')
+  const btn = document.getElementById('bol-masiva-btn')
+  const prog = document.getElementById('bol-masiva-progreso')
+  const original = btn.innerHTML
+  btn.disabled = true
+  btn.innerHTML = '<span class="spinner"></span>Generando...'
+  prog.style.display = 'block'
+  prog.textContent = 'Iniciando...'
+
+  let todos = []
+  let offset = 0
+  let total = 0
+  let falloEn = null
+  try {
+    // Pide lotes en secuencia hasta que siguienteOffset sea null
+    while (offset !== null) {
+      prog.textContent = 'Generando boletines: ' + Math.min(todos.length + 10, total || '?') + (total ? ' de ' + total : '...')
+      const url = API + '/api/admin/boletines/curso?curso=' + encodeURIComponent(curso) + '&periodo=' + periodo + '&offset=' + offset + '&anio=' + new Date().getFullYear()
+      let res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + currentToken } })
+      // Retry: un lote fallido se reintenta una vez
+      if (!res.ok && res.status >= 500) {
+        await new Promise(r => setTimeout(r, 2000))
+        res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + currentToken } })
+      }
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        falloEn = 'lote @offset ' + offset + ': ' + (d.error || 'error ' + res.status)
+        break
+      }
+      const data = await res.json()
+      total = data.total
+      todos = todos.concat(data.boletines)
+      prog.textContent = 'Generando boletines: ' + todos.length + ' de ' + total
+      offset = data.siguienteOffset
+    }
+  } catch (e) {
+    falloEn = 'error de conexión en el lote @offset ' + offset
+  } finally {
+    btn.disabled = false
+    btn.innerHTML = original
+  }
+
+  if (falloEn && todos.length === 0) {
+    prog.textContent = 'Error: ' + falloEn
+    mostrarToast('error', 'No se pudieron generar los boletines: ' + falloEn)
+    return
+  }
+  if (falloEn) {
+    prog.textContent = 'Se generaron ' + todos.length + ' de ' + total + '. Fallo en ' + falloEn + '. Los ya cargados se imprimirán.'
+    mostrarToast('error', 'Fallo parcial: ' + falloEn)
+  } else {
+    prog.textContent = todos.length + ' boletines listos. Abriendo vista de impresión...'
+  }
+
+  // Armar la vista de impresión: un estudiante por hoja con page-break-after
+  const vista = document.getElementById('boletin-view')
+  const doc = document.getElementById('boletin-doc')
+  const sel = document.getElementById('boletin-sel-periodo')
+  sel.innerHTML = ''
+  let html = ''
+  for (const d of todos) {
+    html += '<div class="boletin-hoja" style="page-break-after:always;">'
+    // Reutilizar pintarBoletin: generamos el HTML en un div temporal
+    const temp = document.createElement('div')
+    const docBackup = doc
+    // Llamar pintarBoletin con el div temporal
+    const origDoc = document.getElementById('boletin-doc')
+    // Pintar el boletín de este estudiante en el temp
+    pintarBoletinEn(d, temp)
+    html += temp.innerHTML
+    html += '</div>'
+  }
+  doc.innerHTML = html
+  vista.classList.add('abierto')
+  // Mostrar el botón de imprimir (el selector no aplica en masiva)
+  setTimeout(() => { window.print() }, 500)
+  prog.textContent = ''
+  prog.style.display = 'none'
+}
+
+// Como pintarBoletin pero escribe en un elemento dado (para la masiva)
+function pintarBoletinEn(d, contenedor) {
+  const id = contenedor.id || '_bol_temp'
+  contenedor.id = id
+  const original = document.getElementById('boletin-doc')
+  // swap temporal: pintarBoletin escribe en 'boletin-doc'
+  const backup = original.innerHTML
+  pintarBoletin(d)
+  contenedor.innerHTML = original.innerHTML
+  original.innerHTML = backup
+}
+
+// Cargar los cursos en el selector de impresión masiva
+async function cargarCursosMasiva() {
+  try {
+    const res = await fetch(API + '/api/admin/cursos-disponibles', { headers: { 'Authorization': 'Bearer ' + currentToken } })
+    if (res.ok) {
+      const cursos = (await res.json()).cursos || []
+      const sel = document.getElementById('bol-masiva-curso')
+      sel.innerHTML = '<option value="">Elegir curso...</option>' +
+        cursos.map(c => '<option value="' + esc(c.curso) + '">' + esc(c.curso) + (c.jornada ? ' (' + esc(c.jornada) + ')' : '') + '</option>').join('')
+    }
+  } catch (e) {}
 }
 
 window._periodoFechas = null

@@ -291,3 +291,14 @@ CREATE TABLE IF NOT EXISTS config_institucion (
     clave TEXT PRIMARY KEY,
     valor TEXT
 );
+
+-- Auditoría de impresión masiva de boletines (datos de menores)
+CREATE TABLE IF NOT EXISTS boletines_impresiones_log (
+    id TEXT PRIMARY KEY,
+    usuarioId TEXT NOT NULL,
+    curso TEXT NOT NULL,
+    periodo INTEGER NOT NULL,
+    anio INTEGER NOT NULL,
+    cantidad INTEGER NOT NULL DEFAULT 0,
+    fecha TEXT NOT NULL
+);

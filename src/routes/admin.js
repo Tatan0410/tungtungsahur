@@ -9,6 +9,15 @@ const { parsearExcel, analizarImportacion } = require('../services/importar-estu
 const { invalidarCachePeriodos } = require('../services/cachePeriodos')
 const multer = require('multer')
 
+// Niveles de desempeño del boletín (compartido con notas.js)
+function nivelDeDesempenoBoletin(definitiva) {
+  if (definitiva === null || definitiva === undefined) return null
+  if (definitiva < 3) return 'BAJO'
+  if (definitiva < 4) return 'BÁSICO'
+  if (definitiva < 4.6) return 'ALTO'
+  return 'SUPERIOR'
+}
+
 // Multer: solo archivos .xlsx, máximo 10 MB, en memoria (buffer)
 const uploadExcel = multer({
   storage: multer.memoryStorage(),
@@ -287,8 +296,12 @@ router.post('/materias', async (req, res) => {
     const { nombre, grado } = req.body
     if (!nombre) return res.status(400).json({ error: 'nombre es requerido' })
     const norm = normalizarNombre(nombre)
-    const existente = await prisma._db.prepare('SELECT id, nombre FROM materias WHERE nombre_norm = ?').get(norm)
-    if (existente) return res.status(409).json({ error: `La materia "${existente.nombre}" ya existe (los nombres se comparan sin acentos ni mayúsculas)` })
+    // Robusto contra nombre_norm viejos (creados sin quitar tildes):
+    // chequea tanto la columna nombre_norm como el nombre directo
+    const existente = await prisma._db.prepare(
+      'SELECT id, nombre FROM materias WHERE nombre_norm = ? OR nombre_norm = lower(?)'
+    ).get(norm, String(nombre).trim())
+    if (existente) return res.status(400).json({ error: `Ya existe la materia "${existente.nombre}" (nombres se comparan sin acentos ni mayúsculas). Edita la existente en lugar de crear un duplicado.` })
     const id = require('crypto').randomUUID()
     await prisma._db.prepare('INSERT INTO materias (id, nombre, grado, nombre_norm) VALUES (?, ?, ?, ?)').run(id, String(nombre).trim(), grado ? parseInt(grado) : null, norm)
     res.status(201).json({ mensaje: 'Materia creada', id, nombre: String(nombre).trim(), grado: grado ? parseInt(grado) : null })
@@ -1431,7 +1444,10 @@ router.get('/boletines', async (req, res) => {
     const firma = await prisma._db.prepare(
       "SELECT valor FROM config_institucion WHERE clave = 'rector_firma'"
     ).get()
-    res.json({ anio, publicaciones: rows, rectorFirma: firma ? firma.valor : null })
+    const rectorNombre = await prisma._db.prepare(
+      "SELECT valor FROM config_institucion WHERE clave = 'rector_nombre'"
+    ).get()
+    res.json({ anio, publicaciones: rows, rectorFirma: firma ? firma.valor : null, rectorNombre: rectorNombre ? rectorNombre.valor : null })
   } catch (error) {
     console.error('Error GET /boletines:', error)
     res.status(500).json({ error: 'Error interno' })
@@ -1517,6 +1533,193 @@ router.delete('/rector-firma', async (req, res) => {
     res.json({ mensaje: 'Firma del rector eliminada' })
   } catch (error) {
     console.error('Error DELETE /rector-firma:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// Nombre del rector (texto): sale en la firma del boletín en cursiva
+// subrayado. Independiente de la imagen de la firma.
+router.put('/rector', async (req, res) => {
+  try {
+    const { nombre } = req.body
+    if (!nombre || !String(nombre).trim()) {
+      return res.status(400).json({ error: 'nombre es requerido' })
+    }
+    await prisma._db.prepare(
+      "INSERT INTO config_institucion (clave, valor) VALUES ('rector_nombre', ?) ON CONFLICT (clave) DO UPDATE SET valor = excluded.valor"
+    ).run(String(nombre).trim())
+    res.json({ mensaje: 'Nombre del rector guardado', nombre: String(nombre).trim() })
+  } catch (error) {
+    console.error('Error PUT /rector:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+router.get('/rector', async (req, res) => {
+  try {
+    const fila = await prisma._db.prepare(
+      "SELECT valor FROM config_institucion WHERE clave = 'rector_nombre'"
+    ).get()
+    res.json({ nombre: fila ? fila.valor : null })
+  } catch (error) {
+    console.error('Error GET /rector:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// ─── IMPRESIÓN MASIVA DE BOLETINES POR CURSO ───
+// Devuelve un lote de 10 estudiantes con TODOS sus datos de boletín en una
+// pasada (sin N+1). ADMIN siempre; DOCENTE solo si es director de ese curso.
+// El admin puede imprimir sin que estén publicados (solo los estudiantes
+// ven los publicados). Cada impresión queda en boletines_impresiones_log.
+router.get('/boletines/curso', async (req, res) => {
+  try {
+    const { curso, periodo } = req.query
+    const offset = parseInt(req.query.offset) || 0
+    const limite = Math.min(parseInt(req.query.limite) || 10, 20)
+    const anio = parseInt(req.query.anio) || new Date().getFullYear()
+    const p = parseInt(periodo)
+    if (!curso || !p) return res.status(400).json({ error: 'curso y periodo son requeridos' })
+
+    // PERMISO: admin siempre; docente solo si es director de ese curso
+    if (req.usuario.rol === 'DOCENTE') {
+      const esDirector = await prisma._db.prepare(
+        'SELECT id FROM directores_grupo WHERE docenteId = ? AND curso = ?'
+      ).get(req.usuario.docenteId, curso)
+      if (!esDirector) return res.status(403).json({ error: 'No eres director de grupo de este curso' })
+    } else if (req.usuario.rol !== 'ADMIN') {
+      return res.status(403).json({ error: 'Solo admin o director del curso' })
+    }
+
+    // Rector + director del curso (una consulta, no por estudiante)
+    const rectorNombre = await prisma._db.prepare(
+      "SELECT valor FROM config_institucion WHERE clave = 'rector_nombre'"
+    ).get()
+    const rectorFirma = await prisma._db.prepare(
+      "SELECT valor FROM config_institucion WHERE clave = 'rector_firma'"
+    ).get()
+    const director = await prisma._db.prepare(`
+      SELECT u.nombre AS "directorNombre"
+      FROM directores_grupo dg
+      JOIN docentes d ON d.id = dg.docenteId
+      JOIN usuarios u ON u.id = d.usuarioId
+      WHERE dg.curso = ?
+    `).get(curso)
+
+    // Total de estudiantes activos del curso
+    const totalRow = await prisma._db.prepare(`
+      SELECT COUNT(*) c FROM estudiantes e JOIN usuarios u ON u.id = e.usuarioId
+      WHERE e.curso = ? AND u.activo = 1
+    `).get(curso)
+    const total = Number(totalRow.c)
+
+    // Lote de estudiantes ordenados por apellidos
+    const estudiantes = await prisma._db.prepare(`
+      SELECT e.id AS "estudianteId", u.nombre
+      FROM estudiantes e JOIN usuarios u ON u.id = e.usuarioId
+      WHERE e.curso = ? AND u.activo = 1
+      ORDER BY u.nombre ASC
+      LIMIT ? OFFSET ?
+    `).all(curso, limite, offset)
+
+    if (!estudiantes.length) {
+      return res.json({ boletines: [], total, siguienteOffset: null })
+    }
+
+    // Áreas + materias del curso (una sola vez)
+    const areas = await prisma._db.prepare(`
+      SELECT a.id AS "areaId", a.nombre
+      FROM area_cursos ac JOIN areas a ON a.id = ac.areaid
+      WHERE ac.curso = ?
+      ORDER BY a.creadoen ASC, a.nombre ASC
+    `).all(curso)
+    let areasMaterias = new Map()
+    if (areas.length) {
+      const areasIds = areas.map(a => a.areaId)
+      const marcasA = areasIds.map(() => '?').join(',')
+      const mats = await prisma._db.prepare(`
+        SELECT am.areaid AS "areaId", am.materiaid AS "materiaId", am.porcentaje, m.nombre AS "materiaNombre"
+        FROM area_materias am JOIN materias m ON m.id = am.materiaid
+        WHERE am.areaid IN (${marcasA})
+        ORDER BY m.nombre ASC
+      `).all(...areasIds)
+      for (const m of mats) {
+        if (!areasMaterias.has(m.areaId)) areasMaterias.set(m.areaId, [])
+        areasMaterias.get(m.areaId).push({ materiaId: m.materiaId, nombre: m.materiaNombre, ihs: m.porcentaje })
+      }
+    }
+
+    // TODAS las calificaciones del lote en una pasada (sin N+1)
+    const ids = estudiantes.map(e => e.estudianteId)
+    const marcasE = ids.map(() => '?').join(',')
+    const cals = await prisma._db.prepare(`
+      SELECT c.estudianteId, c.materiaId, c.periodo, c.definitiva
+      FROM calificaciones c
+      WHERE c.estudianteId IN (${marcasE}) AND c.anio = ? AND c.periodo <= ?
+    `).all(...ids, anio, p)
+
+    const notasPorMateria = new Map()
+    for (const c of cals) {
+      notasPorMateria.set(c.estudianteId + '|' + c.materiaId + '|' + c.periodo, c.definitiva)
+    }
+
+    const periodos = []
+    for (let i = 1; i <= p; i++) periodos.push(i)
+
+    const normBol = txt => String(txt).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim()
+
+    const boletines = estudiantes.map(est => {
+      const areasBoletin = areas.map(a => {
+        const brutas = areasMaterias.get(a.areaId) || []
+        const porNorm = new Map()
+        for (const m of brutas) {
+          const k = normBol(m.nombre)
+          if (!porNorm.has(k)) porNorm.set(k, { nombre: m.nombre, ihs: m.ihs, materiaId: m.materiaId })
+        }
+        const materias = [...porNorm.values()].map(m => {
+          const notas = {}
+          for (const pi of periodos) {
+            const v = notasPorMateria.get(est.estudianteId + '|' + m.materiaId + '|' + pi)
+            notas[String(pi)] = v !== undefined && v !== null ? parseFloat(Number(v).toFixed(2)) : null
+          }
+          const definitiva = notas[String(p)]
+          return {
+            nombre: m.nombre, ihs: m.ihs, notas,
+            definitiva,
+            nivel: definitiva !== null && definitiva !== undefined ? nivelDeDesempenoBoletin(definitiva) : null,
+            indicadores: [],
+          }
+        })
+        let sumaP = 0, sumaI = 0
+        for (const m of materias) {
+          if (m.definitiva !== null && m.definitiva !== undefined) { sumaP += m.definitiva * m.ihs; sumaI += m.ihs }
+        }
+        const promedio = sumaI > 0 ? parseFloat((sumaP / sumaI).toFixed(2)) : null
+        return { nombre: a.nombre, promedio, nivel: promedio !== null ? nivelDeDesempenoBoletin(promedio) : null, materias }
+      })
+
+      const grado = parseInt(String(curso).replace(/\D/g, '').replace(/^(\d{1,2}).*/, '$1')) || null
+      return {
+        estudiante: { nombre: est.nombre, curso, grado, jornada: null, sede: null },
+        directorNombre: director ? director.directorNombre : null,
+        rectorNombre: rectorNombre ? rectorNombre.valor : null,
+        rectorFirma: rectorFirma ? rectorFirma.valor : null,
+        periodo: p, anio,
+        periodos,
+        areas: areasBoletin,
+      }
+    })
+
+    const siguienteOffset = offset + limite < total ? offset + limite : null
+
+    // Auditoría de la impresión (datos de menores)
+    await prisma._db.prepare(
+      'INSERT INTO boletines_impresiones_log (id, usuarioId, curso, periodo, anio, cantidad, fecha) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).run(require('crypto').randomUUID(), req.usuario.id, curso, p, anio, boletines.length, new Date().toISOString())
+
+    res.json({ boletines, total, siguienteOffset, offset })
+  } catch (error) {
+    console.error('Error GET /boletines/curso:', error)
     res.status(500).json({ error: 'Error interno' })
   }
 })

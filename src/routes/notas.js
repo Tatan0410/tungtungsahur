@@ -1675,7 +1675,7 @@ router.get('/mi-boletin', async (req, res) => {
       return res.status(403).json({ error: 'El boletín de este período aún no ha sido publicado' })
     }
 
-    // Director de grupo del curso (firma virtual: nombre tipográfico)
+    // Director de grupo del curso
     const director = await prisma._db.prepare(`
       SELECT u.nombre AS "directorNombre"
       FROM directores_grupo dg
@@ -1684,8 +1684,11 @@ router.get('/mi-boletin', async (req, res) => {
       WHERE dg.curso = ?
     `).get(est.curso)
 
-    // Firma virtual del rector (imagen base64 subida desde el panel)
-    const firma = await prisma._db.prepare(
+    // Rector: nombre (texto) + firma (imagen opcional)
+    const rectorNombre = await prisma._db.prepare(
+      "SELECT valor FROM config_institucion WHERE clave = 'rector_nombre'"
+    ).get()
+    const rectorFirma = await prisma._db.prepare(
       "SELECT valor FROM config_institucion WHERE clave = 'rector_firma'"
     ).get()
 
@@ -1713,37 +1716,54 @@ router.get('/mi-boletin', async (req, res) => {
         areasMaterias.get(m.areaId).push({ materiaId: m.materiaId, nombre: m.materiaNombre, ihs: m.porcentaje })
       }
 
-      // SOLO períodos 1..N del boletín consultado (nunca futuros)
       const cals = await prisma._db.prepare(`
         SELECT c.materiaId, c.periodo, c.definitiva
         FROM calificaciones c
         WHERE c.estudianteId = ? AND c.anio = ? AND c.periodo <= ?
       `).all(estudianteId, anio, periodo)
+
+      // SOLO períodos 1..N del boletín consultado (nunca futuros).
+      // DEDUPLICACIÓN: si ya hay un valor DISTINTO para el mismo
+      // estudiante+materia+período (dos registros con el mismo nombre
+      // normalizado), NO elegir: celda vacía y conflicto en el log.
       for (const c of cals) {
-        notasPorMateria.set(c.materiaId + '|' + c.periodo, c.definitiva)
+        const clave = c.materiaId + '|' + c.periodo
+        if (notasPorMateria.has(clave) && notasPorMateria.get(clave) !== c.definitiva) {
+          console.error('CONFLICTO bolet\u00edn: estudiante=' + estudianteId + ' materia=' + c.materiaId + ' per\u00edodo=' + c.periodo + ' valores=' + notasPorMateria.get(clave) + ' vs ' + c.definitiva + ' \u2014 celda vac\u00eda')
+          notasPorMateria.set(clave, '__CONFLICTO__')
+        } else if (!notasPorMateria.has(clave)) {
+          notasPorMateria.set(clave, c.definitiva)
+        }
       }
     }
 
-    // Armar por área: materias con notas 1..N + promedio ponderado I.H.S.
-    // del período consultado (las notas de períodos anteriores se muestran
-    // en su columna pero NO entran al promedio del área)
     const periodos = []
     for (let p = 1; p <= periodo; p++) periodos.push(p)
 
+    // DEDUPLICACIÓN de materias por nombre normalizado dentro de cada área
+    const normBol = txt => String(txt).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim()
+
     const areasBoletin = areas.map(a => {
-      const materias = (areasMaterias.get(a.areaId) || []).map(m => {
-        const definitiva = notasPorMateria.get(m.materiaId + '|' + periodo)
+      const brutas = areasMaterias.get(a.areaId) || []
+      const porNorm = new Map()
+      for (const m of brutas) {
+        const k = normBol(m.nombre)
+        if (!porNorm.has(k)) porNorm.set(k, { nombre: m.nombre, ihs: m.ihs, materiaId: m.materiaId })
+      }
+      const materias = [...porNorm.values()].map(m => {
         const notas = {}
         for (const p of periodos) {
           const v = notasPorMateria.get(m.materiaId + '|' + p)
-          notas[String(p)] = notaFmt(v)
+          notas[String(p)] = v === '__CONFLICTO__' ? null : notaFmt(v)
         }
+        const definitiva = notas[String(periodo)]
         return {
           nombre: m.nombre,
           ihs: m.ihs,
           notas,
-          definitiva: notaFmt(definitiva),
-          nivel: nivelDeDesempeno(definitiva),
+          definitiva,
+          nivel: definitiva !== null && definitiva !== undefined ? nivelDeDesempeno(definitiva) : null,
+          indicadores: [],
         }
       })
       // Promedio del área: Σ(nota × I.H.S.) / Σ(I.H.S.) — solo materias con
@@ -1765,40 +1785,14 @@ router.get('/mi-boletin', async (req, res) => {
       }
     })
 
-    // Promedio general: SOLO las definitivas del período consultado
-    // (las de períodos anteriores se ven pero no se promedian)
-    const propia = await prisma._db.prepare(`
-      SELECT AVG(definitiva) prom FROM calificaciones
-      WHERE estudianteId = ? AND periodo = ? AND anio = ? AND definitiva IS NOT NULL
-    `).get(estudianteId, periodo, anio)
-    const promedio = propia && propia.prom !== null ? parseFloat(Number(propia.prom).toFixed(2)) : null
-
-    // Puesto en el salon: RANK() estilo deportivo (1,2,2,4) — SOLO con las
-    // notas del período consultado, entre los estudiantes del curso con al
-    // menos una nota. Nunca se envían datos de otros estudiantes.
-    const ranking = await prisma._db.prepare(`
-      WITH promedios AS (
-        SELECT c.estudianteId, AVG(c.definitiva) AS prom
-        FROM calificaciones c
-        JOIN estudiantes e ON e.id = c.estudianteId
-        WHERE e.curso = ? AND c.periodo = ? AND c.anio = ? AND c.definitiva IS NOT NULL
-        GROUP BY c.estudianteId
-      )
-      SELECT estudianteId, RANK() OVER (ORDER BY prom DESC) AS puesto
-      FROM promedios
-    `).all(est.curso, periodo, anio)
-    const fila = ranking.find(r => r.estudianteId === estudianteId)
-
     res.json({
       estudiante: { nombre: est.nombre, curso: est.curso, grado: est.grado, jornada: est.jornada, sede: est.sede },
       directorNombre: director ? director.directorNombre : null,
-      rectorFirma: firma ? firma.valor : null,
+      rectorNombre: rectorNombre ? rectorNombre.valor : null,
+      rectorFirma: rectorFirma ? rectorFirma.valor : null,
       periodo, anio,
       periodos,
       areas: areasBoletin,
-      promedio,
-      puesto: fila ? Number(fila.puesto) : null,
-      totalRankeados: ranking.length,
     })
   } catch (error) {
     console.error('Error GET /mi-boletin:', error)
