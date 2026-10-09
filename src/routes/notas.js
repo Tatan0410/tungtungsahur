@@ -322,8 +322,16 @@ router.get('/mi-bootstrap', async (req, res) => {
     const anio = parseInt(req.query.anio) || new Date().getFullYear()
 
     // Período activo (las mismas reglas del frontend, con la caché de 60 s)
-    const est = await prisma._db.prepare('SELECT sede FROM estudiantes WHERE id = ?').get(estudianteId)
+    const est = await prisma._db.prepare('SELECT sede, curso FROM estudiantes WHERE id = ?').get(estudianteId)
     const periodo = await determinarPeriodoActivoServidor(prisma._db, est ? est.sede : null, anio)
+
+    // Boletines publicados para SU curso (habilita el botón del portal):
+    // global ('') o específico. 1 query — el botón se muestra si hay ≥ 1.
+    const boletinesDisponibles = est
+      ? (await prisma._db.prepare(
+          "SELECT DISTINCT periodo FROM boletines_publicados WHERE anio = ? AND curso IN ('', ?) ORDER BY periodo"
+        ).all(anio, est.curso)).map(r => r.periodo)
+      : []
 
     const [notas, areas, corte, observaciones] = await Promise.all([
       obtenerMisNotas(estudianteId, periodo, anio),
@@ -339,9 +347,31 @@ router.get('/mi-bootstrap', async (req, res) => {
       areas: areas.areas,
       corte,
       observaciones,
+      boletinesDisponibles,
     })
   } catch (error) {
     console.error('Error GET /mi-bootstrap:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// Los boletines publicados para el curso del estudiante — lo usa el flujo
+// fallback del portal (cuando el bootstrap falla) para pintar/ocultar el botón
+router.get('/boletines-publicados', async (req, res) => {
+  try {
+    if (req.usuario.rol !== 'ESTUDIANTE' || !req.usuario.estudianteId) {
+      return res.status(403).json({ error: 'Solo para estudiantes' })
+    }
+    const anio = parseInt(req.query.anio) || new Date().getFullYear()
+    const est = await prisma._db.prepare('SELECT curso FROM estudiantes WHERE id = ?').get(req.usuario.estudianteId)
+    const periodos = est
+      ? (await prisma._db.prepare(
+          "SELECT DISTINCT periodo FROM boletines_publicados WHERE anio = ? AND curso IN ('', ?) ORDER BY periodo"
+        ).all(anio, est.curso)).map(r => r.periodo)
+      : []
+    res.json({ periodos })
+  } catch (error) {
+    console.error('Error GET /boletines-publicados:', error)
     res.status(500).json({ error: 'Error interno' })
   }
 })
@@ -1598,6 +1628,28 @@ function nivelDeDesempeno(definitiva) {
   return 'Desempeño Superior'
 }
 
+// ─── BOLETÍN DEL PERÍODO (piloto 11-04) ───
+// Documento académico digital: áreas y materias ASIGNADAS AL CURSO del
+// estudiante, columnas P°1..P°N (nada de períodos futuros — REGLA DE ORO:
+// el servidor nunca envía lo que el estudiante no debe ver), nivel de
+// desempeño, y puesto en el salon (estilo deportivo: empates comparten
+// puesto y el siguiente salta). SOLO VISIBLE si el admin lo publicó para
+// (anio, periodo, su curso). Firma virtual del rector (imagen subida
+// desde el panel). Solo lecturas.
+
+function nivelDeDesempeno(definitiva) {
+  if (definitiva === null || definitiva === undefined) return '—'
+  if (definitiva < 3) return 'BAJO'
+  if (definitiva < 4) return 'BÁSICO'
+  if (definitiva < 4.6) return 'ALTO'
+  return 'SUPERIOR'
+}
+
+function notaFmt(v) {
+  if (v === null || v === undefined) return null
+  return parseFloat(Number(v).toFixed(2))
+}
+
 router.get('/mi-boletin', async (req, res) => {
   try {
     if (req.usuario.rol !== 'ESTUDIANTE' || !req.usuario.estudianteId) {
@@ -1615,7 +1667,15 @@ router.get('/mi-boletin', async (req, res) => {
     `).get(estudianteId)
     if (!est) return res.status(404).json({ error: 'Estudiante no encontrado' })
 
-    // Director de grupo del curso (para la firma del coordinador)
+    // PUBLICACIÓN: sin orden del admin no hay boletín (server-side, siempre)
+    const publicado = await prisma._db.prepare(
+      "SELECT id FROM boletines_publicados WHERE anio = ? AND periodo = ? AND curso IN ('', ?) LIMIT 1"
+    ).get(anio, periodo, est.curso)
+    if (!publicado) {
+      return res.status(403).json({ error: 'El boletín de este período aún no ha sido publicado' })
+    }
+
+    // Director de grupo del curso (firma virtual: nombre tipográfico)
     const director = await prisma._db.prepare(`
       SELECT u.nombre AS "directorNombre"
       FROM directores_grupo dg
@@ -1623,6 +1683,11 @@ router.get('/mi-boletin', async (req, res) => {
       JOIN usuarios u ON u.id = d.usuarioId
       WHERE dg.curso = ?
     `).get(est.curso)
+
+    // Firma virtual del rector (imagen base64 subida desde el panel)
+    const firma = await prisma._db.prepare(
+      "SELECT valor FROM config_institucion WHERE clave = 'rector_firma'"
+    ).get()
 
     // Áreas del curso en el orden del boletín físico (creación) + sus materias
     const areas = await prisma._db.prepare(`
@@ -1648,42 +1713,69 @@ router.get('/mi-boletin', async (req, res) => {
         areasMaterias.get(m.areaId).push({ materiaId: m.materiaId, nombre: m.materiaNombre, ihs: m.porcentaje })
       }
 
-      // Todas las calificaciones del año del estudiante (P1-P3, columnas del boletín)
+      // SOLO períodos 1..N del boletín consultado (nunca futuros)
       const cals = await prisma._db.prepare(`
         SELECT c.materiaId, c.periodo, c.definitiva
         FROM calificaciones c
-        WHERE c.estudianteId = ? AND c.anio = ? AND c.periodo <= 3
-      `).all(estudianteId, anio)
+        WHERE c.estudianteId = ? AND c.anio = ? AND c.periodo <= ?
+      `).all(estudianteId, anio, periodo)
       for (const c of cals) {
         notasPorMateria.set(c.materiaId + '|' + c.periodo, c.definitiva)
       }
     }
 
-    const areasBoletin = areas.map(a => ({
-      nombre: a.nombre,
-      materias: (areasMaterias.get(a.areaId) || []).map(m => {
+    // Armar por área: materias con notas 1..N + promedio ponderado I.H.S.
+    // del período consultado (las notas de períodos anteriores se muestran
+    // en su columna pero NO entran al promedio del área)
+    const periodos = []
+    for (let p = 1; p <= periodo; p++) periodos.push(p)
+
+    const areasBoletin = areas.map(a => {
+      const materias = (areasMaterias.get(a.areaId) || []).map(m => {
         const definitiva = notasPorMateria.get(m.materiaId + '|' + periodo)
+        const notas = {}
+        for (const p of periodos) {
+          const v = notasPorMateria.get(m.materiaId + '|' + p)
+          notas[String(p)] = notaFmt(v)
+        }
         return {
           nombre: m.nombre,
           ihs: m.ihs,
-          p1: notasPorMateria.get(m.materiaId + '|1'),
-          p2: notasPorMateria.get(m.materiaId + '|2'),
-          p3: notasPorMateria.get(m.materiaId + '|3'),
-          definitiva,
+          notas,
+          definitiva: notaFmt(definitiva),
           nivel: nivelDeDesempeno(definitiva),
         }
-      }),
-    }))
+      })
+      // Promedio del área: Σ(nota × I.H.S.) / Σ(I.H.S.) — solo materias con
+      // definitiva del período consultado
+      let sumaPonderada = 0
+      let sumaIhs = 0
+      for (const m of materias) {
+        if (m.definitiva !== null) {
+          sumaPonderada += m.definitiva * m.ihs
+          sumaIhs += m.ihs
+        }
+      }
+      const promedio = sumaIhs > 0 ? parseFloat((sumaPonderada / sumaIhs).toFixed(2)) : null
+      return {
+        nombre: a.nombre,
+        promedio,
+        nivel: nivelDeDesempeno(promedio),
+        materias,
+      }
+    })
 
-    // Promedio general del período (simple, como el que el estudiante ve en el portal)
+    // Promedio general: SOLO las definitivas del período consultado
+    // (las de períodos anteriores se ven pero no se promedian)
     const propia = await prisma._db.prepare(`
       SELECT AVG(definitiva) prom FROM calificaciones
       WHERE estudianteId = ? AND periodo = ? AND anio = ? AND definitiva IS NOT NULL
     `).get(estudianteId, periodo, anio)
     const promedio = propia && propia.prom !== null ? parseFloat(Number(propia.prom).toFixed(2)) : null
 
-    // Puesto en el salon: RANK() estilo deportivo (1,2,2,4) entre los
-    // estudiantes del curso con al menos una nota en el período
+    // Puesto en el salon: RANK() estilo deportivo (1,2,2,4) — SOLO con las
+    // notas del período consultado, entre los estudiantes del curso con al
+    // menos una nota. Nunca se envían datos de otros estudiantes.
     const ranking = await prisma._db.prepare(`
       WITH promedios AS (
         SELECT c.estudianteId, AVG(c.definitiva) AS prom
@@ -1700,7 +1792,9 @@ router.get('/mi-boletin', async (req, res) => {
     res.json({
       estudiante: { nombre: est.nombre, curso: est.curso, grado: est.grado, jornada: est.jornada, sede: est.sede },
       directorNombre: director ? director.directorNombre : null,
+      rectorFirma: firma ? firma.valor : null,
       periodo, anio,
+      periodos,
       areas: areasBoletin,
       promedio,
       puesto: fila ? Number(fila.puesto) : null,

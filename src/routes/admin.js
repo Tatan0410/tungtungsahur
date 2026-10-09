@@ -23,6 +23,20 @@ const uploadExcel = multer({
   },
 })
 
+// Multer para la FIRMA VIRTUAL del rector: imagen (PNG/JPG/WebP), máximo
+// 300 KB, en memoria — se guarda como data URL base64 en config_institucion
+const uploadFirma = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 300 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (['image/png', 'image/jpeg', 'image/webp'].includes(file.mimetype)) {
+      cb(null, true)
+    } else {
+      cb(new Error('Solo se aceptan imágenes PNG, JPG o WebP'))
+    }
+  },
+})
+
 const router = express.Router()
 
 function verificarTokenAdmin(req, res, next) {
@@ -1398,6 +1412,111 @@ router.get('/auditoria-terminos', async (req, res) => {
     })
   } catch (error) {
     console.error('Error GET /auditoria-terminos:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// ─── BOLETINES: publicación por período (global o por curso) ───
+// El boletín de un período solo es visible para los estudiantes cuando
+// existe una publicación para (anio, periodo, su curso) — curso '' = todos.
+// Si el período sigue abierto se permite publicar igual (con advertencia):
+// el admin decide (p. ej. boletines parciales de avance).
+
+router.get('/boletines', async (req, res) => {
+  try {
+    const anio = parseInt(req.query.anio) || new Date().getFullYear()
+    const rows = await prisma._db.prepare(
+      'SELECT id, anio, periodo, curso, generadopor AS "generadoPor", generadoen AS "generadoEn" FROM boletines_publicados WHERE anio = ? ORDER BY periodo ASC, curso ASC'
+    ).all(anio)
+    const firma = await prisma._db.prepare(
+      "SELECT valor FROM config_institucion WHERE clave = 'rector_firma'"
+    ).get()
+    res.json({ anio, publicaciones: rows, rectorFirma: firma ? firma.valor : null })
+  } catch (error) {
+    console.error('Error GET /boletines:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+router.post('/boletines', async (req, res) => {
+  try {
+    const { periodo, anio, curso } = req.body
+    const p = parseInt(periodo)
+    const a = parseInt(anio) || new Date().getFullYear()
+    const c = (curso || '').trim()
+    if (!p || p < 1 || p > 4) {
+      return res.status(400).json({ error: 'periodo debe estar entre 1 y 4' })
+    }
+
+    // Si el período sigue abierto en alguna sede: permitir pero advertir
+    let advertencia = null
+    const abierto = await prisma._db.prepare(
+      'SELECT COUNT(*) c FROM periodos_config WHERE anio = ? AND periodo = ? AND abierto = 1'
+    ).get(a, p)
+    if (Number(abierto.c) > 0) {
+      advertencia = 'El período ' + p + ' sigue abierto — el boletín se genera con las notas actuales: si cambian notas después, retira y vuelve a publicar.'
+    }
+
+    // Idempotente: ya publicado con el mismo alcance
+    const yaExiste = await prisma._db.prepare(
+      'SELECT id FROM boletines_publicados WHERE anio = ? AND periodo = ? AND curso = ?'
+    ).get(a, p, c)
+    if (yaExiste) {
+      return res.status(200).json({ mensaje: 'Ya estaba publicado', yaPublicado: true, advertencia })
+    }
+
+    const id = require('crypto').randomUUID()
+    await prisma._db.prepare(
+      'INSERT INTO boletines_publicados (id, anio, periodo, curso, generadopor, generadoen) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(id, a, p, c, req.usuario.id, new Date().toISOString())
+    res.status(201).json({ mensaje: 'Boletines publicados', id, periodo: p, anio: a, curso: c, advertencia })
+  } catch (error) {
+    console.error('Error POST /boletines:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+router.delete('/boletines/:id', async (req, res) => {
+  try {
+    const existe = await prisma._db.prepare('SELECT id FROM boletines_publicados WHERE id = ?').get(req.params.id)
+    if (!existe) return res.status(404).json({ error: 'Publicación no encontrada' })
+    await prisma._db.prepare('DELETE FROM boletines_publicados WHERE id = ?').run(req.params.id)
+    res.json({ mensaje: 'Boletines retirados' })
+  } catch (error) {
+    console.error('Error DELETE /boletines:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// ─── FIRMA VIRTUAL DEL RECTOR ───
+// Imagen (PNG/JPG/WebP ≤ 300 KB) que sale en todos los boletines sobre la
+// línea de firma. El boletín es digital: la firma es esta imagen.
+router.post('/rector-firma', uploadFirma.single('firma'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Sube una imagen PNG, JPG o WebP en el campo "firma"' })
+    }
+    const dataUrl = 'data:' + req.file.mimetype + ';base64,' + req.file.buffer.toString('base64')
+    // ON CONFLICT DO UPDATE = upsert en ambos motores (SQLite ≥ 3.24 y PG)
+    await prisma._db.prepare(
+      "INSERT INTO config_institucion (clave, valor) VALUES ('rector_firma', ?) ON CONFLICT (clave) DO UPDATE SET valor = excluded.valor"
+    ).run(dataUrl)
+    res.json({ mensaje: 'Firma del rector guardada', tamanio: req.file.size })
+  } catch (error) {
+    console.error('Error POST /rector-firma:', error)
+    if (error.message && error.message.includes('Solo se aceptan')) {
+      return res.status(400).json({ error: error.message })
+    }
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+router.delete('/rector-firma', async (req, res) => {
+  try {
+    await prisma._db.prepare("DELETE FROM config_institucion WHERE clave = 'rector_firma'").run()
+    res.json({ mensaje: 'Firma del rector eliminada' })
+  } catch (error) {
+    console.error('Error DELETE /rector-firma:', error)
     res.status(500).json({ error: 'Error interno' })
   }
 })

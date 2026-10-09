@@ -475,29 +475,32 @@ test('el portal usa el bootstrap de 2 requests y el login va con retry', () => {
 })
 
 // ═══════════════════════════════════════════════════════════════
-// BOLETÍN (piloto): botón en el portal, vista imprimible formal,
-// estructura de 6 columnas y CSS de impresión tamaño carta.
+// BOLETÍN (piloto): botón SOLO si hay publicaciones, columnas P°1..P°N
+// dinámicas (sin períodos futuros), membrete aislado, firma virtual del
+// rector (imagen) y estética del documento original.
 // ═══════════════════════════════════════════════════════════════
 
-test('boletín: estructura del documento e impresión en el HTML', () => {
-  assert.match(HTML, /id="boletin-view"/, 'la vista del boletín existe')
-  assert.match(HTML, /onclick="verBoletin\(\)"/, 'el botón del portal dispara el boletín')
+test('boletín: publicación condiciona el botón, columnas dinámicas y firma virtual', () => {
+  assert.match(HTML, /id="btn-boletin"/, 'el botón existe con id')
+  assert.match(HTML, /id="btn-boletin"[^>]*style="font-weight:600;display:none;"/, 'el botón nace OCULTO (sin publicaciones no se ve)')
+  const botón = extraerFuncion('actualizarBotonBoletin')
+  assert.match(botón, /boletinesDisponibles\.length/, 'visible solo si hay publicados')
+  assert.match(HTML, /function membreteBoletin\(/, 'el membrete es un bloque aislado (fácil de cambiar)')
   const pintar = extraerFuncion('pintarBoletin')
-  assert.match(pintar, /Asignaturas/, 'columna Asignaturas')
-  assert.match(pintar, /I\.H\.S\./, 'columna I.H.S.')
-  assert.match(pintar, /P\\u00b0 1/, 'columnas de períodos P°1-3 (escape en el código fuente)')
-  assert.match(pintar, /Nivel de desempe/, 'columna Nivel de desempeño')
-  assert.match(pintar, /boletin-area/, 'un tbody por área (no se corta al imprimir)')
-  assert.match(pintar, /Escala de valoraci/, 'leyenda de la escala')
-  assert.match(pintar, /Rector/, 'firma del Rector')
-  assert.match(pintar, /Coordinador\(a\) de grupo/, 'firma del coordinador')
-  assert.match(pintar, /puestoTxt/, 'el puesto se muestra')
-  // CSS de impresión: solo el boletín en papel carta
-  assert.match(HTML, /body > \*:not\(#boletin-view\) \{ display: none !important/, 'la impresión oculta todo menos el boletín')
-  assert.match(HTML, /@page \{ size: letter/, 'tamaño carta')
-  assert.match(HTML, /page-break-inside: avoid/, 'las áreas no se parten entre páginas')
-  // esc() en los datos dinámicos del boletín (sin XSS)
-  assert.match(pintar, /esc\(e\.nombre\)/, 'el nombre del estudiante va escapado')
-  assert.match(pintar, /esc\(area\.nombre\)/, 'los nombres de áreas van escapados')
-  assert.match(pintar, /esc\(m\.nombre\)/, 'los nombres de materias van escapados')
+  assert.match(pintar, /membreteBoletin\(d, columnas\)/, 'pintar usa el membrete aislado')
+  assert.match(pintar, /d\.periodos/, 'las columnas salen de periodos del backend (P°1..P°N, nunca futuros)')
+  assert.match(pintar, /m\.notas\[String\(p\)\]/, 'cada columna pinta SOLO las notas que el backend envió')
+  assert.match(pintar, /area\.promedio/, 'la fila del área lleva su promedio ponderado')
+  assert.match(pintar, /area\.nivel/, 'la fila del área lleva su nivel')
+  assert.match(pintar, /toUpperCase\(\)/, 'las áreas van en MAYÚSCULAS')
+  assert.match(pintar, /rectorFirma/, 'la firma virtual del rector se renderiza')
+  assert.match(pintar, /COORDINADOR\(A\) DE GRUPO/, 'firma del coordinador')
+  assert.match(pintar, /Escala de valoraci/, 'leyenda de la escala en una línea')
+  // Sin cuadrícula: ninguna regla de border:1px en las celdas del boletín
+  const css = HTML.slice(HTML.indexOf('.boletin-doc table.boletin-tabla'), HTML.indexOf('.boletin-doc .b-titulo'))
+  assert.ok(!/border:\s*1px/.test(css), 'la tabla no es una cuadrícula de bordes')
+  // El admin publica/retira y sube la firma
+  assert.match(HTML, /function adminPublicarBoletin/, 'UI de publicación')
+  assert.match(HTML, /function adminRetirarBoletin/, 'UI de retiro')
+  assert.match(HTML, /function adminGuardarFirmaRector/, 'UI de la firma del rector')
 })

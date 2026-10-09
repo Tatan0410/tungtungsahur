@@ -272,3 +272,22 @@ ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS segundo_apellido TEXT;
 -- NULL en ambas = aún no ha aceptado.
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS terminos_aceptados_en TEXT;
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS terminos_version TEXT;
+
+-- ─── MIGRACIÓN: publicación de boletines + firma virtual del rector ───
+-- El boletín de un período solo es visible para los estudiantes cuando el
+-- admin lo publica para (anio, periodo) — global (curso = '') o por curso.
+-- La firma del rector es una imagen subida desde el panel (boletín digital).
+CREATE TABLE IF NOT EXISTS boletines_publicados (
+    id TEXT PRIMARY KEY,
+    anio INTEGER NOT NULL,
+    periodo INTEGER NOT NULL,
+    curso TEXT NOT NULL DEFAULT '',
+    generadopor TEXT,
+    generadoen TEXT NOT NULL,
+    CONSTRAINT boletines_unicos UNIQUE (anio, periodo, curso)
+);
+
+CREATE TABLE IF NOT EXISTS config_institucion (
+    clave TEXT PRIMARY KEY,
+    valor TEXT
+);
