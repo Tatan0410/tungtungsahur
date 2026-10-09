@@ -1004,6 +1004,10 @@ body::before {
         <input class="inp" id="bol-rector-nombre" placeholder="Ej: JUAN CARLOS GÓMEZ" style="width:100%;">
       </div>
       <div><button class="btn-sm success" id="bol-btn-rector-nombre" onclick="adminGuardarRectorNombre()" style="font-weight:600;">Guardar nombre</button></div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <input type="checkbox" id="bol-mostrar-puesto" style="margin:0;" onchange="adminGuardarMostrarPuesto()">
+        <label for="bol-mostrar-puesto" style="font-size:12px;color:var(--ink-600);cursor:pointer;">Mostrar puesto en el bolet\u00edn</label>
+      </div>
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-top:10px;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px;">
       <div style="flex:1;min-width:220px;">
@@ -3053,6 +3057,15 @@ function pintarBoletin(d) {
 
   html += '</table>'
 
+  // Promedio general y puesto del período (configurable: mostrar_puesto)
+  let lineaPromedio = '<div class="boletin-promedio-puesto" style="width:90%;margin:8px auto 0;font-size:9pt;font-weight:bold;text-align:center;">'
+  lineaPromedio += 'Promedio general del per\u00edodo: ' + (d.promedio !== null && d.promedio !== undefined ? d.promedio : '\u2014')
+  if (d.puesto !== null && d.puesto !== undefined) {
+    lineaPromedio += '   |   Puesto: ' + d.puesto + ' de ' + (d.totalCurso || 0)
+  }
+  lineaPromedio += '</div>'
+  html += lineaPromedio
+
   // Escala de valoración: una línea ~6.5pt
   html += '<div class="boletin-escala"><b>Escala de valoraci\u00f3n:</b> 1 a 2.9 = Desempe\u00f1o Bajo; 3 a 3.9 = Desempe\u00f1o B\u00e1sico; 4 a 4.5 = Desempe\u00f1o Alto; 4.6 a 5 = Desempe\u00f1o Superior.</div>'
 
@@ -4583,6 +4596,7 @@ async function cargarAdminBoletines() {
     if (data.rectorNombre) {
       document.getElementById('bol-rector-nombre').value = data.rectorNombre
     }
+    document.getElementById('bol-mostrar-puesto').checked = data.mostrarPuesto !== false
   } catch (e) {
     tb.innerHTML = ''
   }
@@ -4677,6 +4691,20 @@ async function adminGuardarRectorNombre() {
     })
     if (res.ok) { mostrarToast('ok', 'Nombre del rector guardado'); cargarAdminBoletines() }
     else { const d = await res.json(); mostrarToast('error', d.error || 'Error') }
+  } catch (e) { mostrarToast('error', 'Error de conexión') }
+}
+
+// Toggle "mostrar puesto" (config del boletín)
+async function adminGuardarMostrarPuesto() {
+  const mostrar = document.getElementById('bol-mostrar-puesto').checked
+  try {
+    const res = await fetch(API + '/api/admin/config-boletin', {
+      method: 'PUT',
+      headers: { 'Authorization': 'Bearer ' + currentToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mostrarPuesto: mostrar })
+    })
+    if (res.ok) mostrarToast('ok', mostrar ? 'Puesto visible en el bolet\u00edn' : 'Puesto oculto: solo promedio')
+    else mostrarToast('error', 'Error')
   } catch (e) { mostrarToast('error', 'Error de conexión') }
 }
 

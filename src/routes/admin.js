@@ -1447,7 +1447,15 @@ router.get('/boletines', async (req, res) => {
     const rectorNombre = await prisma._db.prepare(
       "SELECT valor FROM config_institucion WHERE clave = 'rector_nombre'"
     ).get()
-    res.json({ anio, publicaciones: rows, rectorFirma: firma ? firma.valor : null, rectorNombre: rectorNombre ? rectorNombre.valor : null })
+    const mostrarPuesto = await prisma._db.prepare(
+      "SELECT valor FROM config_institucion WHERE clave = 'mostrar_puesto'"
+    ).get()
+    res.json({
+      anio, publicaciones: rows,
+      rectorFirma: firma ? firma.valor : null,
+      rectorNombre: rectorNombre ? rectorNombre.valor : null,
+      mostrarPuesto: mostrarPuesto ? mostrarPuesto.valor !== '0' : true,
+    })
   } catch (error) {
     console.error('Error GET /boletines:', error)
     res.status(500).json({ error: 'Error interno' })
@@ -1567,6 +1575,24 @@ router.get('/rector', async (req, res) => {
   }
 })
 
+// Config del boletín: mostrar_puesto ('1' default = sí, '0' = solo promedio)
+router.put('/config-boletin', async (req, res) => {
+  try {
+    const { mostrarPuesto } = req.body
+    if (mostrarPuesto === undefined) {
+      return res.status(400).json({ error: 'mostrarPuesto es requerido (true/false)' })
+    }
+    const valor = mostrarPuesto === true || mostrarPuesto === '1' || mostrarPuesto === 1 ? '1' : '0'
+    await prisma._db.prepare(
+      "INSERT INTO config_institucion (clave, valor) VALUES ('mostrar_puesto', ?) ON CONFLICT (clave) DO UPDATE SET valor = excluded.valor"
+    ).run(valor)
+    res.json({ mensaje: 'Configuración guardada', mostrarPuesto: valor === '1' })
+  } catch (error) {
+    console.error('Error PUT /config-boletin:', error)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
 // ─── IMPRESIÓN MASIVA DE BOLETINES POR CURSO ───
 // Devuelve un lote de 10 estudiantes con TODOS sus datos de boletín en una
 // pasada (sin N+1). ADMIN siempre; DOCENTE solo si es director de ese curso.
@@ -1668,6 +1694,26 @@ router.get('/boletines/curso', async (req, res) => {
 
     const normBol = txt => String(txt).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim()
 
+    // Ranking del curso COMPLETO (una consulta, no por lote): RANK() deportivo
+    const mostrarPuestoCfg = await prisma._db.prepare(
+      "SELECT valor FROM config_institucion WHERE clave = 'mostrar_puesto'"
+    ).get()
+    const conPuesto = !mostrarPuestoCfg || mostrarPuestoCfg.valor !== '0'
+
+    const rankingCurso = conPuesto ? await prisma._db.prepare(`
+      WITH promedios AS (
+        SELECT c.estudianteId, AVG(c.definitiva) AS prom
+        FROM calificaciones c
+        JOIN estudiantes e ON e.id = c.estudianteId
+        WHERE e.curso = ? AND c.periodo = ? AND c.anio = ? AND c.definitiva IS NOT NULL
+        GROUP BY c.estudianteId
+      )
+      SELECT COUNT(*) OVER () AS total, estudianteId, RANK() OVER (ORDER BY prom DESC) AS puesto
+      FROM promedios
+    `).all(curso, p, anio) : []
+    const totalCurso = rankingCurso.length > 0 ? Number(rankingCurso[0].total) : 0
+    const rankingPorEst = new Map(rankingCurso.map(r => [r.estudianteId, { puesto: Number(r.puesto), promedio: parseFloat(Number(r.prom).toFixed(2)) }]))
+
     const boletines = estudiantes.map(est => {
       const areasBoletin = areas.map(a => {
         const brutas = areasMaterias.get(a.areaId) || []
@@ -1699,6 +1745,8 @@ router.get('/boletines/curso', async (req, res) => {
       })
 
       const grado = parseInt(String(curso).replace(/\D/g, '').replace(/^(\d{1,2}).*/, '$1')) || null
+      const rankEst = rankingPorEst.get(est.estudianteId)
+
       return {
         estudiante: { nombre: est.nombre, curso, grado, jornada: null, sede: null },
         directorNombre: director ? director.directorNombre : null,
@@ -1707,6 +1755,9 @@ router.get('/boletines/curso', async (req, res) => {
         periodo: p, anio,
         periodos,
         areas: areasBoletin,
+        promedio: rankEst ? rankEst.promedio : null,
+        puesto: conPuesto ? (rankEst ? rankEst.puesto : null) : null,
+        totalCurso: conPuesto ? totalCurso : 0,
       }
     })
 

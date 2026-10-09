@@ -1785,6 +1785,42 @@ router.get('/mi-boletin', async (req, res) => {
       }
     })
 
+    // Config: ¿mostrar puesto en el boletín? (default '1' = sí)
+    const mostrarPuesto = await prisma._db.prepare(
+      "SELECT valor FROM config_institucion WHERE clave = 'mostrar_puesto'"
+    ).get()
+    const conPuesto = !mostrarPuesto || mostrarPuesto.valor !== '0'
+
+    // Promedio general: SOLO las definitivas del período consultado
+    // (las de períodos anteriores se ven en su columna pero no se promedian)
+    const propia = await prisma._db.prepare(`
+      SELECT AVG(definitiva) prom FROM calificaciones
+      WHERE estudianteId = ? AND periodo = ? AND anio = ? AND definitiva IS NOT NULL
+    `).get(estudianteId, periodo, anio)
+    const promedio = propia && propia.prom !== null ? parseFloat(Number(propia.prom).toFixed(2)) : null
+
+    // Puesto en el salon: RANK() estilo deportivo (1,2,2,4) — SOLO con las
+    // notas del período consultado, entre los estudiantes del curso con al
+    // menos una nota. Nunca se envían datos de otros estudiantes.
+    let puesto = null
+    let totalCurso = 0
+    if (conPuesto && promedio !== null) {
+      const ranking = await prisma._db.prepare(`
+        WITH promedios AS (
+          SELECT c.estudianteId, AVG(c.definitiva) AS prom
+          FROM calificaciones c
+          JOIN estudiantes e ON e.id = c.estudianteId
+          WHERE e.curso = ? AND c.periodo = ? AND c.anio = ? AND c.definitiva IS NOT NULL
+          GROUP BY c.estudianteId
+        )
+        SELECT COUNT(*) OVER () AS total, estudianteId, RANK() OVER (ORDER BY prom DESC) AS puesto
+        FROM promedios
+      `).all(est.curso, periodo, anio)
+      totalCurso = ranking.length > 0 ? Number(ranking[0].total) : 0
+      const fila = ranking.find(r => r.estudianteId === estudianteId)
+      puesto = fila ? Number(fila.puesto) : null
+    }
+
     res.json({
       estudiante: { nombre: est.nombre, curso: est.curso, grado: est.grado, jornada: est.jornada, sede: est.sede },
       directorNombre: director ? director.directorNombre : null,
@@ -1793,6 +1829,9 @@ router.get('/mi-boletin', async (req, res) => {
       periodo, anio,
       periodos,
       areas: areasBoletin,
+      promedio,
+      puesto,
+      totalCurso,
     })
   } catch (error) {
     console.error('Error GET /mi-boletin:', error)
