@@ -6,3 +6,7 @@ prisma/dev.db-wal
 prisma/dev.db
 *.log
 .env
+*.xlsx
+*.xls
+*.csv
+backups/

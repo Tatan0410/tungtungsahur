@@ -26,9 +26,9 @@ async function main() {
   const page = await browser.newPage()
   const docs = 'docs/verificacion'
 
-  // 1. Boletín del estudiante de pruebas (CHAPARRO — 1104)
-  console.log('Renderizando boletín P3 de CHAPARRO...')
-  await loginYBoletin(page, '1139430973', '1139430973', 3)
+  // Verificar con el estudiante de pruebas (documento 88000999 = PRUEBA CARRERAS)
+  console.log('Renderizando boletín P3 del estudiante de pruebas...')
+  await loginYBoletin(page, '88000999', '88000999', 3)
 
   // PDF carta
   await page.emulateMedia({ media: 'print' })
