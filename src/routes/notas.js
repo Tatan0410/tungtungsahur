@@ -378,6 +378,19 @@ router.get('/boletines-publicados', async (req, res) => {
 
 // Los endpoints individuales quedan como wrappers finos de las mismas
 // funciones del bootstrap: respuestas idénticas por construcción
+// Validación estricta de notas: convierte coma decimal ("3,5" → "3.5"),
+// exige formato numérico puro (/^\d+(\.\d+)?$/), luego rango 0–5.
+// Retorna el número válido, null si es "sin nota", o '__INVALIDA__' → 400.
+// Evita que "abc", NaN, Infinity, "1e1", "0x3" etc. lleguen a la BD.
+function normalizarYValidarNota(valor) {
+  if (valor === null || valor === undefined || valor === '') return null
+  const texto = String(valor).trim().replace(',', '.')
+  if (!/^\d+(\.\d+)?$/.test(texto)) return '__INVALIDA__'
+  const v = parseFloat(texto)
+  if (!Number.isFinite(v) || v < 0 || v > 5) return '__INVALIDA__'
+  return v
+}
+
 router.get('/mis-notas', async (req, res) => {
   try {
     if (req.usuario.rol !== 'ESTUDIANTE') {
@@ -508,8 +521,13 @@ router.post('/items', async (req, res) => {
       return res.status(400).json({ error: 'calificacionId, tipo y valor son requeridos' })
     }
 
-    if (valor < 0 || valor > 5) {
-      return res.status(400).json({ error: 'La nota solo puede ir de 0 a 5' })
+    // Validación estricta: "3,5"→3.5, "abc"→400, "1e1"→400, "5.1"→400
+    const vNota = normalizarYValidarNota(valor)
+    if (vNota === '__INVALIDA__') {
+      return res.status(400).json({ error: 'La nota solo puede ir de 0 a 5 (decimal con punto o coma: 3.5 o 3,5)' })
+    }
+    if (vNota === null) {
+      return res.status(400).json({ error: 'El valor de la nota es requerido' })
     }
 
     const tiposValidos = ['ACTITUDINAL', 'RESPONSABILIDAD', 'ACTIVIDAD', 'EVALUACION']
@@ -553,11 +571,23 @@ router.post('/items', async (req, res) => {
       }
     }
 
+    // SEGURIDAD (H4): el período sale de la CALIFICACIÓN en la BD, nunca del
+    // body — un POST sobre una calificación de un período cerrado da 403
+    const calInfo = await prisma._db.prepare(
+      'SELECT c.periodo, c.anio, e.sede FROM calificaciones c JOIN estudiantes e ON e.id = c.estudianteId WHERE c.id = ?'
+    ).get(calificacionId)
+    if (!calInfo) {
+      return res.status(404).json({ error: 'Calificación no encontrada' })
+    }
+    if (!(await periodoAbierto(calInfo.anio, calInfo.sede, calInfo.periodo))) {
+      return res.status(403).json({ error: 'Este período está cerrado para esta sede' })
+    }
+
     const item = await prisma.notaItem.create({
       data: {
         calificacionId,
         tipo,
-        valor: parseFloat(valor),
+        valor: vNota,
         descripcion: descripcion || null,
       }
     })
@@ -595,8 +625,13 @@ router.put('/items/:id', async (req, res) => {
     const { id } = req.params
     const { valor, descripcion } = req.body
 
-    if (valor !== undefined && (valor < 0 || valor > 5)) {
-      return res.status(400).json({ error: 'La nota solo puede ir de 0 a 5' })
+    // Validación estricta de nota si viene en el body
+    let vNota
+    if (valor !== undefined && valor !== null && valor !== '') {
+      vNota = normalizarYValidarNota(valor)
+      if (vNota === '__INVALIDA__') {
+        return res.status(400).json({ error: 'La nota solo puede ir de 0 a 5 (decimal con punto o coma: 3.5 o 3,5)' })
+      }
     }
 
     const itemExistente = await prisma.notaItem.findUnique({ where: { id } })
@@ -629,8 +664,16 @@ router.put('/items/:id', async (req, res) => {
       }
     }
 
+    // SEGURIDAD (H4): el período sale de la calificación del ITEM en la BD
+    const calInfo = await prisma._db.prepare(
+      'SELECT c.periodo, c.anio, e.sede FROM calificaciones c JOIN estudiantes e ON e.id = c.estudianteId WHERE c.id = ?'
+    ).get(itemExistente.calificacionId)
+    if (calInfo && !(await periodoAbierto(calInfo.anio, calInfo.sede, calInfo.periodo))) {
+      return res.status(403).json({ error: 'Este período está cerrado para esta sede' })
+    }
+
     const updateData = {}
-    if (valor !== undefined) updateData.valor = parseFloat(valor)
+    if (vNota !== undefined) updateData.valor = vNota
     if (descripcion !== undefined) updateData.descripcion = descripcion
 
     const item = await prisma.notaItem.update({
@@ -683,6 +726,14 @@ router.delete('/items/:id', async (req, res) => {
       if (!cal || !(await verificarDocenteAsignado(prisma._db, req.usuario.docenteId, cal.materiaId, cal.curso))) {
         return res.status(403).json({ error: 'No tienes asignada esa materia en ese curso' })
       }
+    }
+
+    // SEGURIDAD (H4): el período sale de la calificación del ITEM en la BD
+    const calInfo = await prisma._db.prepare(
+      'SELECT c.periodo, c.anio, e.sede FROM calificaciones c JOIN estudiantes e ON e.id = c.estudianteId WHERE c.id = ?'
+    ).get(item.calificacionId)
+    if (calInfo && !(await periodoAbierto(calInfo.anio, calInfo.sede, calInfo.periodo))) {
+      return res.status(403).json({ error: 'Este período está cerrado para esta sede' })
     }
 
     await prisma.notaItem.delete({ where: { id } })
@@ -848,6 +899,66 @@ router.get('/anual', async (req, res) => {
   }
 })
 
+router.get('/anual', async (req, res) => {
+  try {
+    if (req.usuario.rol !== 'ESTUDIANTE') {
+      return res.status(403).json({ error: 'Solo para estudiantes' })
+    }
+
+    const estudianteId = req.usuario.estudianteId
+    const materiaId    = req.query.materiaId
+    const anio         = parseInt(req.query.anio) || new Date().getFullYear()
+
+    if (!materiaId) {
+      return res.status(400).json({ error: 'materiaId es requerido' })
+    }
+
+    const calificaciones = await prisma.calificacion.findMany({
+      where: { estudianteId, materiaId, anio },
+      orderBy: { periodo: 'asc' }
+    })
+
+    const estudiante = await prisma._db.prepare('SELECT sede FROM estudiantes WHERE id = ?').get(estudianteId)
+    const sede = estudiante?.sede || 'PPAL - TRIUNFO'
+    const pesos = await obtenerPesosPeriodos(anio, sede)
+
+    const periodos = {}
+    for (let p = 1; p <= 4; p++) {
+      const cal = calificaciones.find(c => c.periodo === p)
+      periodos[p] = {
+        definitiva: cal?.definitiva || null,
+      }
+    }
+
+    let anual = null
+    let suma = 0
+    let pesosSum = 0
+    for (let p = 1; p <= 4; p++) {
+      const cal = calificaciones.find(c => c.periodo === p)
+      if (cal?.definitiva !== null && cal?.definitiva !== undefined) {
+        const peso = pesos[p] || 0.25
+        suma += cal.definitiva * peso
+        pesosSum += peso
+      }
+    }
+    if (pesosSum > 0) {
+      anual = parseFloat((suma / pesosSum).toFixed(2))
+    }
+
+    res.json({
+      materiaId,
+      anio,
+      periodos,
+      definitivaAnual: anual,
+      estadoAnual: calcularEstado(anual),
+    })
+
+  } catch (error) {
+    console.error('Error al obtener nota anual:', error)
+    res.status(500).json({ error: 'Error interno del servidor' })
+  }
+})
+
 router.post('/bulk-update', async (req, res) => {
   try {
     if (req.usuario.rol !== 'DOCENTE' && req.usuario.rol !== 'ADMIN') {
@@ -860,10 +971,18 @@ router.post('/bulk-update', async (req, res) => {
     }
 
     const resultados = []
+    const invalidos = []
     for (const item of items) {
       const { calificacionId, tipo, valor } = item
       if (!calificacionId || !tipo || valor === undefined || valor === null) continue
-      if (valor < 0 || valor > 5) continue
+
+      // Validación estricta: "abc", "1e1", NaN → item reportado como inválido
+      const vNota = normalizarYValidarNota(valor)
+      if (vNota === '__INVALIDA__') {
+        invalidos.push({ calificacionId, tipo, error: 'Nota inválida (solo 0 a 5)' })
+        continue
+      }
+      if (vNota === null) continue
 
       const tiposValidos = ['ACTITUDINAL', 'RESPONSABILIDAD', 'ACTIVIDAD', 'EVALUACION']
       if (!tiposValidos.includes(tipo)) continue
@@ -879,16 +998,26 @@ router.post('/bulk-update', async (req, res) => {
         }
       }
 
-      if (tipo === 'EVALUACION') {
+      // SEGURIDAD (H4): el período sale de la CALIFICACIÓN en la BD, nunca del
+      // body — un item de un período cerrado se ignora con el error visible
+      const calInfo = await prisma._db.prepare(
+        'SELECT c.periodo, c.anio, e.sede FROM calificaciones c JOIN estudiantes e ON e.id = c.estudianteId WHERE c.id = ?'
+      ).get(calificacionId)
+      if (!calInfo || !(await periodoAbierto(calInfo.anio, calInfo.sede, calInfo.periodo))) {
+        resultados.push({ calificacionId, tipo, ignorado: true, error: 'Este período está cerrado para esta sede' })
+        continue
+      }
+
+    if (tipo === 'EVALUACION') {
         const existente = await prisma.notaItem.findFirst({
           where: { calificacionId, tipo: 'EVALUACION' }
         })
         if (existente) {
           await prisma.notaItem.update({
             where: { id: existente.id },
-            data: { valor: parseFloat(valor) }
+            data: { valor: vNota }
           })
-          resultados.push({ calificacionId, tipo, valor: parseFloat(valor), actualizado: true })
+          resultados.push({ calificacionId, tipo, valor: vNota, actualizado: true })
           continue
         }
       }
@@ -900,9 +1029,9 @@ router.post('/bulk-update', async (req, res) => {
         if (existente) {
           await prisma.notaItem.update({
             where: { id: existente.id },
-            data: { valor: parseFloat(valor) }
+            data: { valor: vNota }
           })
-          resultados.push({ calificacionId, tipo, valor: parseFloat(valor), actualizado: true })
+          resultados.push({ calificacionId, tipo, valor: vNota, actualizado: true })
           continue
         }
       }
@@ -911,11 +1040,11 @@ router.post('/bulk-update', async (req, res) => {
         data: {
           calificacionId,
           tipo,
-          valor: parseFloat(valor),
+          valor: vNota,
           descripcion: null,
         }
       })
-      resultados.push({ calificacionId, tipo, valor: parseFloat(valor), creado: true, id: nuevoItem.id })
+      resultados.push({ calificacionId, tipo, valor: vNota, creado: true, id: nuevoItem.id })
     }
 
     const calIds = [...new Set(resultados.filter(r => !r.ignorado).map(r => r.calificacionId))]
@@ -933,7 +1062,7 @@ router.post('/bulk-update', async (req, res) => {
       }
     }
 
-    res.json({ mensaje: 'Cambios guardados', items: resultados })
+    res.json({ mensaje: 'Cambios guardados', items: resultados, invalidos: invalidos.length ? invalidos : undefined })
   } catch (error) {
     console.error('Error en bulk-update:', error)
     res.status(500).json({ error: 'Error interno del servidor' })
@@ -1341,9 +1470,14 @@ router.get('/observaciones', async (req, res) => {
     }
 
     const estudianteId = req.query.estudianteId
-    const docenteId = req.query.docenteId
+    let docenteId = req.query.docenteId
     const where = []
     const params = []
+
+    // SEGURIDAD: docente sin parámetros = solo las suyas (no ver todas)
+    if (req.usuario.rol === 'DOCENTE' && !estudianteId && !docenteId) {
+      docenteId = req.usuario.docenteId
+    }
     if (estudianteId) { where.push('o.estudianteId = ?'); params.push(estudianteId) }
     if (docenteId) { where.push('o.docenteId = ?'); params.push(docenteId) }
     if (where.length === 0) return res.status(400).json({ error: 'Se requiere al menos estudianteId o docenteId' })
@@ -1352,6 +1486,11 @@ router.get('/observaciones', async (req, res) => {
     // (materia asignada o director de grupo); sus propias observaciones siempre
     if (req.usuario.rol === 'DOCENTE' && estudianteId && !(await docentePuedeVerEstudiante(prisma._db, req.usuario.docenteId, estudianteId))) {
       return res.status(403).json({ error: 'No tienes asignada ninguna materia en el curso de ese estudiante' })
+    }
+    // SEGURIDAD (M1): un docente solo puede filtrar por SU docenteId —
+    // antes podía leer las observaciones de cualquier colega con ?docenteId=X
+    if (req.usuario.rol === 'DOCENTE' && docenteId && docenteId !== req.usuario.docenteId) {
+      return res.status(403).json({ error: 'Solo puedes consultar tus propias observaciones' })
     }
 
     const rows = await prisma._db.prepare(`
@@ -1466,10 +1605,20 @@ router.get('/mis-observaciones', async (req, res) => {
 
 router.delete('/observaciones/:id', async (req, res) => {
   try {
+    // SEGURIDAD: el rol SIEMPRE se chequea antes de comparar docenteId —
+    // antes un ESTUDIANTE (docenteId=null) podía borrar observaciones del
+    // admin (docenteId=null) porque null === null pasaba la comparación
+    if (req.usuario.rol !== 'DOCENTE' && req.usuario.rol !== 'ADMIN') {
+      return res.status(403).json({ error: 'Solo docentes y administradores' })
+    }
     const obs = await prisma._db.prepare('SELECT * FROM observaciones WHERE id = ?').get(req.params.id)
     if (!obs) return res.status(404).json({ error: 'Observación no encontrada' })
-    if (req.usuario.rol !== 'ADMIN' && obs.docenteId !== req.usuario.docenteId) {
-      return res.status(403).json({ error: 'No puedes eliminar esta observación' })
+    // SEGURIDAD: un docente solo borra SU observación — y además su docenteId
+    // debe ser NO nulo (el admin es quien puede tener docenteId null)
+    if (req.usuario.rol !== 'ADMIN') {
+      if (!req.usuario.docenteId || obs.docenteId !== req.usuario.docenteId) {
+        return res.status(403).json({ error: 'No puedes eliminar esta observación' })
+      }
     }
     await prisma._db.prepare('DELETE FROM observaciones WHERE id = ?').run(req.params.id)
     res.json({ mensaje: 'Observación eliminada' })

@@ -1346,11 +1346,18 @@ router.put('/estudiantes/:id/activo', async (req, res) => {
     if (activo === undefined || activo === null) {
       return res.status(400).json({ error: 'activo es requerido (true/false)' })
     }
+    // SEGURIDAD (M10): el lookup acepta estudiante.id o usuario.id, pero el
+    // UPDATE SIEMPRE usa el usuarioId resuelto — antes usaba req.params.id
+    // contra usuarios.id, y si el frontend pasaba el estudiante.id el UPDATE
+    // era un no-op silencioso que respondía 200
     const usuario = await prisma._db.prepare(
-      'SELECT u.id FROM usuarios u JOIN estudiantes e ON e.usuarioId = u.id WHERE e.id = ? OR u.id = ?'
+      'SELECT u.id AS "usuarioId" FROM usuarios u JOIN estudiantes e ON e.usuarioId = u.id WHERE e.id = ? OR u.id = ?'
     ).get(req.params.id, req.params.id)
     if (!usuario) return res.status(404).json({ error: 'Estudiante no encontrado' })
-    await prisma._db.prepare('UPDATE usuarios SET activo = ? WHERE id = ?').run(activo ? 1 : 0, req.params.id)
+    const r = await prisma._db.prepare('UPDATE usuarios SET activo = ? WHERE id = ?').run(activo ? 1 : 0, usuario.usuarioId)
+    if (!r || (r.changes !== undefined && r.changes === 0)) {
+      return res.status(500).json({ error: 'No se pudo actualizar el estado' })
+    }
     res.json({ mensaje: activo ? 'Estudiante reactivado' : 'Estudiante desactivado', activo: !!activo })
   } catch (error) {
     console.error('Error PUT /estudiantes/:id/activo:', error)
