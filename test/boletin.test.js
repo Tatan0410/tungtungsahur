@@ -111,7 +111,7 @@ test('boletín P1: solo columna P°1, CON promedio y puesto del período, celdas
   }
   // rectorNombre
   assert.equal(r.data.rectorNombre, 'RECTOR TEST PILOTO')
-  assert.ok(r.data.rectorFirma === null || r.data.rectorFirma === undefined, 'sin imagen de firma en el fixture')
+  assert.ok(r.data.rectorFirma === undefined, 'rectorFirma ya NO existe en el response (firma virtual eliminada)')
   // Promedio y puesto (del período consultado, no acumulado)
   assert.equal(r.data.promedio, 3.5, 'promedio P1: (4.0 + 3.0) / 2')
   assert.equal(r.data.puesto, 1, 'est1104 tiene 3.5, el más alto de 4 estudiantes rankeados')
@@ -186,6 +186,30 @@ test('impresión masiva: docente → 403 (middleware admin); admin OK', async ()
   assert.equal(comoDoc.status, 403, 'el middleware admin bloquea a docentes')
   const comoAdmin = await api.get('/api/admin/boletines/curso?curso=1104&periodo=1&anio=' + anio, { token: tokenAdmin })
   assert.equal(comoAdmin.status, 200)
+})
+
+test('masiva trae directorNombre y rectorNombre para los avisos del frontend', async () => {
+  const r = await api.get('/api/admin/boletines/curso?curso=1104&periodo=1&anio=' + anio, { token: tokenAdmin })
+  assert.equal(r.status, 200)
+  const bol = r.data.boletines[0]
+  // El frontend usa estos campos para los avisos: si son null → aviso visible
+  assert.ok('directorNombre' in bol, 'el boletín masivo lleva directorNombre (aunque sea null)')
+  assert.ok('rectorNombre' in bol, 'el boletín masivo lleva rectorNombre (aunque sea null)')
+})
+
+test('directores_grupo: un solo director por curso (UNIQUE en BD + 409 en POST)', async () => {
+  // Asignar un director
+  const prof = (await api.get('/api/admin/profesores', { token: tokenAdmin })).data[0]
+  const asigna = await api.post('/api/admin/directores', { token: tokenAdmin, body: { docenteId: prof.docenteId, curso: '999' } })
+  assert.equal(asigna.status, 201, 'primer director OK')
+  // Segundo para el MISMO curso → 409
+  const repite = await api.post('/api/admin/directores', { token: tokenAdmin, body: { docenteId: prof.docenteId, curso: '999' } })
+  assert.equal(repite.status, 409, 'no se permite dos directores para el mismo curso')
+  assert.match(repite.data.error, /ya tiene un director/)
+  // Limpiar
+  const dirs = (await api.get('/api/admin/directores', { token: tokenAdmin })).data
+  const creado = dirs.directores.find(d => d.curso === '999')
+  if (creado) await api.delete('/api/admin/directores/' + creado.id, { token: tokenAdmin })
 })
 
 test('ranking deportivo: empates comparten puesto y el siguiente salta (1,2,2,4)', async () => {

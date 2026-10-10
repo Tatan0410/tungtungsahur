@@ -493,7 +493,9 @@ test('boletín: publicación condiciona el botón, columnas dinámicas y firma v
   assert.match(pintar, /area\.promedio/, 'la fila del área lleva su promedio ponderado')
   assert.match(pintar, /area\.nivel/, 'la fila del área lleva su nivel')
   assert.match(pintar, /toUpperCase\(\)/, 'las áreas van en MAYÚSCULAS')
-  assert.match(pintar, /rectorFirma/, 'la firma virtual del rector se renderiza')
+  assert.match(pintar, /rectorNombre.*toUpperCase/, 'el nombre del rector va en MAYÚSCULAS')
+  assert.match(pintar, /directorNombre.*toUpperCase/, 'el nombre del director va en MAYÚSCULAS')
+  assert.ok(!pintar.includes('rectorFirma'), 'la firma virtual (imagen) ya NO se renderiza')
   assert.match(pintar, /Coordinador\(a\) de grupo/, 'firma del coordinador')
   assert.match(pintar, /Escala de valoraci/, 'leyenda de la escala en una línea')
   // El diseño oficial SÍ tiene bordes: 1px negro en todas las celdas
@@ -502,5 +504,7 @@ test('boletín: publicación condiciona el botón, columnas dinámicas y firma v
   // El admin publica/retira y sube la firma
   assert.match(HTML, /function adminPublicarBoletin/, 'UI de publicación')
   assert.match(HTML, /function adminRetirarBoletin/, 'UI de retiro')
-  assert.match(HTML, /function adminGuardarFirmaRector/, 'UI de la firma del rector')
+  assert.ok(!HTML.includes('adminGuardarFirmaRector'), 'la UI de firma virtual ya NO existe')
+  assert.match(HTML, /function adminGuardarRectorNombre/, 'UI del nombre del rector (texto)')
+  assert.match(HTML, /function adminGuardarMostrarPuesto/, 'UI del toggle mostrar puesto')
 })

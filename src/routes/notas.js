@@ -1688,9 +1688,6 @@ router.get('/mi-boletin', async (req, res) => {
     const rectorNombre = await prisma._db.prepare(
       "SELECT valor FROM config_institucion WHERE clave = 'rector_nombre'"
     ).get()
-    const rectorFirma = await prisma._db.prepare(
-      "SELECT valor FROM config_institucion WHERE clave = 'rector_firma'"
-    ).get()
 
     // Áreas del curso en el orden del boletín físico (creación) + sus materias
     const areas = await prisma._db.prepare(`
@@ -1825,7 +1822,6 @@ router.get('/mi-boletin', async (req, res) => {
       estudiante: { nombre: est.nombre, curso: est.curso, grado: est.grado, jornada: est.jornada, sede: est.sede },
       directorNombre: director ? director.directorNombre : null,
       rectorNombre: rectorNombre ? rectorNombre.valor : null,
-      rectorFirma: rectorFirma ? rectorFirma.valor : null,
       periodo, anio,
       periodos,
       areas: areasBoletin,

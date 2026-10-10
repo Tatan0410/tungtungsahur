@@ -32,20 +32,6 @@ const uploadExcel = multer({
   },
 })
 
-// Multer para la FIRMA VIRTUAL del rector: imagen (PNG/JPG/WebP), máximo
-// 300 KB, en memoria — se guarda como data URL base64 en config_institucion
-const uploadFirma = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 300 * 1024 },
-  fileFilter: (req, file, cb) => {
-    if (['image/png', 'image/jpeg', 'image/webp'].includes(file.mimetype)) {
-      cb(null, true)
-    } else {
-      cb(new Error('Solo se aceptan imágenes PNG, JPG o WebP'))
-    }
-  },
-})
-
 const router = express.Router()
 
 function verificarTokenAdmin(req, res, next) {
@@ -1441,9 +1427,6 @@ router.get('/boletines', async (req, res) => {
     const rows = await prisma._db.prepare(
       'SELECT id, anio, periodo, curso, generadopor AS "generadoPor", generadoen AS "generadoEn" FROM boletines_publicados WHERE anio = ? ORDER BY periodo ASC, curso ASC'
     ).all(anio)
-    const firma = await prisma._db.prepare(
-      "SELECT valor FROM config_institucion WHERE clave = 'rector_firma'"
-    ).get()
     const rectorNombre = await prisma._db.prepare(
       "SELECT valor FROM config_institucion WHERE clave = 'rector_nombre'"
     ).get()
@@ -1452,7 +1435,6 @@ router.get('/boletines', async (req, res) => {
     ).get()
     res.json({
       anio, publicaciones: rows,
-      rectorFirma: firma ? firma.valor : null,
       rectorNombre: rectorNombre ? rectorNombre.valor : null,
       mostrarPuesto: mostrarPuesto ? mostrarPuesto.valor !== '0' : true,
     })
@@ -1512,41 +1494,8 @@ router.delete('/boletines/:id', async (req, res) => {
   }
 })
 
-// ─── FIRMA VIRTUAL DEL RECTOR ───
-// Imagen (PNG/JPG/WebP ≤ 300 KB) que sale en todos los boletines sobre la
-// línea de firma. El boletín es digital: la firma es esta imagen.
-router.post('/rector-firma', uploadFirma.single('firma'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'Sube una imagen PNG, JPG o WebP en el campo "firma"' })
-    }
-    const dataUrl = 'data:' + req.file.mimetype + ';base64,' + req.file.buffer.toString('base64')
-    // ON CONFLICT DO UPDATE = upsert en ambos motores (SQLite ≥ 3.24 y PG)
-    await prisma._db.prepare(
-      "INSERT INTO config_institucion (clave, valor) VALUES ('rector_firma', ?) ON CONFLICT (clave) DO UPDATE SET valor = excluded.valor"
-    ).run(dataUrl)
-    res.json({ mensaje: 'Firma del rector guardada', tamanio: req.file.size })
-  } catch (error) {
-    console.error('Error POST /rector-firma:', error)
-    if (error.message && error.message.includes('Solo se aceptan')) {
-      return res.status(400).json({ error: error.message })
-    }
-    res.status(500).json({ error: 'Error interno' })
-  }
-})
-
-router.delete('/rector-firma', async (req, res) => {
-  try {
-    await prisma._db.prepare("DELETE FROM config_institucion WHERE clave = 'rector_firma'").run()
-    res.json({ mensaje: 'Firma del rector eliminada' })
-  } catch (error) {
-    console.error('Error DELETE /rector-firma:', error)
-    res.status(500).json({ error: 'Error interno' })
-  }
-})
-
 // Nombre del rector (texto): sale en la firma del boletín en cursiva
-// subrayado. Independiente de la imagen de la firma.
+// subrayado, siempre en MAYÚSCULAS como el boletín oficial.
 router.put('/rector', async (req, res) => {
   try {
     const { nombre } = req.body
@@ -1620,9 +1569,6 @@ router.get('/boletines/curso', async (req, res) => {
     // Rector + director del curso (una consulta, no por estudiante)
     const rectorNombre = await prisma._db.prepare(
       "SELECT valor FROM config_institucion WHERE clave = 'rector_nombre'"
-    ).get()
-    const rectorFirma = await prisma._db.prepare(
-      "SELECT valor FROM config_institucion WHERE clave = 'rector_firma'"
     ).get()
     const director = await prisma._db.prepare(`
       SELECT u.nombre AS "directorNombre"
@@ -1751,7 +1697,6 @@ router.get('/boletines/curso', async (req, res) => {
         estudiante: { nombre: est.nombre, curso, grado, jornada: null, sede: null },
         directorNombre: director ? director.directorNombre : null,
         rectorNombre: rectorNombre ? rectorNombre.valor : null,
-        rectorFirma: rectorFirma ? rectorFirma.valor : null,
         periodo: p, anio,
         periodos,
         areas: areasBoletin,

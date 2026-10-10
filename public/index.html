@@ -1005,19 +1005,10 @@ body::before {
       </div>
       <div><button class="btn-sm success" id="bol-btn-rector-nombre" onclick="adminGuardarRectorNombre()" style="font-weight:600;">Guardar nombre</button></div>
       <div style="display:flex;align-items:center;gap:6px;">
-        <input type="checkbox" id="bol-mostrar-puesto" style="margin:0;" onchange="adminGuardarMostrarPuesto()">
-        <label for="bol-mostrar-puesto" style="font-size:12px;color:var(--ink-600);cursor:pointer;">Mostrar puesto en el bolet\u00edn</label>
+         <input type="checkbox" id="bol-mostrar-puesto" style="margin:0;" onchange="adminGuardarMostrarPuesto()">
+         <label for="bol-mostrar-puesto" style="font-size:12px;color:var(--ink-600);cursor:pointer;">Mostrar puesto en el bolet\u00edn</label>
       </div>
     </div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-top:10px;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px;">
-      <div style="flex:1;min-width:220px;">
-        <div class="lbl">Firma virtual del rector (imagen PNG/JPG, máx. 300 KB) — opcional</div>
-        <input class="inp" type="file" id="bol-firma-archivo" accept="image/png,image/jpeg,image/webp" style="padding:8px;">
-      </div>
-      <div><button class="btn-sm success" id="bol-btn-firma" onclick="adminGuardarFirmaRector()" style="font-weight:600;">Guardar firma</button></div>
-      <div><button class="btn-sm" onclick="adminEliminarFirmaRector()" style="font-weight:600;color:var(--red-700);">Eliminar firma</button></div>
-    </div>
-    <div id="bol-firma-preview" style="margin-top:10px;"></div>
 
     <!-- Impresión masiva por curso -->
     <div style="font-size:14px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);margin:20px 0 10px;"><span class="icon" data-icon="documento"></span> Impresión masiva por curso</div>
@@ -3074,14 +3065,13 @@ function pintarBoletin(d) {
     '<div class="b-linea"></div><div class="b-linea"></div><div class="b-linea"></div><div class="b-linea"></div>' +
     '</div>'
 
-  // FIRMAS: nombre en cursiva subrayado + cargo debajo
+  // FIRMAS: nombre en MAYÚSCULAS cursiva subrayado + cargo debajo (como el original)
   html += '<div class="boletin-firmas">' +
     '<div class="firma">' +
-    (d.rectorFirma ? '<img src="' + esc(d.rectorFirma) + '" alt="Firma" style="max-height:48px;max-width:160px;object-fit:contain;">' : '') +
-    (d.rectorNombre ? '<div class="firma-nombre">' + esc(d.rectorNombre) + '</div>' : '<div class="firma-espacio"></div>') +
+    (d.rectorNombre ? '<div class="firma-nombre">' + esc(d.rectorNombre).toUpperCase() + '</div>' : '<div class="firma-espacio"></div>') +
     '<div class="linea">RECTOR</div></div>' +
     '<div class="firma">' +
-    (d.directorNombre ? '<div class="firma-nombre">' + esc(d.directorNombre) + '</div>' : '<div class="firma-espacio"></div>') +
+    (d.directorNombre ? '<div class="firma-nombre">' + esc(d.directorNombre).toUpperCase() + '</div>' : '<div class="firma-espacio"></div>') +
     '<div class="linea">Coordinador(a) de grupo</div></div>' +
     '</div>'
 
@@ -4588,11 +4578,7 @@ async function cargarAdminBoletines() {
             '<td style="padding:8px 12px;border-bottom:1px solid var(--line);text-align:center;"><button class="btn-sm" onclick="adminRetirarBoletin(\'' + p.id + '\', ' + p.periodo + ', \'' + escArg(p.curso) + '\')" style="color:var(--red-700);font-weight:600;">Retirar</button></td></tr>'
         }).join('') + '</tbody></table></div>'
     }
-    // Estado de la firma y nombre del rector
-    const prev = document.getElementById('bol-firma-preview')
-    prev.innerHTML = data.rectorFirma
-      ? '<div style="background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);padding:12px;font-size:12px;color:var(--ink-500);display:flex;align-items:center;gap:12px;">Firma actual: <img src="' + esc(data.rectorFirma) + '" style="max-height:50px;max-width:160px;object-fit:contain;border:1px solid var(--line);border-radius:4px;padding:2px;background:#fff;"></div>'
-      : '<div style="font-size:12px;color:var(--ink-400);">Sin firma configurada — el boletín muestra solo el nombre en texto.</div>'
+    // Estado del nombre del rector
     if (data.rectorNombre) {
       document.getElementById('bol-rector-nombre').value = data.rectorNombre
     }
@@ -4635,46 +4621,6 @@ async function adminRetirarBoletin(id, periodo, curso) {
       })
       if (res.ok) { mostrarToast('ok', 'Boletines retirados'); cargarAdminBoletines() }
       else { const d = await res.json(); mostrarToast('error', d.error || 'Error') }
-    } catch (e) { mostrarToast('error', 'Error de conexión') }
-  })
-}
-
-async function adminGuardarFirmaRector() {
-  const inp = document.getElementById('bol-firma-archivo')
-  if (!inp.files || !inp.files[0]) return mostrarToast('error', 'Elige una imagen de la firma')
-  const btn = document.getElementById('bol-btn-firma')
-  const original = btn.innerHTML
-  btn.disabled = true
-  btn.innerHTML = '<span class="spinner"></span>Guardando...'
-  try {
-    const fd = new FormData()
-    fd.append('firma', inp.files[0])
-    const res = await fetch(API + '/api/admin/rector-firma', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + currentToken },
-      body: fd
-    })
-    const data = await res.json()
-    if (res.ok) { mostrarToast('ok', data.mensaje); inp.value = ''; cargarAdminBoletines() }
-    else mostrarToast('error', data.error || 'Error al guardar la firma')
-  } catch (e) {
-    mostrarToast('error', 'Error de conexión')
-  } finally {
-    btn.disabled = false
-    btn.innerHTML = original
-  }
-}
-
-async function adminEliminarFirmaRector() {
-  confirmarAccion('¿Eliminar la firma del rector? El boletín quedará con la línea sola.', async (ok) => {
-    if (!ok) return
-    try {
-      const res = await fetch(API + '/api/admin/rector-firma', {
-        method: 'DELETE',
-        headers: { 'Authorization': 'Bearer ' + currentToken }
-      })
-      if (res.ok) { mostrarToast('ok', 'Firma eliminada'); cargarAdminBoletines() }
-      else mostrarToast('error', 'Error al eliminar')
     } catch (e) { mostrarToast('error', 'Error de conexión') }
   })
 }
@@ -4727,6 +4673,19 @@ async function adminImprimirBoletinesCurso() {
   let todos = []
   let offset = 0
   let total = 0
+  let avisos = []
+
+  // Avisos antes de imprimir (no bloquean): sin director de grupo, sin rector
+  try {
+    const info = await fetch(API + '/api/admin/boletines/curso?curso=' + encodeURIComponent(curso) + '&periodo=' + periodo + '&offset=0&limite=1&anio=' + new Date().getFullYear(), { headers: { 'Authorization': 'Bearer ' + currentToken } })
+    if (info.ok) {
+      const primerBoletin = (await info.json()).boletines[0]
+      if (primerBoletin) {
+        if (!primerBoletin.directorNombre) avisos.push('El curso ' + curso + ' no tiene director de grupo asignado')
+        if (!primerBoletin.rectorNombre) avisos.push('No has configurado el nombre del rector')
+      }
+    }
+  } catch (e) { /* si falla, los avisos se omiten */ }
   let falloEn = null
   try {
     // Pide lotes en secuencia hasta que siguienteOffset sea null
@@ -4790,6 +4749,12 @@ async function adminImprimirBoletinesCurso() {
   doc.innerHTML = html
   vista.classList.add('abierto')
   // Mostrar el botón de imprimir (el selector no aplica en masiva)
+  // Mostrar avisos visibles (no bloquean la impresión)
+  if (avisos.length) {
+    for (const av of avisos) {
+      mostrarToast('error', '\u26a0 ' + av)
+    }
+  }
   setTimeout(() => { window.print() }, 500)
   prog.textContent = ''
   prog.style.display = 'none'

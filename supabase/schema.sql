@@ -292,6 +292,10 @@ CREATE TABLE IF NOT EXISTS config_institucion (
     valor TEXT
 );
 
+-- Un solo director de grupo por curso (defensa en profundidad: la app
+-- ya valida con 409, pero la BD también lo garantiza)
+CREATE UNIQUE INDEX IF NOT EXISTS directores_grupo_curso_unico ON directores_grupo (curso);
+
 -- Auditoría de impresión masiva de boletines (datos de menores)
 CREATE TABLE IF NOT EXISTS boletines_impresiones_log (
     id TEXT PRIMARY KEY,
