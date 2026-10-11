@@ -2066,14 +2066,15 @@ async function refrescarPanelDocente() {
 function doLogout() {
   document.getElementById('app').classList.remove('wide-mode')
   if (_refrescoDocenteTimer) { clearInterval(_refrescoDocenteTimer); _refrescoDocenteTimer = null }
-  // Los cambios pendientes se QUEDAN en localStorage (por si fue un logout
-  // accidental); la sesión sí se borra
+  // SEGURIDAD (datos de menores): al cerrar sesión se limpian TODOS los
+  // cambios pendientes y descartados del navegador — no deben quedar
+  // notas de estudiantes en localStorage tras el logout
+  limpiarTodosLosCambios()
   borrarSesionLocal()
   currentToken = null
   currentUser = null
   studentsData = []
   ccolumnas = {}
-  cambiosGrid = {}
   expandedStudent = null
   currentObsEstudianteId = null
   currentObsMateriaId = ''
@@ -2609,6 +2610,9 @@ let _guardandoGrid = false
 let _encadenarManual = false
 let _ultimoGuardadoOk = null
 let _clavesFallidas = new Set()
+// Items descartados por período cerrado: el docente puede verlos pero
+// ya no se reintentan (fueron de un período que se cerró entre sesiones)
+let _descartadosPeriodo = []
 
 function claveDeItem(it) {
   return it.estudianteId + '_' + it.tipo + '_' + (it.titulo || '')
@@ -2649,10 +2653,17 @@ function actualizarIndicadorGuardado() {
     el.style.color = 'var(--amber-700)'
     return
   }
-  const n = Object.keys(cambiosGrid).length
+  // El indicador cuenta solo los items del PERÍODO ACTUAL: los de otros
+  // períodos abiertos seguirán pendientes pero no confunden al docente
+  const n = Object.values(cambiosGrid).filter(i => i.periodo === currentPeriodo).length
   if (n > 0) {
     el.textContent = 'Cambios sin guardar (' + n + ')'
     el.style.color = 'var(--amber-700)'
+    return
+  }
+  if (_descartadosPeriodo.length > 0) {
+    el.textContent = _descartadosPeriodo.length + ' cambio(s) descartado(s) de período cerrado'
+    el.style.color = 'var(--red-700)'
     return
   }
   if (_clavesFallidas.size > 0) {
@@ -2732,7 +2743,29 @@ async function guardarGrid(silencioso) {
           _clavesFallidas.delete(clave)
         }
       }
-      for (const f of fallidos) _clavesFallidas.add(f.clave)
+      for (const f of fallidos) {
+        // PERIODO_CERRADO: el item JAMAS va a pasar en un reintento —
+        // se retira de cambiosGrid y pasa a la lista de descartados
+        // para que el docente pueda verlo
+        if (f.codigo === 'PERIODO_CERRADO') {
+          const pendiente = cambiosGrid[f.clave]
+          if (pendiente) {
+            _descartadosPeriodo.push({
+              clave: f.clave,
+              periodo: f.periodo,
+              materiaId: pendiente.materiaId,
+              estudianteId: pendiente.estudianteId,
+              titulo: pendiente.titulo,
+              valor: pendiente.valor,
+              _delete: !!pendiente._delete,
+            })
+            delete cambiosGrid[f.clave]
+          }
+          _clavesFallidas.delete(f.clave)
+        } else {
+          _clavesFallidas.add(f.clave)
+        }
+      }
 
       // Carrera 2: la copia local refleja lo que el servidor aceptó (con el
       // valor ENVIADO — el re-editado queda como pendiente encima)
@@ -2742,9 +2775,17 @@ async function guardarGrid(silencioso) {
       _ultimoGuardadoOk = new Date()
 
       const hayPendientes = Object.keys(cambiosGrid).length > 0
-      if (fallidos.length > 0) {
-        const primerError = fallidos[0].error || 'Error desconocido'
-        mostrarToast('error', fallidos.length + ' nota(s) no se guardaron: ' + primerError)
+      const cerradosCount = fallidos.filter(f => f.codigo === 'PERIODO_CERRADO').length
+      const otrosFallidos = fallidos.filter(f => f.codigo !== 'PERIODO_CERRADO')
+
+      if (cerradosCount > 0) {
+        const periodosCerradosSet = [...new Set(fallidos.filter(f => f.codigo === 'PERIODO_CERRADO').map(f => f.periodo))]
+        const msg = cerradosCount + ' cambio(s) del per\u00edodo' + (periodosCerradosSet.length > 1 ? 's ' : ' ') +
+          periodosCerradosSet.join(', ') + ' fueron descartados (per\u00edodo cerrado). '
+        mostrarToast('error', msg + (otrosFallidos.length ? otrosFallidos.length + ' m\u00e1s con error.' : 'Los dem\u00e1s cambios se guardaron.'))
+      } else if (otrosFallidos.length > 0) {
+        const primerError = otrosFallidos[0].error || 'Error desconocido'
+        mostrarToast('error', otrosFallidos.length + ' nota(s) no se guardaron: ' + primerError)
       } else if (!silencioso) {
         mostrarToast('ok', data.advertencia || (hayPendientes ? 'Guardado — quedan ' + Object.keys(cambiosGrid).length + ' cambio(s) recientes' : 'Todos los cambios guardados'))
       }
@@ -6108,20 +6149,83 @@ async function modalObsGuardarEdicion(id) {
 // al volver se restauran en la tabla y se reenvían solos.
 // ─────────────────────────────────────────────────────
 const CLAVE_SESION = 'sc-sesion'
-const CLAVE_CAMBIOS = 'sc-cambios-pendientes'
+// CAMBIOS PENDIENTES namespaced por usuario: los items de un docente
+// nunca contaminan la planilla de otro. Al cerrar sesión se limpian.
+function claveCambiosUsuario() {
+  try {
+    const s = JSON.parse(localStorage.getItem(CLAVE_SESION) || 'null')
+    return s && s.usuario && s.usuario.id ? CLAVE_CAMBIOS + ':' + s.usuario.id : CLAVE_CAMBIOS
+  } catch (e) { return CLAVE_CAMBIOS }
+}
 
 function guardarCambiosLocal() {
-  try { localStorage.setItem(CLAVE_CAMBIOS, JSON.stringify(cambiosGrid)) } catch (e) { /* lleno o bloqueado */ }
+  try { localStorage.setItem(claveCambiosUsuario(), JSON.stringify(cambiosGrid)) } catch (e) { /* lleno o bloqueado */ }
 }
 
 function cargarCambiosLocal() {
-  try { return JSON.parse(localStorage.getItem(CLAVE_CAMBIOS) || '{}') } catch (e) { return {} }
+  try { return JSON.parse(localStorage.getItem(claveCambiosUsuario()) || '{}') } catch (e) { return {} }
 }
 
-// Al cargar la página: recupera los cambios pendientes del último docente
-function restaurarCambiosLocal() {
+// Limpia TODOS los cambios pendientes + descartados de TODOS los usuarios
+// (notas de menores: no deben quedar en el navegador tras cerrar sesión)
+function limpiarTodosLosCambios() {
+  try {
+    const claves = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (k && k.startsWith(CLAVE_CAMBIOS)) claves.push(k)
+    }
+    for (const k of claves) localStorage.removeItem(k)
+  } catch (e) { /* bloqueado */ }
+  cambiosGrid = {}
+  _descartadosPeriodo = []
+  _clavesFallidas.clear()
+}
+
+// Al cargar la página: recupera los cambios pendientes del último docente.
+// Los items de períodos cerrados se descartan de entrada (nunca van a
+// poder guardarse) y pasan a la lista de descartados con aviso visible.
+async function restaurarCambiosLocal() {
   const pendientes = cargarCambiosLocal()
-  if (pendientes && Object.keys(pendientes).length) cambiosGrid = pendientes
+  if (!pendientes || !Object.keys(pendientes).length) return
+
+  // Filtrar items de períodos cerrados usando la config de períodos
+  const anio = new Date().getFullYear()
+  let periodosCerrados = new Set()
+  try {
+    const res = await fetch(API + '/api/config/periodos?anio=' + anio)
+    if (res.ok) {
+      const cfg = await res.json()
+      for (const p of cfg) {
+        if (p.abierto === 0 || p.abierto === false) periodosCerrados.add(p.periodo)
+      }
+    }
+  } catch (e) { /* sin config: no filtrar */ }
+
+  if (periodosCerrados.size > 0) {
+    const conservar = {}
+    let descartadosCount = 0
+    for (const [clave, item] of Object.entries(pendientes)) {
+      if (item.periodo && periodosCerrados.has(item.periodo)) {
+        _descartadosPeriodo.push({
+          clave, periodo: item.periodo, materiaId: item.materiaId,
+          estudianteId: item.estudianteId, titulo: item.titulo,
+          valor: item.valor, _delete: !!item._delete,
+        })
+        descartadosCount++
+      } else {
+        conservar[clave] = item
+      }
+    }
+    cambiosGrid = conservar
+    if (descartadosCount > 0) {
+      const periodosSet = [...new Set(_descartadosPeriodo.map(d => d.periodo))]
+      mostrarToast('error', descartadosCount + ' cambio(s) pendiente(s) de per\u00edodo(s) cerrado(s) ' + periodosSet.join(', ') + ' fueron descartados.')
+    }
+  } else {
+    cambiosGrid = pendientes
+  }
+  guardarCambiosLocal()
 }
 
 // Aplica visualmente los cambios pendientes sobre la tabla recién renderizada

@@ -580,7 +580,7 @@ router.post('/items', async (req, res) => {
       return res.status(404).json({ error: 'Calificación no encontrada' })
     }
     if (!(await periodoAbierto(calInfo.anio, calInfo.sede, calInfo.periodo))) {
-      return res.status(403).json({ error: 'Este período está cerrado para esta sede' })
+      return res.status(403).json({ codigo: 'PERIODO_CERRADO', periodo: calInfo.periodo, error: 'Este período (' + calInfo.periodo + ') está cerrado para esta sede' })
     }
 
     const item = await prisma.notaItem.create({
@@ -669,7 +669,7 @@ router.put('/items/:id', async (req, res) => {
       'SELECT c.periodo, c.anio, e.sede FROM calificaciones c JOIN estudiantes e ON e.id = c.estudianteId WHERE c.id = ?'
     ).get(itemExistente.calificacionId)
     if (calInfo && !(await periodoAbierto(calInfo.anio, calInfo.sede, calInfo.periodo))) {
-      return res.status(403).json({ error: 'Este período está cerrado para esta sede' })
+      return res.status(403).json({ codigo: 'PERIODO_CERRADO', periodo: calInfo.periodo, error: 'Este período (' + calInfo.periodo + ') está cerrado para esta sede' })
     }
 
     const updateData = {}
@@ -733,7 +733,7 @@ router.delete('/items/:id', async (req, res) => {
       'SELECT c.periodo, c.anio, e.sede FROM calificaciones c JOIN estudiantes e ON e.id = c.estudianteId WHERE c.id = ?'
     ).get(item.calificacionId)
     if (calInfo && !(await periodoAbierto(calInfo.anio, calInfo.sede, calInfo.periodo))) {
-      return res.status(403).json({ error: 'Este período está cerrado para esta sede' })
+      return res.status(403).json({ codigo: 'PERIODO_CERRADO', periodo: calInfo.periodo, error: 'Este período (' + calInfo.periodo + ') está cerrado para esta sede' })
     }
 
     await prisma.notaItem.delete({ where: { id } })
@@ -783,7 +783,7 @@ router.put('/guardar', async (req, res) => {
     }
 
     if (!(await periodoAbierto(parseInt(anio), sede, parseInt(periodo)))) {
-      return res.status(403).json({ error: 'Este período está cerrado para esta sede' })
+      return res.status(403).json({ codigo: 'PERIODO_CERRADO', periodo: parseInt(periodo), error: 'Este período (' + periodo + ') está cerrado para esta sede' })
     }
 
     let calificacion = await prisma.calificacion.findUnique({
@@ -1004,7 +1004,7 @@ router.post('/bulk-update', async (req, res) => {
         'SELECT c.periodo, c.anio, e.sede FROM calificaciones c JOIN estudiantes e ON e.id = c.estudianteId WHERE c.id = ?'
       ).get(calificacionId)
       if (!calInfo || !(await periodoAbierto(calInfo.anio, calInfo.sede, calInfo.periodo))) {
-        resultados.push({ calificacionId, tipo, ignorado: true, error: 'Este período está cerrado para esta sede' })
+        resultados.push({ calificacionId, tipo, ignorado: true, codigo: 'PERIODO_CERRADO', periodo: calInfo ? calInfo.periodo : null, error: 'Este período (' + (calInfo ? calInfo.periodo : '?') + ') está cerrado para esta sede' })
         continue
       }
 
@@ -1333,7 +1333,7 @@ router.post('/guardar-grid', async (req, res) => {
         memoPeriodo.set(clavePeriodo, await periodoAbierto(a, est.sede, p))
       }
       if (!memoPeriodo.get(clavePeriodo)) {
-        fallidos.push({ clave: claveDe(item), error: 'El período ' + p + ' está cerrado para esta sede' })
+        fallidos.push({ clave: claveDe(item), codigo: 'PERIODO_CERRADO', periodo: p, error: 'El período ' + p + ' está cerrado para esta sede' })
         continue
       }
 

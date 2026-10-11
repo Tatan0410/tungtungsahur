@@ -271,3 +271,41 @@ test('M10: PUT /estudiantes/:id/activo usa el usuarioId correcto', async () => {
   const u2 = db.prepare('SELECT activo FROM usuarios WHERE id = ?').get(estPrueba.usuarioId)
   assert.equal(u2.activo, 1, 'el USUARIO quedó reactivado')
 })
+
+// ── H4 batch mixto: items de P4 (abierto) + P1 (cerrado) en guardar-grid ──
+
+test('H4 batch mixto: guardar-grid con items P4 (abierto) + P1 (cerrado) → P4 guardados, P1 fallidos con PERIODO_CERRADO', async () => {
+  const mat = db.prepare('SELECT id FROM materias LIMIT 1').get()
+  const r = await api.post('/api/notas/guardar-grid', {
+    token: tokenAdmin,
+    body: { items: [
+      // P4 (cerrado en el fixture) → falla
+      { estudianteId: estPrueba.id, materiaId: mat.id, periodo: 4, anio, tipo: 'ACTIVIDAD', titulo: 'Stale P4', valor: 2.0 },
+      // P1 (abierto en el fixture) → pasa
+      { estudianteId: estPrueba.id, materiaId: mat.id, periodo: 1, anio, tipo: 'ACTIVIDAD', titulo: 'Nuevo P1 ' + Date.now(), valor: 4.0 },
+    ] },
+  })
+  assert.equal(r.status, 200)
+  assert.equal(r.data.guardados.length, 1, 'el item del período ABIERTO se guarda')
+  assert.equal(r.data.fallidos.length, 1, 'el item del período CERRADO falla')
+
+  const f = r.data.fallidos[0]
+  assert.equal(f.codigo, 'PERIODO_CERRADO', 'el fallido trae el código estructurado')
+  assert.equal(f.periodo, 4, 'el fallido nombra el período REAL del item (4)')
+  assert.match(f.error, /período 4/)
+
+  // El item del período abierto SÍ se guardó
+  const guardado = db.prepare("SELECT COUNT(*) c FROM notas_items WHERE calificacionid = ? AND valor = 4.0").get(calAbierta)
+  assert.equal(Number(guardado.c), 1, 'el item del período abierto está en la BD')
+
+  // El item del período cerrado NO está en la BD (usar la descripción única del batch mixto)
+  const noGuardado = db.prepare("SELECT COUNT(*) c FROM notas_items WHERE calificacionid = ? AND descripcion = ?").get(calCerrada, 'Stale P4')
+  assert.equal(Number(noGuardado.c), 0, 'el item del período cerrado NO está en la BD')
+
+  // Limpiar el item guardado
+  const limpiar = db.prepare("DELETE FROM notas_items WHERE calificacionid = ? AND valor = 4.0 AND descripcion LIKE 'Nuevo P1%'").run(calAbierta)
+  // Limpiar cualquier definitiva calculada
+  if (limpiar.changes > 0) {
+    db.prepare('UPDATE calificaciones SET definitiva = NULL WHERE id = ?').run(calAbierta)
+  }
+})

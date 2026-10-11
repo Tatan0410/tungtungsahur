@@ -291,6 +291,7 @@ function contextoGuardarGrid(fetchStub) {
     let _encadenarManual = false
     let _ultimoGuardadoOk = null
     let _clavesFallidas = new Set()
+    let _descartadosPeriodo = []
     const API = ''
     const currentToken = 'tok'
     const currentUser = null
@@ -320,7 +321,7 @@ function contextoGuardarGrid(fetchStub) {
     ${extraerFuncion('guardarGrid')}
     ${extraerFuncion('valorGuardadoCelda')}
     ${extraerFuncion('marcarCambio')}
-    return { guardarGrid, marcarCambio, cambiosGrid, studentsData, toasts, confirmaciones, fetches: () => _fetches }
+    return { guardarGrid, marcarCambio, cambiosGrid, studentsData, toasts, confirmaciones, fetches: () => _fetches, descartados: () => _descartadosPeriodo }
   `)(fetchStub)
 }
 
@@ -383,15 +384,51 @@ test('carrera 2: tras guardar SIN reload, vaciar la celda recién guardada PIDE 
   assert.match(ctx.confirmaciones[0].titulo, /Borrar la nota/)
 })
 
-test('item fallido: queda pendiente, marcado y con aviso visible (incluso en autosave)', async () => {
+test('item fallido (sin código): queda pendiente, marcado y con aviso visible', async () => {
   const ctx = contextoGuardarGrid(() => Promise.resolve({
     ok: true,
-    json: async () => ({ guardados: [], fallidos: [{ clave: 'e1_ACTIVIDAD_Tarea', error: 'El período 1 está cerrado para esta sede' }] }),
+    json: async () => ({ guardados: [], fallidos: [{ clave: 'e1_ACTIVIDAD_Tarea', error: 'Error de conexión con el servidor' }] }),
   }))
   ctx.cambiosGrid['e1_ACTIVIDAD_Tarea'] = { estudianteId: 'e1', tipo: 'ACTIVIDAD', titulo: 'Tarea', valor: 3 }
-  await ctx.guardarGrid(true) // autosave silencioso: el fallo TAMBIÉN se avisa
-  assert.ok(ctx.cambiosGrid['e1_ACTIVIDAD_Tarea'], 'el item fallido queda pendiente para reintentar')
+  await ctx.guardarGrid(true)
+  assert.ok(ctx.cambiosGrid['e1_ACTIVIDAD_Tarea'], 'el item fallido SIN PERIODO_CERRADO queda pendiente')
   assert.ok(ctx.toasts.some(t => /no se guardaron/.test(t)), 'aviso visible al docente')
+})
+
+test('PERIODO_CERRADO: el item se retira de cambiosGrid y pasa a descartados (no queda "sin guardar")', async () => {
+  const ctx = contextoGuardarGrid(() => Promise.resolve({
+    ok: true,
+    json: async () => ({
+      guardados: ['e2_EVALUACION_'],
+      fallidos: [{ clave: 'e1_ACTIVIDAD_Stale', codigo: 'PERIODO_CERRADO', periodo: 1, error: 'El período 1 está cerrado para esta sede' }],
+    }),
+  }))
+  ctx.cambiosGrid['e1_ACTIVIDAD_Stale'] = { estudianteId: 'e1', tipo: 'ACTIVIDAD', titulo: 'Stale', valor: 2.0, periodo: 1, materiaId: 'm1' }
+  ctx.cambiosGrid['e2_EVALUACION_'] = { estudianteId: 'e2', tipo: 'EVALUACION', titulo: '', valor: 4.0, periodo: 4, materiaId: 'm1' }
+  ctx.studentsData.push({ estudianteId: 'e2', nombre: 'MARIA', grupos: {} })
+  await ctx.guardarGrid(true)
+  // El item PERIODO_CERRADO ya NO está en cambiosGrid (se descartó)
+  assert.ok(!ctx.cambiosGrid['e1_ACTIVIDAD_Stale'], 'el item de período cerrado se retiró de cambiosGrid')
+  // El item guardado tampoco (se guardó)
+  assert.ok(!ctx.cambiosGrid['e2_EVALUACION_'], 'el item guardado se retiró')
+  // El toast menciona el descarte y el período
+  assert.ok(ctx.toasts.some(t => /descartado/.test(t) && /per\u00edodo/.test(t)), 'el toast dice cuántos y de qué período: ' + JSON.stringify(ctx.toasts))
+  assert.ok(ctx.toasts.some(t => /1 cambio/.test(t) || /per\u00edodo 1/.test(t)), 'el toast nombra el período 1')
+})
+
+test('logout limpia localStorage: cambiosGrid y descartados no quedan en el navegador', () => {
+  const html = extraerFuncion('doLogout')
+  assert.match(html, /limpiarTodosLosCambios\(\)/, 'el logout llama limpiarTodosLosCambios')
+  const limpiar = extraerFuncion('limpiarTodosLosCambios')
+  assert.match(limpiar, /localStorage\.removeItem/, 'limpiar borra el localStorage')
+  assert.match(limpiar, /_descartadosPeriodo = \[\]/, 'limpiar vacía descartados')
+  assert.match(limpiar, /cambiosGrid = \{\}/, 'limpiar vacía cambiosGrid')
+})
+
+test('CLAVE_CAMBIOS está namespaced por usuario', () => {
+  const fn = extraerFuncion('claveCambiosUsuario')
+  assert.match(fn, /s\.usuario\.id/, 'la clave incluye el id del usuario')
+  assert.match(fn, /CLAVE_CAMBIOS \+ ':'/, 'el namespace usa el prefijo sc-cambios-pendientes:<userId>')
 })
 
 // ═══════════════════════════════════════════════════════════════
