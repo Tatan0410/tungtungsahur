@@ -2,7 +2,18 @@ const { test, before, after } = require('node:test')
 const assert = require('node:assert/strict')
 const { arrancarServidor } = require('./helpers/servidor')
 const { crearApi, login, ADMIN, DOCENTE } = require('./helpers/api')
+require('dotenv').config() // mismo JWT_SECRET que el servidor de test (.env)
+const { hashCodigo } = require('../src/routes/auth')
 const bcrypt = require('bcryptjs')
+
+// El código se guarda hasheado (HMAC): derivar el texto de 6 dígitos
+// probando el espacio completo contra el hash almacenado (~2s por código).
+function codigoDesdeHash(hashGuardado) {
+  for (let c = 100000; c < 1000000; c++) {
+    if (hashCodigo(String(c)) === hashGuardado) return String(c)
+  }
+  return null
+}
 
 let srv, api, db, tokenAdmin, tokenDocente, idAdmin, tokenEstudiante, correoEstudiante
 
@@ -107,8 +118,11 @@ test('flujo del código: pedir código (admin con correo), mi-datos cambia docum
     "SELECT codigo FROM password_resets WHERE usuarioId = ? AND codigo NOT LIKE 'INVALID-%' AND usado = 0 ORDER BY creadoEn DESC, rowid DESC LIMIT 1"
   ).get(idAdmin)
   assert.ok(real, 'debe existir el código real')
+  assert.match(real.codigo, /^[0-9a-f]{64}$/, 'el código debe almacenarse hasheado (HMAC)')
+  const codigoReal = codigoDesdeHash(real.codigo)
+  assert.ok(codigoReal, 'debe poder derivarse el código desde el hash')
   const ok = await api.put('/api/auth/admin/mi-datos', {
-    token: tokenAdmin, body: { codigo: real.codigo, nuevoDocumento: '99999998' },
+    token: tokenAdmin, body: { codigo: codigoReal, nuevoDocumento: '99999998' },
   })
   assert.equal(ok.status, 200)
   assert.equal(ok.data.documento, '99999998')
@@ -130,8 +144,10 @@ test('flujo del código: pedir código (admin con correo), mi-datos cambia docum
   const real2 = db.prepare(
     "SELECT codigo FROM password_resets WHERE usuarioId = ? AND codigo NOT LIKE 'INVALID-%' AND usado = 0 ORDER BY creadoEn DESC, rowid DESC LIMIT 1"
   ).get(idAdmin)
+  const codigoReal2 = codigoDesdeHash(real2.codigo)
+  assert.ok(codigoReal2, 'debe poder derivarse el segundo código desde el hash')
   const ok2 = await api.put('/api/auth/admin/mi-datos', {
-    token: nuevo.data.token, body: { codigo: real2.codigo, nuevoDocumento: ADMIN.documento },
+    token: nuevo.data.token, body: { codigo: codigoReal2, nuevoDocumento: ADMIN.documento },
   })
   assert.equal(ok2.status, 200)
   assert.equal(ok2.data.documento, ADMIN.documento)

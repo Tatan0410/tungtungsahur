@@ -80,10 +80,10 @@ before(async () => {
 
   // Docente "ajeno" (sin asignación a 1104) + su observación
   const usuAjeno = crypto.randomUUID()
-  db.prepare("INSERT INTO usuarios (id, correo, password, rol, nombre, documento, activo) VALUES (?, NULL, ?, 'DOCENTE', 'DOCENTE AJENO TEST', '97000001', 1)").run(usuAjeno, bcrypt.hashSync('Ajeno123', 10))
+  db.prepare("INSERT INTO usuarios (id, correo, password, rol, nombre, documento, activo) VALUES (?, NULL, ?, 'DOCENTE', 'DOCENTE AJENO TEST', '88000601', 1)").run(usuAjeno, bcrypt.hashSync('Ajeno123', 10))
   docAjenoId = crypto.randomUUID()
   db.prepare('INSERT INTO docentes (id, usuarioId) VALUES (?, ?)').run(docAjenoId, usuAjeno)
-  tokDocAjeno = await login(api, '97000001', 'Ajeno123')
+  tokDocAjeno = await login(api, '88000601', 'Ajeno123')
   obsAjena = crypto.randomUUID()
   db.prepare("INSERT INTO observaciones (id, estudianteId, docenteId, materiaId, texto, tipo, fecha) VALUES (?, ?, ?, ?, 'Obs del ajeno', 'GENERAL', '2026-10-01')")
     .run(obsAjena, est.id, docAjenoId, mat.id)
@@ -104,7 +104,7 @@ after(async () => {
   // Restaurar el período 4 a abierto
   try { db.prepare('UPDATE periodos_config SET abierto = 1 WHERE anio = ? AND periodo = 4').run(anio) } catch (e) {}
   // Limpiar docente ajeno
-  try { db.prepare("DELETE FROM usuarios WHERE documento = '97000001'").run() } catch (e) {}
+  try { db.prepare("DELETE FROM usuarios WHERE documento = '88000601'").run() } catch (e) {}
   db.close()
   await srv.cerrar()
 })
@@ -307,5 +307,126 @@ test('H4 batch mixto: guardar-grid con items P4 (abierto) + P1 (cerrado) → P4 
   // Limpiar cualquier definitiva calculada
   if (limpiar.changes > 0) {
     db.prepare('UPDATE calificaciones SET definitiva = NULL WHERE id = ?').run(calAbierta)
+  }
+})
+
+// ── Fase 2: validación estricta de la nota en guardar-grid ──
+// Antes el batch usaba parseFloat: "3<img>" y "3,5" pasaban y se
+// guardaban SILENCIOSAMENTE como 3. Ahora rige normalizarYValidarNota
+// en TODA la tanda (como /items y /bulk-update) y se persiste el
+// número ya normalizado, nunca el texto crudo.
+
+test('Fase 2 grid: "3<img>" → 400 sin guardar; "3,5" → 200 como 3.5; 5.1 → 400', async () => {
+  // Estudiante ficticio (curso 9999) en un año aislado: cero contacto con datos reales
+  const anioAislado = anio + 50
+  const usuId = crypto.randomUUID()
+  db.prepare("INSERT INTO usuarios (id, correo, password, rol, nombre, documento, activo) VALUES (?, NULL, ?, 'ESTUDIANTE', 'EST GRID FASE2', '88000456', 1)").run(usuId, bcrypt.hashSync('Fase2Grid456', 10))
+  const estId = crypto.randomUUID()
+  db.prepare('INSERT INTO estudiantes (id, usuarioId, documento, codigo, sede, jornada, grado, curso) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(estId, usuId, '88000456', '88000456', 'PPAL - TRIUNFO', 'MAÑANA', 9, '9999')
+  const matId = db.prepare('SELECT id FROM materias LIMIT 1').get().id
+  // Contenedor pre-creado (patrón del before de este archivo): el ADMIN no
+  // tiene docenteId y calificaciones.docenteId es NOT NULL, así que el
+  // admin solo puede ACTUALIZAR calificaciones existentes, no crearlas
+  const calId = crypto.randomUUID()
+  db.prepare('INSERT INTO calificaciones (id, estudianteId, materiaId, docenteId, periodo, anio, definitiva, actualizadoEn) VALUES (?, ?, ?, ?, 1, ?, NULL, CURRENT_TIMESTAMP)')
+    .run(calId, estId, matId, db.prepare('SELECT id FROM docentes LIMIT 1').get().id, anioAislado)
+  const item = valor => ({ estudianteId: estId, materiaId: matId, periodo: 1, anio: anioAislado, tipo: 'ACTIVIDAD', titulo: 'Fase2 Grid', valor })
+
+  try {
+    // "3<img>": número con HTML pegado → 400, la tanda entera se rechaza
+    const rXss = await api.post('/api/notas/guardar-grid', { token: tokenAdmin, body: { items: [item('3<img>')] } })
+    assert.equal(rXss.status, 400, 'el valor con HTML se rechaza')
+
+    // "3,5": coma decimal → 200 y guardado como 3.5 (antes: parseFloat → 3)
+    const rComa = await api.post('/api/notas/guardar-grid', { token: tokenAdmin, body: { items: [item('3,5')] } })
+    assert.equal(rComa.status, 200)
+    assert.equal(rComa.data.guardados.length, 1)
+    const fila = db.prepare("SELECT valor FROM notas_items WHERE descripcion = 'Fase2 Grid'").get()
+    assert.ok(fila, 'la nota con coma decimal se guardó')
+    assert.equal(fila.valor, 3.5, 'se persiste el número normalizado (3.5), no el texto ni 3')
+
+    // 5.1: fuera de rango → 400
+    const rRango = await api.post('/api/notas/guardar-grid', { token: tokenAdmin, body: { items: [item(5.1)] } })
+    assert.equal(rRango.status, 400)
+
+    // Los rechazados no dejaron rastro: solo existe la nota 3.5
+    const total = db.prepare("SELECT COUNT(*) c FROM notas_items WHERE descripcion = 'Fase2 Grid'").get()
+    assert.equal(Number(total.c), 1, '"3<img>" y 5.1 no llegaron a la BD')
+  } finally {
+    db.prepare("DELETE FROM notas_items WHERE descripcion = 'Fase2 Grid'").run()
+    db.prepare('DELETE FROM calificaciones WHERE estudianteid = ?').run(estId)
+    db.prepare('DELETE FROM estudiantes WHERE id = ?').run(estId)
+    db.prepare('DELETE FROM usuarios WHERE id = ?').run(usuId)
+  }
+})
+
+// ═══════════════════════════════════════════════════════════════
+// SEGURIDAD Fase 2: CORS fail-closed, HSTS, M12 y M13
+// ═══════════════════════════════════════════════════════════════
+
+// El servidor de test arranca con ALLOWED_ORIGINS='http://localhost:3000'
+test('CORS fail-closed: un Origin ajeno NO recibe Access-Control-Allow-Origin', async () => {
+  const r = await fetch(srv.base + '/api/ping', {
+    headers: { Origin: 'https://evil.example.com' },
+  })
+  assert.equal(r.status, 200, 'la petición llega (CORS no bloquea el servidor)')
+  assert.ok(!r.headers.get('access-control-allow-origin'),
+    'un origen NO autorizado NO debe recibir el header CORS (fail-closed)')
+})
+
+test('CORS fail-closed: el preflight de un Origin ajeno no se autoriza', async () => {
+  const r = await fetch(srv.base + '/api/ping', {
+    method: 'OPTIONS',
+    headers: {
+      Origin: 'https://evil.example.com',
+      'Access-Control-Request-Method': 'GET',
+    },
+  })
+  assert.ok(!r.headers.get('access-control-allow-origin'),
+    'el preflight de un origen ajeno NO recibe autorización')
+})
+
+test('HSTS: todas las respuestas llevan Strict-Transport-Security sin includeSubDomains', async () => {
+  const r = await fetch(srv.base + '/api/ping')
+  const hsts = r.headers.get('strict-transport-security')
+  assert.ok(hsts, 'debe llevar el header HSTS')
+  assert.match(hsts, /max-age=31536000/, 'max-age de 1 año')
+  assert.ok(!/includeSubDomains/i.test(hsts), 'sin includeSubDomains (decisión del colegio)')
+})
+
+test('M12: nivelDeDesempeno existe UNA sola vez y devuelve MAYÚSCULAS', async () => {
+  const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'src', 'routes', 'notas.js'), 'utf8')
+  const definiciones = [...src.matchAll(/function nivelDeDesempeno\(/g)]
+  assert.equal(definiciones.length, 1, 'debe haber EXACTAMENTE una definición (la de MAYÚSCULAS, que es la vigente por hoisting)')
+  const cuerpo = src.slice(definiciones[0].index)
+  assert.match(cuerpo.slice(0, 300), /'BAJO'/, 'la definición vigente es la de MAYÚSCULAS')
+})
+
+test('M13: /reporte-corte devuelve fechaCorte real (awaits en las queries)', async () => {
+  // Director de grupo del curso 1104 con un docente nuevo
+  const usuDir = crypto.randomUUID()
+  db.prepare("INSERT INTO usuarios (id, correo, password, rol, nombre, documento, activo) VALUES (?, NULL, ?, 'DOCENTE', 'DIRECTOR TEST', '88000602', 1)").run(usuDir, bcrypt.hashSync('Director123', 10))
+  const dirId = crypto.randomUUID()
+  db.prepare('INSERT INTO docentes (id, usuarioId) VALUES (?, ?)').run(dirId, usuDir)
+  try {
+    db.prepare('DELETE FROM directores_grupo WHERE curso = ?').run('1104')
+    db.prepare('INSERT INTO directores_grupo (id, docenteId, curso) VALUES (?, ?, ?)').run(crypto.randomUUID(), dirId, '1104')
+
+    // sede real del curso + fecha de corte del período 1
+    const sede = db.prepare('SELECT sede FROM estudiantes WHERE curso = ? LIMIT 1').get('1104').sede
+    const fechaFutura = new Date(Date.now() + 7 * 86400000).toISOString()
+    db.prepare('UPDATE periodos_config SET fecha_corte = ? WHERE sede = ? AND periodo = 1 AND anio = ?').run(fechaFutura, sede, anio)
+
+    const tokDir = await login(api, '88000602', 'Director123')
+    const r = await api.get(`/api/notas/reporte-corte?curso=1104&periodo=1&anio=${anio}`, { token: tokDir })
+    assert.equal(r.status, 200, `esperado 200, dio ${r.status}: ${JSON.stringify(r.data)}`)
+    assert.ok(r.data.fechaCorte, 'fechaCorte debe llegar poblada (antes los awaits faltantes la dejaban en null)')
+    assert.equal(r.data.yaPaso, false, 'con fecha futura yaPaso=false')
+  } finally {
+    // Orden inverso a las FKs (RESTRICT): hijo → padre
+    db.prepare('DELETE FROM directores_grupo WHERE docenteId = ?').run(dirId)
+    db.prepare('DELETE FROM docentes WHERE id = ?').run(dirId)
+    db.prepare("DELETE FROM usuarios WHERE documento = '88000602'").run()
   }
 })

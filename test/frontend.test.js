@@ -545,3 +545,259 @@ test('boletín: publicación condiciona el botón, columnas dinámicas y firma v
   assert.match(HTML, /function adminGuardarRectorNombre/, 'UI del nombre del rector (texto)')
   assert.match(HTML, /function adminGuardarMostrarPuesto/, 'UI del toggle mostrar puesto')
 })
+
+// ═══════════════════════════════════════════════════════════════
+// ENDURECIMIENTO XSS (Fase 2)
+// ═══════════════════════════════════════════════════════════════
+
+// mostrarToast: el icono (HTML estático) va por insertAdjacentHTML y el
+// mensaje del servidor por insertAdjacentText — un mensaje malicioso jamás
+// puede convertirse en HTML ejecutable.
+test('mostrarToast: el mensaje se inserta como TEXTO, nunca como HTML', () => {
+  const nodoToast = {
+    _html: '', _texto: '',
+    style: {},
+    classList: { add() {}, remove() {} },
+    insertAdjacentHTML(_pos, html) { this._html += html },
+    insertAdjacentText(_pos, texto) { this._texto += texto },
+  }
+  Object.defineProperty(nodoToast, 'textContent', {
+    get() { return this._texto },
+    set(v) { this._texto = v },
+  })
+  const document = { getElementById: () => nodoToast }
+  const setTimeout = () => 0
+  const payload = '<img src=x onerror=alert(1)>'
+  new Function('document', 'setTimeout', `
+    const ICONS = { check: '<svg>ok</svg>', x: '<svg>err</svg>' }
+    ${extraerFuncion('icon')}
+    ${extraerFuncion('mostrarToast')}
+    mostrarToast('error', ${JSON.stringify(payload)})
+  `)(document, setTimeout)
+
+  assert.ok(!nodoToast._html.includes('<img'), 'el HTML insertado debe ser SOLO el icono estático')
+  assert.match(nodoToast._html, /<svg/, 'el icono SVG sí se inserta')
+  assert.ok(nodoToast._texto.includes(payload), 'el mensaje viaja intacto como TEXTO')
+  // El mensaje NUNCA pasa por una ruta HTML
+  assert.ok(!/innerHTML\s*=/.test(extraerFuncion('mostrarToast')), 'mostrarToast no debe usar innerHTML=')
+  assert.match(extraerFuncion('mostrarToast'), /insertAdjacentText/, 'el texto va por insertAdjacentText')
+})
+
+// Barrido estático de onclick/onchange: todo valor interpolado SIN escArg
+// debe caer en la lista blanca (IDs del servidor, variables numéricas o
+// constantes del sistema). Cualquier texto libre sin escArg rompe el test.
+const ONCLICK_SEGUROS = new Set([
+  // IDs generados por el servidor (UUID)
+  'a.id', 'e.id', 'p.id', 'm.id', 'd.id', 'o.id', 'c.id', 's.estudianteId',
+  // Variables locales numéricas / de control
+  'idx', 'i', 'pos', 'areaId', 'grupoIdx', 'id', 'currentPeriodo', 'p', // p = contador de paginación
+  // Constantes del sistema
+  'tipo', // uno de TIPOS: ACTIVIDAD/RESPONSABILIDAD/ACTIVIDAD/EVALUACION
+  'peso', // numérico
+  'fnNombre', // función del sistema (errorReintentar)
+  // Strings compuestos que ya aplican escArg en su interior
+  'actionBtn', 'passBtn', 'correoBtn', 'opciones',
+  // Números del servidor
+  'c.periodo', 'c.anio', 'p.periodo',
+])
+
+test('barrido estático: ningún onclick/onchange interpola texto libre sin escArg', () => {
+  const lineas = HTML.split('\n')
+  const infracciones = []
+  for (let n = 0; n < lineas.length; n++) {
+    const l = lineas[n]
+    if (!/onclick=|onchange=/.test(l)) continue
+    // Valores interpolados SIN escArg: '+ valor + (los envueltos en
+    // escArg(...) no matchean porque llevan paréntesis).
+    for (const m of l.matchAll(/\+ ([A-Za-z_][\w.]*) \+/g)) {
+      const val = m[1]
+      if (!ONCLICK_SEGUROS.has(val)) {
+        infracciones.push(`L${n + 1}: '${val}'`)
+      }
+    }
+  }
+  assert.deepEqual(infracciones, [],
+    'Estos interpolaciones en onclick/onchange no usan escArg ni están en la lista blanca. ' +
+    'Si es texto libre (nombre, curso, sede, título...): envuélvelo en escArg(). ' +
+    'Si es seguro (ID del servidor, número, constante): agrégalo a ONCLICK_SEGUROS con justificación.\n' +
+    infracciones.join('\n'))
+})
+
+// Los textos libres que SÍ se interpolan deben ir envueltos en escArg
+test('los onclick con nombres/valores libres usan escArg en TODAS sus interpolaciones', () => {
+  const lineas = HTML.split('\n')
+  for (let n = 0; n < lineas.length; n++) {
+    const l = lineas[n]
+    if (!/onclick=|onchange=/.test(l)) continue
+    if (!/\.nombre|\.titulo|\.curso|\.sede|\.correo|\.jornada|\.materia\b/.test(l)) continue
+    // Cada interpolación de esas propiedades debe ir envuelta en escArg
+    for (const m of l.matchAll(/\+ ([A-Za-z_][\w.]*(?:nombre|titulo|curso|sede|correo|jornada|materia)[\w.]*) \+/gi)) {
+      assert.fail(`L${n + 1}: '${m[1]}' es texto libre y va SIN escArg en un onclick/onchange`)
+    }
+  }
+})
+
+// ═══════════════════════════════════════════════════════════════
+// FASE 2: renderizado XSS — los datos con payloads maliciosos se
+// renderizan SIEMPRE inertes: nada de <img> materializado, ningún
+// handler vivo y ningún string de onclick cerrable.
+// ═══════════════════════════════════════════════════════════════
+
+const XSS_TAG = '"><img src=x onerror=alert(1)>'   // romper atributo + materializar etiqueta
+const XSS_ONCLICK = "');alert(1);//"               // cerrar el argumento del onclick
+const XSS_CONCAT = "'+alert(1)+'"                  // inyección por concatenación
+const XSS_LEGADO = '"><b>x'                        // nota legada guardada como texto
+
+// Un HTML renderizado es seguro cuando el payload jamás queda CRUDO:
+// al quitar las entidades, el payload escapado desaparece por completo
+// (nunca deja un '<' crudo); si materializó algo, aparece aquí vivo.
+// Sin '<img src=x' crudo el 'onerror=' del payload no puede existir
+// como atributo real. Las comillas se miran en el HTML original: una
+// ' sin barra previa rompería el string del onclick.
+function afirmarSinXSS(html, contexto) {
+  const vivo = html.replace(/&(?:lt|gt|quot|#x27|amp);/g, '')
+  assert.ok(!vivo.includes('<img src=x'), `${contexto}: el <img> del payload no puede materializarse (onerror= quedaría activo)`)
+  assert.ok(!vivo.includes('<b>x'), `${contexto}: el <b> del payload legado no puede materializarse`)
+  assert.ok(!/(?<!\\)'\);alert/.test(html), `${contexto}: ');alert no puede cerrar el onclick sin escape`)
+  assert.ok(!/(?<!\\)'\+alert/.test(html), `${contexto}: '+alert no puede colarse sin escape`)
+}
+
+test('renderGrid: títulos de columna, nombre, materia y nota legada renderizan INERTES', () => {
+  const filas = []
+  const nodos = {
+    'gtbody': { innerHTML: '', appendChild: el => filas.push(el) },
+    'gt-cat-row': { innerHTML: '' },
+    'gt-header-row': { innerHTML: '' },
+  }
+  const document = {
+    getElementById: id => nodos[id],
+    createElement: () => ({ className: '', style: {}, innerHTML: '' }),
+  }
+  new Function('document', `
+    const TIPOS = ['ACTITUDINAL','RESPONSABILIDAD','ACTIVIDAD','EVALUACION']
+    const PESOS = { ACTITUDINAL: 0.25, RESPONSABILIDAD: 0.25, ACTIVIDAD: 0.35, EVALUACION: 0.15 }
+    const TIPOS_LABEL = { ACTITUDINAL: 'Actitudinal', RESPONSABILIDAD: 'Responsabilidad', ACTIVIDAD: 'Actividades', EVALUACION: 'Evaluación' }
+    const studentsData = [{
+      estudianteId: 'eid-' + ${JSON.stringify(XSS_ONCLICK)},
+      nombre: 'PEREZ ' + ${JSON.stringify(XSS_TAG)},
+      calificacionId: 'cal-1',
+      definitiva: 3.5,
+      grupos: {
+        actitudinal:      { items: [{ descripcion: ${JSON.stringify(XSS_TAG)}, valor: ${JSON.stringify(XSS_TAG)} }] },
+        responsabilidad: { items: [{ descripcion: ${JSON.stringify(XSS_ONCLICK)}, valor: 4 }] },
+        actividades:     { items: [{ descripcion: ${JSON.stringify(XSS_CONCAT)}, valor: 2 }] },
+        evaluacion:      { items: [{ valor: ${JSON.stringify(XSS_LEGADO)} }] },
+      },
+    }]
+    const ccolumnas = {
+      ACTITUDINAL: [${JSON.stringify(XSS_TAG)}],
+      RESPONSABILIDAD: [${JSON.stringify(XSS_ONCLICK)}],
+      ACTIVIDAD: [${JSON.stringify(XSS_CONCAT)}],
+    }
+    const selectedMateria = 'MAT ' + ${JSON.stringify(XSS_CONCAT)}
+    const claveApellidos = n => n
+    const getColorDef = () => '#000'
+    const getStatusHtml = () => '<span>OK</span>'
+    const icon = () => '<svg></svg>'
+    const aplicarCambiosPendientesAlGrid = () => {}
+    ${extraerFuncion('esc')}
+    ${extraerFuncion('escArg')}
+    ${extraerFuncion('renderGrid')}
+    ${extraerFuncion('renderGridHeaders')}
+    renderGrid()
+  `)(document)
+
+  assert.equal(filas.length, 1, 'la fila del estudiante se renderizó')
+  assert.ok(nodos['gt-header-row'].innerHTML.length > 0, 'los encabezados se renderizaron')
+  // Control positivo: el nombre SÍ viajó al HTML (escapado)
+  assert.ok(filas[0].innerHTML.includes('PEREZ'), 'el nombre del estudiante está en la fila')
+  afirmarSinXSS(filas[0].innerHTML, 'planilla: fila (data-titulo, value, onclick escArg)')
+  afirmarSinXSS(nodos['gt-header-row'].innerHTML, 'planilla: encabezados (tab-title, onclick escArg)')
+  // La nota legada en texto no puede ir cruda en el value del input
+  assert.ok(!filas[0].innerHTML.includes('value="' + XSS_LEGADO + '"'), 'la nota legada viaja escapada en el value')
+})
+
+test('renderStudentGrid: el nombre de materia con payload queda inerte (c.materia)', () => {
+  const grid = { innerHTML: '' }
+  const document = { getElementById: () => grid }
+  new Function('document', `
+    const TIPOS_LABEL = { ACTITUDINAL: 'Actitudinal', RESPONSABILIDAD: 'Responsabilidad', ACTIVIDAD: 'Actividades', EVALUACION: 'Evaluación' }
+    const getColorDef = () => '#000'
+    const getStatusHtml = () => '<span>OK</span>'
+    ${extraerFuncion('esc')}
+    ${extraerFuncion('renderStudentGrid')}
+    renderStudentGrid([
+      { materia: 'MATEMATICAS ' + ${JSON.stringify(XSS_TAG)}, definitiva: 3.2, grupos: { actitudinal: { items: [], promedio: 3 }, responsabilidad: { items: [], promedio: 3 }, actividades: { items: [], promedio: 3 }, evaluacion: { items: [], promedio: 3 } } },
+      { materia: 'CASTELLANO ' + ${JSON.stringify(XSS_ONCLICK)}, definitiva: 4.1, grupos: {} },
+    ])
+  `)(document)
+  assert.ok(grid.innerHTML.includes('MATEMATICAS'), 'las tarjetas se renderizaron')
+  afirmarSinXSS(grid.innerHTML, 'portal: nota-card (c.materia)')
+})
+
+test('pintarBoletin: materia, área, nivel, indicadores, firmas, curso y jornada quedan inertes', () => {
+  const doc = { innerHTML: '' }
+  const document = { getElementById: () => doc }
+  new Function('document', `
+    ${extraerFuncion('esc')}
+    ${extraerFuncion('membreteBoletin')}
+    ${extraerFuncion('pintarBoletin')}
+    pintarBoletin({
+      estudiante: { nombre: 'PEREZ ' + ${JSON.stringify(XSS_TAG)}, grado: null, curso: '1104' + ${JSON.stringify(XSS_TAG)}, jornada: 'MAÑANA ' + ${JSON.stringify(XSS_TAG)} },
+      periodo: 1, anio: 2026,
+      areas: [{
+        nombre: 'AREA ' + ${JSON.stringify(XSS_TAG)},
+        promedio: 3.5, nivel: 'ALTO ' + ${JSON.stringify(XSS_ONCLICK)},
+        materias: [{ nombre: 'MATERIA ' + ${JSON.stringify(XSS_TAG)}, ihs: 4, notas: { '1': 3.5 }, nivel: 'BASICO', indicadores: [${JSON.stringify('IND ' + XSS_CONCAT)}] }],
+      }],
+      promedio: 3.6, puesto: 1, totalCurso: 30,
+      rectorNombre: 'RECTOR ' + ${JSON.stringify(XSS_ONCLICK)},
+      directorNombre: 'DIRECTOR ' + ${JSON.stringify(XSS_CONCAT)},
+    })
+  `)(document)
+  assert.ok(doc.innerHTML.includes('boletin-tabla'), 'el boletín se renderizó')
+  afirmarSinXSS(doc.innerHTML, 'boletín (pintarBoletin + membreteBoletin)')
+})
+
+test('adminMostrarModalCambioCurso: curso y sede con payload en <option> quedan inertes', async () => {
+  const nodos = { 'modal-curso-select': { innerHTML: '' } }
+  const document = {
+    getElementById: id => nodos[id] || (nodos[id] = { textContent: '', innerHTML: '', style: {} }),
+  }
+  const fetch = () => Promise.resolve({ json: async () => ({ cursos: [
+    { curso: '110' + XSS_TAG, grado: 11, sede: 'SEDE ' + XSS_TAG, jornada: 'MAÑANA' },
+    { curso: '301' + XSS_ONCLICK, grado: 3, sede: 'SEDE DOS ' + XSS_CONCAT, jornada: 'UNICA' },
+  ] }) })
+  new Function('document', 'fetch', `
+    let currentCambioCursoId = null
+    const API = ''
+    const currentToken = 'tok'
+    const cerrarModalSuave = () => {}
+    const abrirModalSuave = () => {}
+    ${extraerFuncion('esc')}
+    ${extraerFuncion('adminMostrarModalCambioCurso')}
+    adminMostrarModalCambioCurso('est-1', 'NOMBRE', '1104')
+  `)(document, fetch)
+  // La cadena fetch().then().then() necesita un tick para pintar
+  await new Promise(r => setTimeout(r, 0))
+  assert.ok(nodos['modal-curso-select'].innerHTML.includes('<option'), 'las opciones se renderizaron')
+  afirmarSinXSS(nodos['modal-curso-select'].innerHTML, 'modal cambio curso: <option> curso/sede')
+})
+
+test('cargarCursosMasiva: curso y jornada con payload en <option> quedan inertes', async () => {
+  const sel = { innerHTML: '' }
+  const document = { getElementById: () => sel }
+  const fetch = () => Promise.resolve({ ok: true, json: async () => ({ cursos: [
+    { curso: '110' + XSS_TAG, jornada: 'TARDE ' + XSS_TAG },
+    { curso: '301' + XSS_ONCLICK, jornada: null },
+  ] }) })
+  await new Function('document', 'fetch', `
+    const API = ''
+    const currentToken = 'tok'
+    ${extraerFuncion('esc')}
+    ${extraerFuncion('cargarCursosMasiva')}
+    return cargarCursosMasiva()
+  `)(document, fetch)
+  assert.ok(sel.innerHTML.includes('<option'), 'las opciones se renderizaron')
+  afirmarSinXSS(sel.innerHTML, 'impresión masiva: <option> curso/jornada')
+})

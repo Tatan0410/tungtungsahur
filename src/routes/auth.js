@@ -1,9 +1,33 @@
 const express = require('express')
 const bcrypt  = require('bcryptjs')
 const jwt     = require('jsonwebtoken')
+const crypto  = require('crypto')
 const prisma  = require('../prisma')
 
 const router = express.Router()
+
+// Hash de códigos de recuperación: HMAC-SHA256 con clave derivada del
+// JWT_SECRET + sufijo de propósito (distinta de la clave JWT). Derivación
+// lazy: lee el secreto al primer uso, no al cargar el módulo.
+let _claveHmacCodigos = null
+function hashCodigo(codigo) {
+  if (!_claveHmacCodigos) {
+    _claveHmacCodigos = crypto
+      .createHash('sha256')
+      .update((process.env.JWT_SECRET || '') + ':recovery-codes')
+      .digest('hex')
+  }
+  return crypto.createHmac('sha256', _claveHmacCodigos).update(String(codigo)).digest('hex')
+}
+
+// Comparación en tiempo constante (evita timing oracle); valida largo
+function codigoCoincide(hashGuardado, codigoEnviado) {
+  const hashCalculado = hashCodigo(codigoEnviado)
+  const a = Buffer.from(hashGuardado || '', 'utf8')
+  const b = Buffer.from(hashCalculado || '', 'utf8')
+  if (a.length !== b.length) return false
+  return crypto.timingSafeEqual(a, b)
+}
 
 const MAX_INTENTOS = 5
 const TIEMPO_BLOQUEO_MS = 15 * 60 * 1000
@@ -208,7 +232,10 @@ function enviarCodigoRecuperacion(correoDestino, codigo) {
   const pass = process.env.SMTP_PASS
 
   if (!host || !user || !pass) {
-    console.log(`⚠️  SMTP no configurado. Código de recuperación para ${correoDestino}: ${codigo}`)
+    // SMTP no configurado: el código NO se imprime en logs (secreto). En
+    // producción SMTP está definido; en desarrollo el flujo se prueba con
+    // tests que leen la BD directamente.
+    console.log('SMTP no configurado: no se pudo enviar el código de recuperación')
     return Promise.resolve()
   }
 
@@ -225,8 +252,8 @@ function enviarCodigoRecuperacion(correoDestino, codigo) {
     text: `Tu código de recuperación es: ${codigo}\n\nEste código expira en 15 minutos. Si no lo solicitaste, ignora este correo.`,
     html: `<p>Tu código de recuperación es:</p><p style="font-size:24px;font-weight:bold;letter-spacing:4px;">${codigo}</p><p>Este código expira en 15 minutos. Si no lo solicitaste, ignora este correo.</p>`,
   }).catch(err => {
+    // El código NO se imprime en logs (secreto)
     console.error(`Error enviando código a ${correoDestino}:`, err.message)
-    console.log(`Código de recuperación para ${correoDestino}: ${codigo}`)
   })
 }
 
@@ -282,13 +309,13 @@ router.post('/recuperar', async (req, res) => {
       return res.json({ existe: true, mensaje: 'Si el correo existe, recibirás un código de recuperación.' })
     }
 
-    const codigo = String(Math.floor(100000 + Math.random() * 900000))
+    const codigo = String(crypto.randomInt(100000, 1000000))
     const expira = new Date(Date.now() + 15 * 60 * 1000).toISOString()
     // Pedir un código nuevo reinicia los intentos fallidos del ciclo anterior
     await prisma._db.prepare("DELETE FROM password_resets WHERE usuarioId = ? AND codigo LIKE 'INVALID-%'").run(usuario.id)
     // creadoEn explícito en ISO-8601: el DEFAULT CURRENT_TIMESTAMP de SQLite
     // guarda 'YYYY-MM-DD HH:MM:SS' (sin T) y no compara bien contra los ISO.
-    await prisma._db.prepare('INSERT INTO password_resets (id, usuarioId, codigo, expira, creadoEn) VALUES (?, ?, ?, ?, ?)').run(require('crypto').randomUUID(), usuario.id, codigo, expira, new Date().toISOString())
+    await prisma._db.prepare('INSERT INTO password_resets (id, usuarioId, codigo, expira, creadoEn) VALUES (?, ?, ?, ?, ?)').run(require('crypto').randomUUID(), usuario.id, hashCodigo(codigo), expira, new Date().toISOString())
 
     await enviarCodigoRecuperacion(usuario.correo, codigo)
     res.json({ existe: true, mensaje: 'Si el correo existe, recibirás un código de recuperación.' })
@@ -327,10 +354,14 @@ router.post('/recuperar/verificar', async (req, res) => {
       return res.status(429).json({ error: 'Demasiados intentos fallidos. Pide un nuevo código.' })
     }
 
-    const reset = await prisma._db.prepare(
-      'SELECT * FROM password_resets WHERE usuarioId = ? AND codigo = ? AND usado = 0 ORDER BY creadoEn DESC LIMIT 1'
-    ).get(usuario.id, String(codigo))
-    if (!reset || new Date(reset.expira) < new Date()) {
+    // Traer los códigos VIGENTES (sin matchear en SQL) y comparar el hash
+    // en tiempo constante: la comparación de strings de SQLite filtra por
+    // longitud y no es resistente a timing oracles.
+    const candidatos = await prisma._db.prepare(
+      "SELECT * FROM password_resets WHERE usuarioId = ? AND usado = 0 AND codigo NOT LIKE 'INVALID-%' ORDER BY creadoEn DESC"
+    ).all(usuario.id)
+    const reset = candidatos.find(f => codigoCoincide(f.codigo, String(codigo)) && new Date(f.expira) >= new Date())
+    if (!reset) {
       // Registrar intento fallido
       await prisma._db.prepare('INSERT INTO password_resets (id, usuarioId, codigo, expira, creadoEn) VALUES (?, ?, ?, ?, ?)').run(
         require('crypto').randomUUID(), usuario.id, 'INVALID-' + require('crypto').randomUUID(), new Date(Date.now() + 15 * 60 * 1000).toISOString(), new Date().toISOString()
@@ -338,11 +369,25 @@ router.post('/recuperar/verificar', async (req, res) => {
       return res.status(400).json({ error: 'Código inválido o expirado. Te quedan ' + (MAX_INTENTOS_CODIGO - (intentosRecientes.c + 1)) + ' intentos.' })
     }
 
+    // ─── Consumo atómico del código + cambio de contraseña en UNA transacción ───
+    // El UPDATE solo marca usado=1 si AÚN está vigente (usado=0 y no expirado);
+    // si otra petición lo consumió antes, changes=0 y se rechaza. La contraseña
+    // se cambia en la MISMA transacción: o se consume el código y se cambia,
+    // o no pasa nada.
     const hash = bcrypt.hashSync(String(nuevaPassword), 10)
-    await prisma._db.prepare('UPDATE usuarios SET password = ? WHERE id = ?').run(hash, usuario.id)
-    await prisma._db.prepare('UPDATE password_resets SET usado = 1 WHERE id = ?').run(reset.id)
-    // Limpiar cualquier otro código activo
-    await prisma._db.prepare('UPDATE password_resets SET usado = 1 WHERE usuarioId = ? AND usado = 0').run(usuario.id)
+    const consumido = await prisma._db.transaction(async () => {
+      const upd = await prisma._db.prepare(
+        'UPDATE password_resets SET usado = 1 WHERE id = ? AND usado = 0 AND expira > ?'
+      ).run(reset.id, new Date().toISOString())
+      if (upd.changes !== 1) return false
+      await prisma._db.prepare('UPDATE usuarios SET password = ? WHERE id = ?').run(hash, usuario.id)
+      // Limpiar cualquier otro código activo
+      await prisma._db.prepare('UPDATE password_resets SET usado = 1 WHERE usuarioId = ? AND usado = 0').run(usuario.id)
+      return true
+    })()
+    if (!consumido) {
+      return res.status(400).json({ error: 'Código inválido o expirado' })
+    }
 
     res.json({ mensaje: 'Contraseña restablecida exitosamente' })
   } catch (error) {
@@ -433,10 +478,10 @@ router.post('/codigo', async (req, res) => {
       return res.status(429).json({ error: 'Demasiados códigos solicitados. Espera un poco.' })
     }
 
-    const codigo = String(Math.floor(100000 + Math.random() * 900000))
+    const codigo = String(crypto.randomInt(100000, 1000000))
     const expira = new Date(Date.now() + 15 * 60 * 1000).toISOString()
     await prisma._db.prepare("DELETE FROM password_resets WHERE usuarioId = ? AND codigo LIKE 'INVALID-%'").run(usuario.id)
-    await prisma._db.prepare('INSERT INTO password_resets (id, usuarioId, codigo, expira, creadoEn) VALUES (?, ?, ?, ?, ?)').run(require('crypto').randomUUID(), usuario.id, codigo, expira, new Date().toISOString())
+    await prisma._db.prepare('INSERT INTO password_resets (id, usuarioId, codigo, expira, creadoEn) VALUES (?, ?, ?, ?, ?)').run(require('crypto').randomUUID(), usuario.id, hashCodigo(codigo), expira, new Date().toISOString())
 
     await enviarCodigoRecuperacion(usuario.correo, codigo)
     res.json({ mensaje: 'Código enviado a tu correo de recuperación' })
@@ -476,10 +521,13 @@ router.put('/admin/mi-datos', async (req, res) => {
       return res.status(429).json({ error: 'Demasiados intentos fallidos. Pide un nuevo código.' })
     }
 
-    const reset = await prisma._db.prepare(
-      'SELECT * FROM password_resets WHERE usuarioId = ? AND codigo = ? AND usado = 0 ORDER BY creadoEn DESC LIMIT 1'
-    ).get(usuario.id, String(codigo))
-    if (!reset || new Date(reset.expira) < new Date()) {
+    // Comparación del hash en tiempo constante (mismo criterio que
+    // /recuperar/verificar: traer vigentes y comparar con timingSafeEqual)
+    const candidatos = await prisma._db.prepare(
+      "SELECT * FROM password_resets WHERE usuarioId = ? AND usado = 0 AND codigo NOT LIKE 'INVALID-%' ORDER BY creadoEn DESC"
+    ).all(usuario.id)
+    const reset = candidatos.find(f => codigoCoincide(f.codigo, String(codigo)) && new Date(f.expira) >= new Date())
+    if (!reset) {
       await prisma._db.prepare('INSERT INTO password_resets (id, usuarioId, codigo, expira, creadoEn) VALUES (?, ?, ?, ?, ?)').run(
         require('crypto').randomUUID(), usuario.id, 'INVALID-' + require('crypto').randomUUID(), new Date(Date.now() + 15 * 60 * 1000).toISOString(), new Date().toISOString()
       )
@@ -515,10 +563,20 @@ router.put('/admin/mi-datos', async (req, res) => {
       params.push(String(nuevoCorreo).trim())
     }
 
+    // Consumo atómico del código + cambio en UNA transacción (misma
+    // garantía que /recuperar/verificar: o todo, o nada)
     params.push(usuario.id)
-    await prisma._db.prepare(`UPDATE usuarios SET ${updates.join(', ')} WHERE id = ?`).run(...params)
-    // El código se consume
-    await prisma._db.prepare('UPDATE password_resets SET usado = 1 WHERE id = ?').run(reset.id)
+    const consumido = await prisma._db.transaction(async () => {
+      const upd = await prisma._db.prepare(
+        'UPDATE password_resets SET usado = 1 WHERE id = ? AND usado = 0 AND expira > ?'
+      ).run(reset.id, new Date().toISOString())
+      if (upd.changes !== 1) return false
+      await prisma._db.prepare(`UPDATE usuarios SET ${updates.join(', ')} WHERE id = ?`).run(...params)
+      return true
+    })()
+    if (!consumido) {
+      return res.status(400).json({ error: 'Código inválido o expirado' })
+    }
 
     const mensaje = updates.length === 1
       ? 'Dato actualizado exitosamente'
@@ -534,3 +592,6 @@ router.put('/admin/mi-datos', async (req, res) => {
 })
 
 module.exports = router
+// Exportado para tests: los códigos se guardan hasheados (HMAC), los tests
+// derivan el código a partir del hash almacenado usando esta misma función.
+module.exports.hashCodigo = hashCodigo

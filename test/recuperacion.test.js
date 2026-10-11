@@ -1,7 +1,9 @@
 const { test, before, after } = require('node:test')
 const assert = require('node:assert/strict')
+require('dotenv').config() // mismo JWT_SECRET que el servidor de test (.env)
 const { arrancarServidor } = require('./helpers/servidor')
 const { crearApi, login, ADMIN, DOCENTE } = require('./helpers/api')
+const { hashCodigo } = require('../src/routes/auth')
 
 let srv, api, db
 
@@ -14,10 +16,29 @@ after(async () => { db.close(); await srv.cerrar() })
 
 const idDocente = () => db.prepare("SELECT id FROM usuarios WHERE documento = ?").get(DOCENTE.documento).id
 
-function ultimoCodigoReal() {
+function ultimoHashReal() {
   return db.prepare(
     "SELECT codigo FROM password_resets WHERE usuarioId = ? AND codigo NOT LIKE 'INVALID-%' AND usado = 0 ORDER BY creadoEn DESC, rowid DESC LIMIT 1"
   ).get(idDocente())
+}
+
+// El código se guarda hasheado: para el flujo feliz se recupera el texto
+// plano probando el espacio de 6 dígitos contra el hash (~2s).
+function codigoDesdeHash(hashGuardado) {
+  for (let c = 100000; c < 1000000; c++) {
+    if (hashCodigo(String(c)) === hashGuardado) return String(c)
+  }
+  return null
+}
+
+function insertarCodigo(usuarioId, codigo, { expirado = false } = {}) {
+  const id = require('node:crypto').randomUUID()
+  db.prepare('INSERT INTO password_resets (id, usuarioId, codigo, expira, creadoEn) VALUES (?, ?, ?, ?, ?)').run(
+    id, usuarioId, hashCodigo(codigo),
+    new Date(Date.now() + (expirado ? -5 * 60000 : 15 * 60000)).toISOString(),
+    new Date(Date.now() - (expirado ? 10 * 60000 : 0)).toISOString()
+  )
+  return id
 }
 
 test('correo inexistente → 200 con existe:false y NO se muestra el menú del código', async () => {
@@ -45,8 +66,10 @@ test('los códigos INVALID- no bloquean la recuperación (regresión del DoS)', 
     "SELECT COUNT(*) c FROM password_resets WHERE usuarioId = ? AND codigo NOT LIKE 'INVALID-%' AND creadoEn > datetime('now','-1 hour')"
   ).get(idDocente()).c
   assert.equal(reales, 1, 'debe crearse un código real pese a las filas INVALID-')
-  assert.match(ultimoCodigoReal().codigo, /^\d{6}$/, 'el código debe ser de 6 dígitos')
+  // El código NO se guarda en texto claro: debe ser un hash HMAC (64 hex)
+  assert.match(ultimoHashReal().codigo, /^[0-9a-f]{64}$/, 'el código debe almacenarse hasheado')
   assert.match(srv.logs(), /SMTP no configurado/, 'los tests nunca deben intentar enviar correo')
+  assert.ok(!/[Cc][óo]digo de recuperaci[óo]n para .+: \d{6}/.test(srv.logs()), 'el código de 6 dígitos no debe aparecer en los logs')
 })
 
 test('5 códigos incorrectos agotan los intentos y el 6º pide esperar (429)', async () => {
@@ -69,11 +92,14 @@ test('5 códigos incorrectos agotan los intentos y el 6º pide esperar (429)', a
 })
 
 test('flujo feliz: código correcto restablece la contraseña', async () => {
+  db.prepare('DELETE FROM password_resets').run()
   const correo = DOCENTE.documento + '@ejemplo.edu.co'
   const r0 = await api.post('/api/auth/recuperar', { body: { correo } })
   assert.equal(r0.status, 200)
 
-  const { codigo } = ultimoCodigoReal()
+  const { codigo: hashGuardado } = ultimoHashReal()
+  const codigo = codigoDesdeHash(hashGuardado)
+  assert.ok(codigo, 'debe poder derivarse el código de 6 dígitos desde el hash')
   const ok = await api.post('/api/auth/recuperar/verificar', {
     body: { correo, codigo, nuevaPassword: 'NuevaClave123' },
   })
@@ -86,6 +112,35 @@ test('flujo feliz: código correcto restablece la contraseña', async () => {
   const nueva = await api.post('/api/auth/login', { body: { documento: DOCENTE.documento, password: 'NuevaClave123', aceptaTerminos: true } })
   assert.equal(nueva.status, 200, 'la contraseña nueva funciona')
   assert.equal(nueva.data.usuario.rol, 'DOCENTE')
+})
+
+test('código expirado → 400 aunque sea el correcto', async () => {
+  db.prepare('DELETE FROM password_resets').run()
+  insertarCodigo(idDocente(), '424242', { expirado: true })
+  const r = await api.post('/api/auth/recuperar/verificar', {
+    body: { correo: DOCENTE.documento + '@ejemplo.edu.co', codigo: '424242', nuevaPassword: 'OtraClave456' },
+  })
+  assert.equal(r.status, 400, 'código expirado debe rechazarse')
+  // La contraseña NO cambió
+  const login = await api.post('/api/auth/login', { body: { documento: DOCENTE.documento, password: 'NuevaClave123', aceptaTerminos: true } })
+  assert.equal(login.status, 200, 'la contraseña no debe haber cambiado con código expirado')
+})
+
+test('consumo atómico: dos verificaciones concurrentes → una gana, la otra 400', async () => {
+  db.prepare('DELETE FROM password_resets').run()
+  insertarCodigo(idDocente(), '717171')
+
+  const cuerpo = { correo: DOCENTE.documento + '@ejemplo.edu.co', codigo: '717171', nuevaPassword: 'Concurrente9' }
+  const [r1, r2] = await Promise.all([
+    api.post('/api/auth/recuperar/verificar', { body: { ...cuerpo, nuevaPassword: 'Concurrente9' } }),
+    api.post('/api/auth/recuperar/verificar', { body: { ...cuerpo, nuevaPassword: 'Concurrente9' } }),
+  ])
+  const estados = [r1.status, r2.status].sort()
+  assert.deepEqual(estados, [200, 400], `debe haber exactamente un 200 y un 400 (fue ${r1.status}/${r2.status})`)
+  const fila = db.prepare("SELECT usado FROM password_resets WHERE usuarioId = ? AND codigo = ?").get(idDocente(), hashCodigo('717171'))
+  assert.equal(fila.usado, 1, 'el código queda consumido')
+  const login = await api.post('/api/auth/login', { body: { documento: DOCENTE.documento, password: 'Concurrente9', aceptaTerminos: true } })
+  assert.equal(login.status, 200, 'la contraseña del ganador funciona')
 })
 
 test('validaciones de /recuperar y /verificar', async () => {

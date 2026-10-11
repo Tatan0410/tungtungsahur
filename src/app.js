@@ -32,13 +32,16 @@ app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'DENY')
   res.setHeader('X-XSS-Protection', '1; mode=block')
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000')
   next()
 })
 
-// CORS: por defecto permite todo en desarrollo. Si define ALLOWED_ORIGINS (separado por comas), solo esas.
+// CORS fail-closed: la app es de mismo origen. Sin lista = NO emitir el
+// header (origin: false) → peticiones cross-origin fallan en el preflight.
+// Con lista = solo esos orígenes.
 const ALLOWED = (process.env.ALLOWED_ORIGINS || '').split(',').filter(Boolean)
 app.use(cors({
-  origin: ALLOWED.length ? ALLOWED : '*',
+  origin: ALLOWED.length ? ALLOWED : false,
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
 }))
 

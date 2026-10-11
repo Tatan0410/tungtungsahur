@@ -22,13 +22,13 @@ cp .env.example .env      # llena JWT_SECRET y SMTP_*
 npm start                 # http://localhost:3000
 ```
 
-### Credenciales de prueba (base de datos `prisma/dev.db`)
+### Acceso
 
-| Rol | Documento | Contraseña |
-|---|---|---|
-| Admin | `99999999` | `Admin2025` |
-| Docente | `30010001` | `test123` |
-| Estudiante | matrícula del estudiante | la que se le asigne |
+Las cuentas de la base de datos de desarrollo (`prisma/dev.db`) se crean con el
+CLI de importación o por el panel de administración. Por seguridad, este README
+no lista credenciales: si eres desarrollador local, crea tu propio admin con
+`node admin.js` o consulta a quien te dio acceso al repositorio. En producción,
+cada usuario define y cambia su contraseña desde la app ("Mi cuenta").
 
 ## Estructura
 

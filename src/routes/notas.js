@@ -1260,17 +1260,18 @@ router.post('/guardar-grid', async (req, res) => {
       return res.status(400).json({ error: 'Se requiere un arreglo de items' })
     }
 
-    // Defensa en profundidad: la nota solo puede ir de 0 a 5 (el frontend
-    // ya lo restringe). Se valida TODA la tanda antes de tocar la BD:
-    // una nota inválida no guarda nada, ni siquiera los items previos.
+    // Defensa en profundidad: la nota solo puede ir de 0 a 5 con formato
+    // numérico puro. MISMA regla que /items y /bulk-update: "3,5" → 3.5,
+    // "3abc"/"3<img>"/"1e1"/5.1 → 400. Se valida TODA la tanda antes de
+    // tocar la BD: una nota inválida no guarda nada, ni siquiera los
+    // items previos. El número normalizado viaja en _vNota: la escritura
+    // jamás persiste el texto crudo.
     for (const item of items) {
-      const { valor } = item
-      if (valor !== null && valor !== undefined && valor !== '') {
-        const vNota = parseFloat(valor)
-        if (isNaN(vNota) || vNota < 0 || vNota > 5) {
-          return res.status(400).json({ error: 'La nota solo puede ir de 0 a 5' })
-        }
+      const vNota = normalizarYValidarNota(item.valor)
+      if (vNota === '__INVALIDA__') {
+        return res.status(400).json({ error: 'La nota solo puede ir de 0 a 5 (decimal con punto o coma: 3.5 o 3,5)' })
       }
+      item._vNota = vNota // número 0–5 o null ("sin nota")
     }
 
     const claveDe = it => it.estudianteId + '_' + it.tipo + '_' + (it.titulo || '')
@@ -1373,7 +1374,7 @@ router.post('/guardar-grid', async (req, res) => {
           })
 
           for (const item of grupo.items) {
-            const { tipo, titulo, valor, _delete } = item
+            const { tipo, titulo, _delete } = item
 
             if (_delete) {
               // Un _delete sobre una calificación inexistente no tiene nada
@@ -1396,9 +1397,11 @@ router.post('/guardar-grid', async (req, res) => {
                 cal = null
               }
             } else {
-              if (valor === undefined || valor === null) continue
-              // El 0 es válido (rango 0-5, coherente con el frontend)
-              if (valor < 0 || valor > 5) continue
+              // Nota validada y normalizada antes de la tanda: "3,5" llega
+              // como 3.5 y jamás se escribe el texto crudo. null = "sin
+              // nota" (el 0 sí es una nota válida).
+              const vNota = item._vNota
+              if (vNota === null || vNota === undefined) continue
               if (!cal) {
                 cal = await prisma.calificacion.create({
                   data: { estudianteId: grupo.estudianteId, materiaId: grupo.materiaId, docenteId: req.usuario.docenteId, periodo: grupo.periodo, anio: grupo.anio }
@@ -1407,16 +1410,16 @@ router.post('/guardar-grid', async (req, res) => {
               if (tipo === 'EVALUACION') {
                 const existente = await prisma.notaItem.findFirst({ where: { calificacionId: cal.id, tipo: 'EVALUACION' } })
                 if (existente) {
-                  await prisma.notaItem.update({ where: { id: existente.id }, data: { valor: parseFloat(valor) } })
+                  await prisma.notaItem.update({ where: { id: existente.id }, data: { valor: vNota } })
                 } else {
-                  await prisma.notaItem.create({ data: { calificacionId: cal.id, tipo: 'EVALUACION', valor: parseFloat(valor), descripcion: null } })
+                  await prisma.notaItem.create({ data: { calificacionId: cal.id, tipo: 'EVALUACION', valor: vNota, descripcion: null } })
                 }
               } else {
                 const existente = await prisma.notaItem.findFirst({ where: { calificacionId: cal.id, tipo, descripcion: titulo.trim() } })
                 if (existente) {
-                  await prisma.notaItem.update({ where: { id: existente.id }, data: { valor: parseFloat(valor) } })
+                  await prisma.notaItem.update({ where: { id: existente.id }, data: { valor: vNota } })
                 } else {
-                  await prisma.notaItem.create({ data: { calificacionId: cal.id, tipo, valor: parseFloat(valor), descripcion: titulo.trim() } })
+                  await prisma.notaItem.create({ data: { calificacionId: cal.id, tipo, valor: vNota, descripcion: titulo.trim() } })
                 }
               }
             }
@@ -1708,9 +1711,9 @@ router.get('/reporte-corte', async (req, res) => {
 
     const reporte = await calcularReporteCorte(curso, parseInt(periodo), parseInt(anio))
 
-    const sedeRow = prisma._db.prepare('SELECT sede FROM estudiantes WHERE curso = ? LIMIT 1').get(curso)
+    const sedeRow = await prisma._db.prepare('SELECT sede FROM estudiantes WHERE curso = ? LIMIT 1').get(curso)
     const sede = sedeRow ? sedeRow.sede : 'PPAL - TRIUNFO'
-    const cfg = prisma._db.prepare(
+    const cfg = await prisma._db.prepare(
       'SELECT fecha_corte FROM periodos_config WHERE sede = ? AND periodo = ? AND anio = ?'
     ).get(sede, parseInt(periodo), parseInt(anio))
     const fechaCorte = cfg?.fecha_corte || null
@@ -1768,14 +1771,6 @@ router.get('/mis-areas', async (req, res) => {
 // del estudiante (nada más), notas P1-P3, nivel de desempeño, promedio y
 // puesto en el salon (estilo deportivo: empates comparten puesto y el
 // siguiente salta). Solo lecturas.
-
-function nivelDeDesempeno(definitiva) {
-  if (definitiva === null || definitiva === undefined) return '—'
-  if (definitiva < 3) return 'Desempeño Bajo'
-  if (definitiva < 4) return 'Desempeño Básico'
-  if (definitiva < 4.6) return 'Desempeño Alto'
-  return 'Desempeño Superior'
-}
 
 // ─── BOLETÍN DEL PERÍODO (piloto 11-04) ───
 // Documento académico digital: áreas y materias ASIGNADAS AL CURSO del

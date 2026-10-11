@@ -2381,16 +2381,16 @@ function renderGrid() {
         const evalItem = cat.items && cat.items.length > 0 ? cat.items[0] : null
         const val = (evalItem && evalItem.valor !== null && evalItem.valor !== undefined) ? evalItem.valor : ''
         html += '<td class="cell-eval" data-cal-id="' + (calId || '') + '">'
-          html += '<input type="text" inputmode="decimal" maxlength="4" class="excel-input cell-input" value="' + val + '" placeholder="" onchange="marcarCambio(' + i + ',\'' + tipo + '\',\'\',this.value,this)">'
+          html += '<input type="text" inputmode="decimal" maxlength="4" class="excel-input cell-input" value="' + esc(val) + '" placeholder="" onchange="marcarCambio(' + i + ',\'' + tipo + '\',\'\',this.value,this)">'
         html += '</td>'
       } else {
         for (const col of colArray) {
           const item = (cat.items || []).find(it => it.descripcion === col.titulo && col.titulo !== '')
           const raw = item ? item.valor : ''
           const val = (raw !== null && raw !== undefined) ? raw : ''
-          html += '<td class="cell-' + tipo.toLowerCase() + '" data-cal-id="' + (calId || '') + '" data-titulo="' + (col.titulo || '') + '">'
+          html += '<td class="cell-' + tipo.toLowerCase() + '" data-cal-id="' + (calId || '') + '" data-titulo="' + esc(col.titulo || '') + '">'
           if (col.titulo) {
-            html += '<input type="text" inputmode="decimal" maxlength="4" class="excel-input cell-input" value="' + val + '" placeholder="" onchange="marcarCambio(' + i + ',\'' + tipo + '\',\'' + escArg(col.titulo) + '\',this.value,this)">'
+            html += '<input type="text" inputmode="decimal" maxlength="4" class="excel-input cell-input" value="' + esc(val) + '" placeholder="" onchange="marcarCambio(' + i + ',\'' + tipo + '\',\'' + escArg(col.titulo) + '\',this.value,this)">'
           } else {
             html += '<span style="color:var(--ink-400);font-size:11px;">Sin notas</span>'
           }
@@ -2401,7 +2401,7 @@ function renderGrid() {
 
     html += '<td style="font-size:15px;font-weight:500;color:' + getColorDef(def) + ';text-align:center;">' + (def !== null ? def.toFixed(2) : '--') + '</td>'
     html += '<td style="text-align:center;">' + getStatusHtml(def) + '</td>'
-    html += '<td style="text-align:center;"><button class="btn-sm" onclick="mostrarObservaciones(\'' + s.estudianteId + '\',\'' + escArg(s.nombre) + '\',\'' + selectedMateria + '\')" style="font-size:14px;padding:2px 6px;cursor:pointer;border:none;background:none;" title="Observaciones">' + icon('nota') + '</button></td>'
+    html += '<td style="text-align:center;"><button class="btn-sm" onclick="mostrarObservaciones(\'' + escArg(s.estudianteId) + '\',\'' + escArg(s.nombre) + '\',\'' + escArg(selectedMateria) + '\')" style="font-size:14px;padding:2px 6px;cursor:pointer;border:none;background:none;" title="Observaciones">' + icon('nota') + '</button></td>'
 
     tr.innerHTML = html
     tb.appendChild(tr)
@@ -2445,7 +2445,7 @@ function renderGridHeaders(colsPorTipo) {
       if (col.titulo) {
         colHtml += '<th style="text-align:center;padding:3px 4px;border-bottom:1px solid var(--line);min-width:70px;">'
         colHtml += '<div class="col-tab' + (isEval ? ' col-tab-eval' : '') + '">'
-        colHtml += '<span class="tab-title">' + col.titulo + '</span>'
+        colHtml += '<span class="tab-title">' + esc(col.titulo) + '</span>'
         if (!isEval) {
           colHtml += '<span class="tab-btn tab-btn-edit" onclick="renombrarColumna(\'' + tipo + '\',\'' + escArg(col.titulo) + '\')" title="Renombrar">' + icon('lapiz') + '</span>'
           colHtml += '<span class="tab-btn tab-btn-del" onclick="eliminarColumna(\'' + tipo + '\',\'' + escArg(col.titulo) + '\')" title="Eliminar">' + icon('x') + '</span>'
@@ -3128,7 +3128,7 @@ function renderStudentGrid(calificaciones) {
   const cards = calificaciones.map((c, i) => {
     const g = c.grupos || {};
     let html = '<div class="nota-card" style="animation:filaEntra .25s var(--ease-out) both;animation-delay:' + (i * 25) + 'ms;">';
-    html += '<div class="nota-mat">' + (c.materia || 'Materia') + '</div>';
+    html += '<div class="nota-mat">' + esc(c.materia || 'Materia') + '</div>';
     // Category averages
     const categories = [
       { key: 'actitudinal', label: TIPOS_LABEL['ACTITUDINAL'] },
@@ -3220,14 +3220,21 @@ function renderAreasEstudiante(areas) {
   }).join('')
 }
 
+// El icono (HTML estático del sistema ICONS) va con insertAdjacentHTML;
+// el mensaje del servidor va SIEMPRE escapado con insertAdjacentText —
+// cierra ~50 callers de una sola vez (data.error, data.mensaje,
+// títulos de columnas, nombres de cursos, etc.)
 function mostrarToast(tipo, msg) {
   const t = document.getElementById('toast')
+  t.textContent = '' // limpiar contenido previo
   if (tipo === 'ok') {
-    t.innerHTML = icon('check') + ' ' + msg
+    t.insertAdjacentHTML('beforeend', icon('check'))
+    t.insertAdjacentText('beforeend', ' ' + msg)
     t.style.color = 'var(--green-700)'
     t.style.background = 'var(--green-100)'
   } else {
-    t.innerHTML = icon('x') + ' ' + msg
+    t.insertAdjacentHTML('beforeend', icon('x'))
+    t.insertAdjacentText('beforeend', ' ' + msg)
     t.style.color = 'var(--red-700)'
     t.style.background = 'var(--red-100)'
   }
@@ -4024,7 +4031,7 @@ async function cargarAdminAsignaciones() {
     const cursoSel = document.getElementById('admin-sel-curso-asign')
     // Cursos ordenados numéricamente (1, 2, 3, 301, 401… no 1, 1001, 1002, 2…)
     const cursosOrdenados = [...cursos].sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }))
-    cursoSel.innerHTML = '<option value="">Todos los cursos</option>' + cursosOrdenados.map(c => '<option value="' + c + '">' + c + '</option>').join('')
+    cursoSel.innerHTML = '<option value="">Todos los cursos</option>' + cursosOrdenados.map(c => '<option value="' + esc(c) + '">' + esc(c) + '</option>').join('')
     cargarAsignacionesCurso()
   } catch (e) {
     document.getElementById('admin-tb-asignaciones').innerHTML = errorReintentar(3, 'cargarAdminAsignaciones', 'Error al cargar')
@@ -4529,7 +4536,7 @@ async function cargarAdminPeriodos() {
     const sedes = sedesRes.ok ? await sedesRes.json() : []
     const selSede = document.getElementById('admin-sel-sede')
     const selectedSede = selSede.value
-    selSede.innerHTML = '<option value="">Todas</option>' + sedes.map(s => '<option value="' + s + '">' + s + '</option>').join('')
+    selSede.innerHTML = '<option value="">Todas</option>' + sedes.map(s => '<option value="' + esc(s) + '">' + esc(s) + '</option>').join('')
     if (selectedSede) selSede.value = selectedSede
 
     const anio = document.getElementById('admin-input-anio').value || new Date().getFullYear()
@@ -4551,7 +4558,7 @@ async function cargarAdminPeriodos() {
     const sedeKeys = Object.keys(agrupado).sort()
     for (const sede of sedeKeys) {
       html += '<div style="background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);margin-bottom:16px;overflow:hidden;">'
-      html += '<div style="background:var(--cream-100);padding:10px 14px;font-weight:700;font-size:14px;border-bottom:1px solid var(--line);">' + sede + '</div>'
+      html += '<div style="background:var(--cream-100);padding:10px 14px;font-weight:700;font-size:14px;border-bottom:1px solid var(--line);">' + esc(sede) + '</div>'
       html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
       html += '<thead><tr style="background:var(--cream-50);"><th style="padding:8px 10px;text-align:left;border-bottom:1px solid var(--line);">Período</th><th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);">Inicio</th><th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);">Corte preventivo</th><th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);">Corte final</th><th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);">Estado</th><th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);">Acciones</th></tr></thead>'
       html += '<tbody>'
@@ -5195,7 +5202,7 @@ async function cargarAdminReporteCorte() {
     const sedesRes = await fetch(API + '/api/admin/sedes', { headers: { 'Authorization': 'Bearer ' + currentToken } })
     const sedes = sedesRes.ok ? await sedesRes.json() : []
     const selSede = document.getElementById('admin-reporte-sede')
-    selSede.innerHTML = '<option value="">Todas</option>' + sedes.map(s => '<option value="' + s + '">' + s + '</option>').join('')
+    selSede.innerHTML = '<option value="">Todas</option>' + sedes.map(s => '<option value="' + esc(s) + '">' + esc(s) + '</option>').join('')
   } catch (e) {}
 }
 
@@ -5554,7 +5561,7 @@ async function cargarTablaEstudiantes() {
           ? '<span style="background:var(--green-100);color:var(--green-700);padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">' + icon('horizonte') + ' Mañana</span>'
           : e.jornada === 'TARDE'
           ? '<span style="background:var(--amber-100);color:var(--amber-700);padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">' + icon('horizonte') + ' Tarde</span>'
-          : '<span style="background:var(--rose-100);color:var(--burgundy-600);padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">' + (e.jornada || '—') + '</span>'
+          : '<span style="background:var(--rose-100);color:var(--burgundy-600);padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">' + esc(e.jornada || '\u2014') + '</span>'
         return '<tr style="animation:filaEntra .25s var(--ease-out) both;animation-delay:' + (i * 25) + 'ms">' +
           '<td style="padding:8px 10px;border-bottom:1px solid var(--line);font-weight:600;">' + esc(e.nombre) + '</td>' +
           '<td style="padding:8px 10px;border-bottom:1px solid var(--line);">' + esc(e.documento) + '</td>' +
@@ -5843,7 +5850,7 @@ async function cargarAdminObservaciones(pagina) {
     if (sedesRes.ok) {
       const sedes = await sedesRes.json()
       const selSede = document.getElementById('admin-obs-sede')
-      selSede.innerHTML = '<option value="">Todas</option>' + sedes.map(s => '<option value="' + s + '">' + s + '</option>').join('')
+      selSede.innerHTML = '<option value="">Todas</option>' + sedes.map(s => '<option value="' + esc(s) + '">' + esc(s) + '</option>').join('')
     }
     if (matsRes.ok) {
       const mats = await matsRes.json()
