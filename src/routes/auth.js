@@ -115,6 +115,14 @@ router.post('/login', async (req, res) => {
         const minsRest = Math.ceil((hasta - new Date()) / 60000)
         return res.status(429).json({ error: `Demasiados intentos. Intenta de nuevo en ${minsRest} minuto(s).` })
       }
+      // El bloqueo ya expiró: el ciclo de 5 intentos vuelve a empezar desde
+      // cero. Antes el contador acumulado condenaba la cuenta: UN solo fallo
+      // tras la espera re-bloqueaba otros 15 min y el estudiante que escribía
+      // mal su documento quedaba atrapado en un bucle de bloqueos. Este
+      // intento en curso, si falla, cuenta como 1 (no como 6). UPDATE y no
+      // DELETE: dos peticiones simultáneas tras expirar no revientan por un
+      // INSERT duplicado.
+      await prisma._db.prepare('UPDATE intentos_login SET intentos = 0, bloqueadoHasta = NULL WHERE documento = ?').run(documento)
     }
 
     const usuario = await prisma.usuario.findUnique({
