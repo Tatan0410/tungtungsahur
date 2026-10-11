@@ -63,8 +63,9 @@ test('sin token → 401', async () => {
   assert.equal(r.status, 401)
 })
 
-test('los logins exitosos NO consumen el cupo por IP (35 seguidos)', async () => {
-  for (let i = 0; i < 35; i++) {
+test('los logins exitosos NO consumen el cupo por IP (85 seguidos)', async () => {
+  // 85 > 80 (FALLOS_IP_MAX): si los éxitos consumieran cupo, el 81º sería 429
+  for (let i = 0; i < 85; i++) {
     const r = await api.post('/api/auth/login', { body: { ...ADMIN, aceptaTerminos: true } })
     assert.equal(r.status, 200, `intento exitoso #${i + 1} no debe ser rechazado`)
   }
@@ -83,8 +84,9 @@ test('5 contraseñas malas bloquean el documento 15 min (6º → 429)', async ()
 
 test('intentos fallidos desde una IP se cortan (429 con mención de IP)', async () => {
   let gatillado = false
-  // Documentos inexistentes y distintos: solo cuenta el límite por IP
-  for (let i = 1; i <= 70 && !gatillado; i++) {
+  // Documentos inexistentes y distintos: solo cuenta el límite por IP.
+  // 120 > 80 (FALLOS_IP_MAX): el 429 debe aparecer dentro del recorrido.
+  for (let i = 1; i <= 120 && !gatillado; i++) {
     const r = await api.post('/api/auth/login', {
       body: { documento: '7999' + String(10000 + i), password: 'inventada', aceptaTerminos: true },
     })

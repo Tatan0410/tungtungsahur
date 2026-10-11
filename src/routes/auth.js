@@ -36,8 +36,14 @@ const TIEMPO_BLOQUEO_MS = 15 * 60 * 1000
 // muchos documentos distintos desde la misma máquina.
 // Solo cuenta intentos FALLIDOS: los logins exitosos no consumen el cupo,
 // así una escuela con muchas peticiones desde la misma IP (NAT) no se bloquea.
+// 80 fallos por ventana de 5 minutos: el colegio comparte UNA IP pública y en
+// los picos de login (p. ej. publicación de boletines) los typos colectivos de
+// ~800 estudiantes superaban los 30/min antiguos y bloqueaban a toda la sede.
+// El límite fino por documento (5 fallos / 15 min) es el que corta la fuerza
+// bruta de verdad; este solo frena el ruido masivo por IP.
 const loginPorIp = new Map()
-const FALLOS_IP_POR_MINUTO = 30
+const FALLOS_IP_MAX = 80
+const FALLOS_IP_VENTANA_MS = 5 * 60 * 1000
 
 function fallosPorIp(ip) {
   const ahora = Date.now()
@@ -50,7 +56,7 @@ function registrarFalloIp(ip) {
   const ahora = Date.now()
   let reg = loginPorIp.get(ip)
   if (!reg || ahora > reg.resetAt) {
-    reg = { count: 0, resetAt: ahora + 60 * 1000 }
+    reg = { count: 0, resetAt: ahora + FALLOS_IP_VENTANA_MS }
     loginPorIp.set(ip, reg)
   }
   reg.count++
@@ -97,8 +103,8 @@ router.post('/login', async (req, res) => {
 
     // ─── RATE LIMITING POR IP (solo fallos) ───
     const ipLogin = req.ip || req.connection.remoteAddress || 'desconocida'
-    if (fallosPorIp(ipLogin) >= FALLOS_IP_POR_MINUTO) {
-      return res.status(429).json({ error: 'Demasiados intentos fallidos desde esta IP. Espera un minuto.' })
+    if (fallosPorIp(ipLogin) >= FALLOS_IP_MAX) {
+      return res.status(429).json({ error: 'Demasiados intentos fallidos desde esta IP. Espera unos minutos.' })
     }
 
     // ─── RATE LIMITING ───
@@ -257,7 +263,7 @@ function enviarCodigoRecuperacion(correoDestino, codigo) {
   })
 }
 
-// Rate limit en memoria para /recuperar (por IP): 10 solicitudes/minuto
+// Rate limit en memoria para /recuperar (por IP): 20 solicitudes/minuto
 const recuperarPorIp = new Map()
 
 router.post('/recuperar', async (req, res) => {
@@ -277,7 +283,7 @@ router.post('/recuperar', async (req, res) => {
       }
     } else {
       reg.count++
-      if (reg.count > 10) {
+      if (reg.count > 20) {
         return res.status(429).json({ error: 'Demasiadas solicitudes. Intenta de nuevo en un minuto.' })
       }
     }
