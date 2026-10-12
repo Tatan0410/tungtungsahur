@@ -10,3 +10,4 @@ prisma/dev.db
 *.xls
 *.csv
 backups/
+.opencode/skills/
