@@ -147,13 +147,35 @@ router.delete('/profesores/:id', async (req, res) => {
     const user = await prisma._db.prepare('SELECT id FROM usuarios WHERE id = ? AND rol = ?').get(req.params.id, 'DOCENTE')
     if (!user) return res.status(404).json({ error: 'Profesor no encontrado' })
     const docente = await prisma._db.prepare('SELECT id FROM docentes WHERE usuarioId = ?').get(req.params.id)
-    await prisma._db.transaction(async () => {
-      if (docente) {
-        await prisma._db.prepare('DELETE FROM docente_materias WHERE docenteId = ?').run(docente.id)
-        await prisma._db.prepare('DELETE FROM docentes WHERE id = ?').run(docente.id)
+
+    // SQLite local trae las FKs activas (better-sqlite3 las habilita por
+    // defecto) y calificaciones tiene ON DELETE RESTRICT hacia docentes:
+    // el borrado de un docente con historial reventaría con 500. Producción
+    // (Postgres) opera con session_replication_role=replica, donde el mismo
+    // borrado pasa y el historial queda conservado (decisión de negocio).
+    // Para que local se comporte IGUAL que producción se apagan las FKs
+    // alrededor de ESTE borrado — el mismo patrón del runner de
+    // migraciones. El PRAGMA va FUERA de la transacción (dentro es no-op)
+    // y el estado previo se restaura en finally, aunque el borrado falle.
+    let fksPrevias = null
+    if (prisma._db.motor === 'sqlite') {
+      fksPrevias = await prisma._db.prepare('PRAGMA foreign_keys').all().then(r => r[0]?.foreign_keys)
+      await prisma._db.exec('PRAGMA foreign_keys = OFF')
+    }
+    try {
+      await prisma._db.transaction(async () => {
+        if (docente) {
+          await prisma._db.prepare('DELETE FROM docente_materias WHERE docenteId = ?').run(docente.id)
+          await prisma._db.prepare('DELETE FROM directores_grupo WHERE docenteId = ?').run(docente.id)
+          await prisma._db.prepare('DELETE FROM docentes WHERE id = ?').run(docente.id)
+        }
+        await prisma._db.prepare('DELETE FROM usuarios WHERE id = ?').run(req.params.id)
+      })()
+    } finally {
+      if (prisma._db.motor === 'sqlite' && fksPrevias) {
+        await prisma._db.exec('PRAGMA foreign_keys = ON').catch(() => {})
       }
-      await prisma._db.prepare('DELETE FROM usuarios WHERE id = ?').run(req.params.id)
-    })()
+    }
     res.json({ mensaje: 'Profesor eliminado' })
   } catch (error) {
     console.error('Error DELETE /profesores:', error)

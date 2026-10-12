@@ -4054,7 +4054,7 @@ async function adminToggleActivo(id, activo) {
 }
 
 async function adminEliminarProfesor(id) {
-  confirmarAccion('¿Eliminar este profesor?\nSe eliminarán todas sus asignaciones.', async (ok) => {
+  confirmarAccion('¿Eliminar este profesor?\n\nSe eliminarán sus asignaciones y su cuenta de acceso.\nSus calificaciones y observaciones quedan conservadas (el historial académico no se pierde).\nSi es director de grupo, ese curso quedará sin director.', async (ok) => {
   if (!ok) return
   try {
     const res = await fetch(API + '/api/admin/profesores/' + id, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + currentToken } })
