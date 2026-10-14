@@ -298,9 +298,11 @@ router.get('/resumen', async (req, res) => {
       const porMat = {}
       for (const r of regs) {
         if (r.estudianteId !== e.estudianteId) continue
-        tot[r.estado] += r.c
+        // Number(): en Postgres el driver devuelve COUNT(*) (int8) como TEXTO
+        const c = Number(r.c)
+        tot[r.estado] += c
         if (!porMat[r.materiaId]) porMat[r.materiaId] = { AUSENTE: 0, TARDANZA: 0, EXCUSA: 0 }
-        porMat[r.materiaId][r.estado] += r.c
+        porMat[r.materiaId][r.estado] += c
       }
       return {
         estudianteId: e.estudianteId,
@@ -369,7 +371,8 @@ router.get('/mia', async (req, res) => {
     const nombresMaterias = new Map(
       (await db.prepare('SELECT id, nombre FROM materias').all()).map(m => [m.id, m.nombre])
     )
-    const sesionesPorMat = new Map(sesionesCurso.map(s => [s.materiaId, s.c]))
+    // Number(): en Postgres el driver devuelve COUNT(*) (int8) como TEXTO
+    const sesionesPorMat = new Map(sesionesCurso.map(s => [s.materiaId, Number(s.c)]))
 
     const tot = { AUSENTE: 0, TARDANZA: 0, EXCUSA: 0 }
     const porMat = {}

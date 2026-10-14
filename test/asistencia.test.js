@@ -235,6 +235,14 @@ test('resumen: no-director 403; curso ajeno (aunque dicte en él) 403; director/
     assert.equal(por.get(estC).porMateria[0].porcentajeInasistencia, 0)
     assert.equal(por.get(estA).porMateria.length, 1, 'resumen por materia')
     assert.equal(por.get(estA).porMateria[0].sesiones, 2)
+    // Tipos numéricos: en Postgres el driver devuelve COUNT(*) como TEXTO —
+    // el router debe entregar números SIEMPRE (Number(...) en cada conteo)
+    assert.equal(typeof r.data.sesiones, 'number', 'resumen.sesiones debe ser number')
+    for (const k of ['ausencias', 'tardanzas', 'excusas', 'porcentajeInasistencia']) {
+      assert.equal(typeof por.get(estA)[k], 'number', 'resumen: ' + k + ' debe ser number')
+      assert.equal(typeof por.get(estA).porMateria[0][k], 'number', 'resumen porMateria: ' + k + ' debe ser number')
+    }
+    assert.equal(typeof por.get(estA).porMateria[0].sesiones, 'number', 'resumen porMateria: sesiones debe ser number')
 
     assert.equal((await getResumen(tokenAdmin, q)).status, 200, 'admin ve cualquier curso')
     assert.equal((await getResumen(tokEstA, q)).status, 403, 'estudiante no puede el resumen')
@@ -273,6 +281,14 @@ test('/mia: el estudiante solo ve lo suyo y no accede a los demás endpoints', a
     assert.equal(rB.data.porMateria.length, 1, 'la materia aparece aunque estB no tenga registros')
     assert.equal(rB.data.porMateria[0].sesiones, 2, 'el total de sesiones por materia coincide')
     assert.equal(rB.data.porMateria[0].porcentajeInasistencia, 0)
+    // Tipos numéricos: COUNT(*) de Postgres llega como TEXTO del driver —
+    // el router debe entregar números SIEMPRE
+    for (const k of ['ausencias', 'tardanzas', 'excusas']) {
+      assert.equal(typeof rA.data.totales[k], 'number', '/mia totales: ' + k + ' debe ser number')
+      assert.equal(typeof rA.data.porMateria[0][k], 'number', '/mia porMateria: ' + k + ' debe ser number')
+    }
+    assert.equal(typeof rA.data.porMateria[0].sesiones, 'number', '/mia porMateria: sesiones debe ser number')
+    assert.equal(typeof rA.data.porMateria[0].porcentajeInasistencia, 'number', '/mia porMateria: porcentaje debe ser number')
 
     // El estudiante no puede tocar los endpoints de docente/director
     assert.equal((await getSesion(tokEstA, 'curso=9999&materiaId=' + materiaId + '&fecha=' + hoy)).status, 403)
