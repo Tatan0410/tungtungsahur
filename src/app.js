@@ -79,11 +79,15 @@ const authRoutes     = require('./routes/auth')
 const notasRoutes    = require('./routes/notas')
 const docenteRoutes  = require('./routes/docente')
 const adminRoutes    = require('./routes/admin')
+const asistenciaRoutes = require('./routes/asistencia')
+const rendimientoRoutes = require('./routes/rendimiento')
 
 app.use('/api/auth',     authRoutes)      // Login y logout
 app.use('/api/notas',    notasRoutes)     // Ver y subir calificaciones
 app.use('/api/docente',  docenteRoutes)   // Cursos y materias del docente
 app.use('/api/admin',    adminRoutes)     // Panel de administración
+app.use('/api/asistencia', asistenciaRoutes) // Toma de asistencia y resúmenes
+app.use('/api/rendimiento', rendimientoRoutes) // Panel de rendimiento del director
 
 // ─────────────────────────────────────────────────────
 // RUTA DE PRUEBA — para verificar que el servidor vive

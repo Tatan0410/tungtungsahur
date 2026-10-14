@@ -2005,3 +2005,6 @@ router.get('/consolidado', async (req, res) => {
 })
 
 module.exports = router
+// Reutilizable (panel de rendimiento del director): la definición VIVE aquí
+// (el test M12 exige exactamente una) y se comparte sin duplicarla.
+module.exports.nivelDeDesempeno = nivelDeDesempeno

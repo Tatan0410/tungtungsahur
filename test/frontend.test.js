@@ -801,3 +801,369 @@ test('cargarCursosMasiva: curso y jornada con payload en <option> quedan inertes
   assert.ok(sel.innerHTML.includes('<option'), 'las opciones se renderizaron')
   afirmarSinXSS(sel.innerHTML, 'impresión masiva: <option> curso/jornada')
 })
+
+test('renderListaAsistenciaDocente: nombre del estudiante con payload queda inerte', () => {
+  const nodos = {
+    'asist-lista': { innerHTML: '' },
+    'asist-badge': { textContent: '', className: '' },
+    'asist-contadores': { innerHTML: '' },
+  }
+  const document = { getElementById: id => nodos[id] }
+  new Function('document', `
+    const ASIST_ESTADOS = ['PRESENTE', 'AUSENTE', 'TARDANZA', 'EXCUSA']
+    let _asistEstados = {}
+    let _asistData = null
+    ${extraerFuncion('esc')}
+    ${extraerFuncion('icon')}
+    ${extraerFuncion('actualizarContadoresAsistencia')}
+    ${extraerFuncion('renderListaAsistenciaDocente')}
+    _asistEstados = { e1: 'AUSENTE', e2: 'PRESENTE' }
+    _asistData = { estudiantes: [
+      { estudianteId: 'e1', nombre: 'EST ' + ${JSON.stringify(XSS_TAG)} },
+      { estudianteId: 'e2', nombre: 'EST ' + ${JSON.stringify(XSS_ONCLICK)} },
+    ] }
+    renderListaAsistenciaDocente({ tomada: true, estudiantes: _asistData.estudiantes })
+  `)(document)
+  const html = nodos['asist-lista'].innerHTML
+  assert.ok(html.includes('EST'), 'la lista se renderizó')
+  assert.ok(html.includes('data-estudiante-id="e1"'), 'la fila lleva su id')
+  afirmarSinXSS(html, 'toma de asistencia: lista de estudiantes')
+  afirmarSinXSS(nodos['asist-contadores'].innerHTML, 'toma de asistencia: contadores')
+})
+
+test('renderResumenAsistencia: nombres de estudiantes y materias con payload quedan inertes', () => {
+  const cont = { innerHTML: '' }
+  const document = { getElementById: () => cont }
+  const poblarIconos = () => {}
+  new Function('document', 'poblarIconos', `
+    const ASIST_UMBRAL_AMBAR = 10
+    const ASIST_UMBRAL_ROJO = 20
+    const ICONS = {}
+    ${extraerFuncion('icon')}
+    ${extraerFuncion('esc')}
+    ${extraerFuncion('colorAsistencia')}
+    ${extraerFuncion('chipAsistencia')}
+    ${extraerFuncion('renderResumenAsistencia')}
+    renderResumenAsistencia('cont', {
+      curso: '9999', desde: '2026-09-13', hasta: '2026-10-13', sesiones: 3,
+      porEstudiante: [
+        {
+          estudianteId: 'e1', nombre: 'EST ' + ${JSON.stringify(XSS_TAG)},
+          ausencias: 2, tardanzas: 1, excusas: 0, porcentajeInasistencia: 66.7,
+          porMateria: [{ materiaId: 'm1', materiaNombre: 'MAT ' + ${JSON.stringify(XSS_ONCLICK)}, sesiones: 3, ausencias: 2, tardanzas: 1, excusas: 0, porcentajeInasistencia: 66.7 }],
+        },
+        { estudianteId: 'e2', nombre: 'EST C', ausencias: 0, tardanzas: 0, excusas: 0, porcentajeInasistencia: 0, porMateria: [] },
+      ],
+    })
+  `)(document, poblarIconos)
+  assert.ok(cont.innerHTML.includes('% Inasistencia'), 'la tabla se renderizó')
+  afirmarSinXSS(cont.innerHTML, 'resumen de asistencia (director/admin)')
+})
+
+test('renderMiAsistencia: materia y fecha con payload quedan inertes', () => {
+  const cont = { innerHTML: '' }
+  const document = { getElementById: () => cont }
+  new Function('document', `
+    const ASIST_UMBRAL_AMBAR = 10
+    const ASIST_UMBRAL_ROJO = 20
+    ${extraerFuncion('esc')}
+    ${extraerFuncion('colorAsistencia')}
+    ${extraerFuncion('renderMiAsistencia')}
+    renderMiAsistencia({
+      totales: { ausencias: 1, tardanzas: 1, excusas: 0 },
+      porMateria: [{ materiaId: 'm1', materiaNombre: 'MAT ' + ${JSON.stringify(XSS_TAG)}, sesiones: 4, ausencias: 1, tardanzas: 1, excusas: 0, porcentajeInasistencia: 25 }],
+      ultimas: [{ fecha: '2026-10-10', materiaNombre: 'MAT ' + ${JSON.stringify(XSS_ONCLICK)}, estado: 'TARDANZA' }],
+    })
+  `)(document)
+  assert.ok(cont.innerHTML.includes('% de inasistencia'), 'la tarjeta se renderizó')
+  afirmarSinXSS(cont.innerHTML, 'portal del estudiante: mi asistencia')
+})
+
+test('renderResumenAsistencia y renderMiAsistencia: números entregados como TEXTO se muestran normalizados', () => {
+  const resumen = { innerHTML: '' }
+  const mia = { innerHTML: '' }
+  const nodos = { contResumen: resumen, 'stu-asistencia': mia }
+  const document = { getElementById: id => nodos[id] }
+  const poblarIconos = () => {}
+  new Function('document', 'poblarIconos', `
+    const ASIST_UMBRAL_AMBAR = 10
+    const ASIST_UMBRAL_ROJO = 20
+    const ICONS = {}
+    ${extraerFuncion('icon')}
+    ${extraerFuncion('esc')}
+    ${extraerFuncion('colorAsistencia')}
+    ${extraerFuncion('chipAsistencia')}
+    ${extraerFuncion('renderResumenAsistencia')}
+    ${extraerFuncion('renderMiAsistencia')}
+    // El backend normaliza, pero si algo intermedio entrega strings
+    // ("012", "25"), el render debe mostrar 12 y 25, sin comillas
+    renderResumenAsistencia('contResumen', {
+      curso: '9999', desde: '2026-09-13', hasta: '2026-10-13', sesiones: '012',
+      porEstudiante: [{
+        estudianteId: 'e1', nombre: 'EST A', ausencias: '003', tardanzas: '1', excusas: '0',
+        porcentajeInasistencia: '25',
+        porMateria: [{ materiaId: 'm1', materiaNombre: 'MAT', sesiones: '012', ausencias: '003', tardanzas: '1', excusas: '0', porcentajeInasistencia: '25' }],
+      }],
+    })
+    renderMiAsistencia({
+      totales: { ausencias: '003', tardanzas: '1', excusas: '0' },
+      porMateria: [{ materiaId: 'm1', materiaNombre: 'MAT', sesiones: '012', ausencias: '003', tardanzas: '1', excusas: '0', porcentajeInasistencia: '25' }],
+      ultimas: [],
+    })
+  `)(document, poblarIconos)
+
+  // Resumen: sesiones, conteos y % impresos como números sin ceros a la izquierda
+  assert.ok(resumen.innerHTML.includes('>12 sesión(es)'), 'sesiones del resumen: "012" → 12')
+  assert.ok(resumen.innerHTML.includes('>3</td>'), 'ausencias del resumen: "003" → 3')
+  assert.ok(resumen.innerHTML.includes('25% · Crítica'), 'porcentaje del resumen: "25" → 25 (texto con etiqueta)')
+  assert.ok(resumen.innerHTML.includes('width:25%'), 'ancho de barra del resumen: 25%')
+  assert.ok(!resumen.innerHTML.includes('"012"') && !resumen.innerHTML.includes('>012<'), 'ningún "012" crudo en el resumen')
+  // /mia
+  assert.ok(mia.innerHTML.includes('3 inasistencia(s)'), 'totales de /mia: "003" → 3')
+  assert.ok(mia.innerHTML.includes('12 sesión(es)'), 'sesiones de /mia: "012" → 12')
+  assert.ok(mia.innerHTML.includes('>25% de inasistencia'), 'porcentaje de /mia: "25" → 25')
+  assert.ok(mia.innerHTML.includes('width:25%'), 'ancho de barra de /mia: 25%')
+  assert.ok(!mia.innerHTML.includes('>012<') && !mia.innerHTML.includes('>003'), 'ningún número-crudo en /mia')
+})
+
+// ═══════════════════════════════════════════════════════════════
+// FASE 3B: panel de rendimiento del director
+// (ficha individual + vista del curso + impresión A4 aislada)
+// ═══════════════════════════════════════════════════════════════
+
+test('renderFichaRendimiento: nombres de estudiante y materia con payload quedan inertes', () => {
+  const cont = { innerHTML: '' }
+  const nodos = { 'rend-ficha-cont': cont }
+  const document = { getElementById: id => nodos[id] }
+  const poblarIconos = () => {}
+  new Function('document', 'poblarIconos', `
+    const ASIST_UMBRAL_AMBAR = 10
+    const ASIST_UMBRAL_ROJO = 20
+    ${extraerFuncion('esc')}
+    ${extraerFuncion('colorAsistencia')}
+    ${extraerFuncion('chipAsistencia')}
+    ${extraerFuncion('chipNivelRend')}
+    ${extraerFuncion('celdaNotaRend')}
+    ${extraerFuncion('vigenteRend')}
+    ${extraerFuncion('textoPromediosRend')}
+    ${extraerFuncion('svgLineaRend')}
+    ${extraerFuncion('comparativaMateriaRend')}
+    ${extraerFuncion('renderFichaRendimiento')}
+    renderFichaRendimiento('rend-ficha-cont', {
+      estudiante: { nombre: 'EST ' + ${JSON.stringify(XSS_TAG)}, curso: '9999' },
+      anio: '2026', comparacionDisponible: true, promedioVigente: 3.55, nivel: 'BÁSICO', materiasEnRiesgo: 1,
+      promedioPorPeriodo: { '1': 2.75, '2': 3.25, '3': 3, '4': 4.6 },
+      nivelPorPeriodo: { '1': 'BAJO', '2': 'BÁSICO', '3': 'BÁSICO', '4': 'SUPERIOR' },
+      porMateria: [
+        { materiaId: 'm1', materiaNombre: 'MAT ' + ${JSON.stringify(XSS_TAG)}, definitivas: { '1': 3.5, '2': 4, '3': 3, '4': 4.6 }, definitivoPonderado: null, nivel: 'SUPERIOR', promedioCurso: 3.3 },
+        { materiaId: 'm2', materiaNombre: 'MAT ' + ${JSON.stringify(XSS_ONCLICK)}, definitivas: { '1': 2, '2': 2.5, '3': null, '4': null }, definitivoPonderado: null, nivel: 'BAJO', promedioCurso: null },
+      ],
+      asistencia: {
+        totales: { ausencias: 2, tardanzas: 1, excusas: 0 },
+        porMateria: [{ materiaId: 'm1', materiaNombre: 'MAT ' + ${JSON.stringify(XSS_CONCAT)}, sesiones: 4, ausencias: 2, tardanzas: 1, excusas: 0, porcentajeInasistencia: 50 }],
+        ultimas: [],
+      },
+    })
+  `)(document, poblarIconos)
+  assert.ok(cont.innerHTML.includes('Materias por reforzar'), 'la ficha se renderizó')
+  assert.ok(cont.innerHTML.includes('Asistencia del año'), 'el bloque de asistencia se renderizó')
+  assert.ok(cont.innerHTML.includes('Estudiante vs curso'), 'la comparativa aparece con comparacionDisponible: true')
+  afirmarSinXSS(cont.innerHTML, 'ficha individual de rendimiento')
+})
+
+test('renderVistaCursoRendimiento: nombres de estudiantes y materias con payload quedan inertes', () => {
+  const cont = { innerHTML: '' }
+  const nodos = { 'rend-curso-cont': cont }
+  const document = { getElementById: id => nodos[id] }
+  const poblarIconos = () => {}
+  new Function('document', 'poblarIconos', `
+    let _rendOrden = { col: 'promedio', asc: false }
+    let _rendCursoEstudiantes = null
+    ${extraerFuncion('esc')}
+    ${extraerFuncion('chipNivelRend')}
+    ${extraerFuncion('textoPromediosMateriasRend')}
+    ${extraerFuncion('svgBarrasCursoRend')}
+    ${extraerFuncion('barraApiladaNivelesRend')}
+    ${extraerFuncion('leyendaNivelesRend')}
+    ${extraerFuncion('svgDonaNiveles')}
+    ${extraerFuncion('tablaEstudiantesRend')}
+    ${extraerFuncion('renderVistaCursoRendimiento')}
+    renderVistaCursoRendimiento('rend-curso-cont', {
+      curso: '9999', anio: '2026',
+      porMateria: [
+        { materiaId: 'm1', materiaNombre: 'MAT ' + ${JSON.stringify(XSS_TAG)}, promedioPorPeriodo: { '1': 3.5, '2': null, '3': null, '4': null }, definitivoPonderado: null, distribucion: { BAJO: 1, 'BÁSICO': 2, ALTO: 0, SUPERIOR: 0, total: 3 } },
+      ],
+      distribucionGeneral: { BAJO: 1, 'BÁSICO': 2, ALTO: 0, SUPERIOR: 0, total: 3 },
+      porEstudiante: [
+        { estudianteId: 'e1', nombre: 'EST ' + ${JSON.stringify(XSS_ONCLICK)}, promedioGeneral: 3.55, nivel: 'BÁSICO', materiasEnRiesgo: 1, tendencia: 'mejora' },
+        { estudianteId: 'e2', nombre: 'EST ' + ${JSON.stringify(XSS_CONCAT)}, promedioGeneral: null, nivel: null, materiasEnRiesgo: 0, tendencia: null },
+      ],
+    })
+  `)(document, poblarIconos)
+  assert.ok(cont.innerHTML.includes('uso interno del director'), 'el banner de uso interno está visible')
+  assert.ok(cont.innerHTML.includes('↑ Mejora'), 'la tendencia lleva texto además de la flecha')
+  assert.ok(cont.innerHTML.includes('En riesgo'), 'los estudiantes en riesgo quedan destacados con texto')
+  afirmarSinXSS(cont.innerHTML, 'vista del curso de rendimiento')
+})
+
+test('rendimiento: números como texto se normalizan; nulls → "—" y NO se dibujan en la línea', () => {
+  const cont = { innerHTML: '' }
+  const nodos = { 'rend-ficha-cont': cont }
+  const document = { getElementById: id => nodos[id] }
+  const poblarIconos = () => {}
+  new Function('document', 'poblarIconos', `
+    const ASIST_UMBRAL_AMBAR = 10
+    const ASIST_UMBRAL_ROJO = 20
+    ${extraerFuncion('esc')}
+    ${extraerFuncion('colorAsistencia')}
+    ${extraerFuncion('chipAsistencia')}
+    ${extraerFuncion('chipNivelRend')}
+    ${extraerFuncion('celdaNotaRend')}
+    ${extraerFuncion('vigenteRend')}
+    ${extraerFuncion('textoPromediosRend')}
+    ${extraerFuncion('svgLineaRend')}
+    ${extraerFuncion('comparativaMateriaRend')}
+    ${extraerFuncion('renderFichaRendimiento')}
+    renderFichaRendimiento('rend-ficha-cont', {
+      estudiante: { nombre: 'EST A', curso: '9999' },
+      anio: '2026', comparacionDisponible: true, materiasEnRiesgo: '001', promedioVigente: '3.55', nivel: 'BÁSICO',
+      promedioPorPeriodo: { '1': '2.75', '2': null, '3': null, '4': '4.6' },
+      nivelPorPeriodo: { '1': 'BAJO', '2': null, '3': null, '4': 'SUPERIOR' },
+      porMateria: [
+        { materiaId: 'm1', materiaNombre: 'MAT', definitivas: { '1': '3.50', '2': '04.0', '3': null, '4': undefined }, definitivoPonderado: '3.55', nivel: 'BÁSICO', promedioCurso: '3.30' },
+      ],
+      asistencia: {
+        totales: { ausencias: '003', tardanzas: '1', excusas: '0' },
+        porMateria: [{ materiaId: 'm1', materiaNombre: 'MAT', sesiones: '012', ausencias: '003', tardanzas: '1', excusas: '0', porcentajeInasistencia: '25' }],
+        ultimas: [],
+      },
+    })
+  `)(document, poblarIconos)
+  // Notas entregadas como texto: normalizadas, sin ceros de relleno
+  assert.ok(cont.innerHTML.includes('>3.5</td>'), '"3.50" → 3.5')
+  assert.ok(cont.innerHTML.includes('>4</td>'), '"04.0" → 4')
+  assert.ok(cont.innerHTML.includes('>3.55</td>'), 'definitiva ponderada "3.55" → 3.55')
+  // Sin nota → "—", nunca 0
+  assert.ok(cont.innerHTML.includes('>—</td>'), 'los nulls se muestran como "—"')
+  assert.ok(!/>0<\/td>/.test(cont.innerHTML), 'ningún null se imprimió como 0')
+  // Gráfica de línea: SOLO los períodos con nota (P2 y P3 no existen)
+  const puntos = (cont.innerHTML.match(/class="rend-punto"/g) || []).length
+  assert.equal(puntos, 2, 'la línea tiene exactamente 2 puntos (P2 y P3 se omiten)')
+  assert.ok(cont.innerHTML.includes('<polyline points="'), 'la polyline se dibuja con los puntos existentes')
+  assert.ok(cont.innerHTML.includes('P1: 2.75 · P4: 4.6'), 'el texto equivalente solo menciona los períodos con nota')
+  assert.ok(!cont.innerHTML.includes('P2:') && !cont.innerHTML.includes('P3:'), 'los períodos sin nota no aparecen en el texto')
+  assert.ok(!cont.innerHTML.includes('NaN'), 'nada de NaN en la gráfica ni en las barras')
+  // Conteos del servidor como texto
+  assert.ok(cont.innerHTML.includes('>1</div>'), 'materiasEnRiesgo "001" → 1')
+  assert.ok(cont.innerHTML.includes('3 inasistencia(s)'), 'ausencias "003" → 3')
+  assert.ok(cont.innerHTML.includes('12 sesión(es)'), 'sesiones "012" → 12')
+  assert.ok(!cont.innerHTML.includes('>012<') && !cont.innerHTML.includes('>003'), 'ningún número-crudo en la ficha')
+})
+
+test('comparacionDisponible false → sin columna ni valores de promedioCurso; true → aparece', () => {
+  const nodos = { 'ficha-sin': { innerHTML: '' }, 'ficha-con': { innerHTML: '' } }
+  const document = { getElementById: id => nodos[id] }
+  const poblarIconos = () => {}
+  const datosFicha = cmp => ({
+    estudiante: { nombre: 'EST A', curso: '9998' },
+    anio: '2026', comparacionDisponible: cmp, promedioVigente: 3.1, nivel: 'BÁSICO', materiasEnRiesgo: 0,
+    promedioPorPeriodo: { '1': 3.1 }, nivelPorPeriodo: { '1': 'BÁSICO' },
+    porMateria: [
+      { materiaId: 'm1', materiaNombre: 'MAT', definitivas: { '1': 3.1, '2': null, '3': null, '4': null }, definitivoPonderado: null, nivel: 'BÁSICO', promedioCurso: 3.91 },
+    ],
+    asistencia: { totales: { ausencias: 0, tardanzas: 0, excusas: 0 }, porMateria: [], ultimas: [] },
+  })
+  new Function('document', 'poblarIconos', `
+    const ASIST_UMBRAL_AMBAR = 10
+    const ASIST_UMBRAL_ROJO = 20
+    ${extraerFuncion('esc')}
+    ${extraerFuncion('colorAsistencia')}
+    ${extraerFuncion('chipAsistencia')}
+    ${extraerFuncion('chipNivelRend')}
+    ${extraerFuncion('celdaNotaRend')}
+    ${extraerFuncion('vigenteRend')}
+    ${extraerFuncion('textoPromediosRend')}
+    ${extraerFuncion('svgLineaRend')}
+    ${extraerFuncion('comparativaMateriaRend')}
+    ${extraerFuncion('renderFichaRendimiento')}
+    renderFichaRendimiento('ficha-sin', ${JSON.stringify(datosFicha(false))})
+    renderFichaRendimiento('ficha-con', ${JSON.stringify(datosFicha(true))})
+  `)(document, poblarIconos)
+  // Sin comparación: nota discreta, cero números del curso
+  assert.ok(nodos['ficha-sin'].innerHTML.includes('Comparación con el curso no disponible'), 'la nota discreta está presente')
+  assert.ok(!nodos['ficha-sin'].innerHTML.includes('3.91'), 'el promedio del curso NO se muestra')
+  assert.ok(!nodos['ficha-sin'].innerHTML.includes('Estudiante vs curso'), 'sin columna comparativa')
+  // Con comparación: la columna y el promedio del curso sí aparecen
+  assert.ok(nodos['ficha-con'].innerHTML.includes('Estudiante vs curso'), 'la columna comparativa aparece')
+  assert.ok(nodos['ficha-con'].innerHTML.includes('3.91'), 'el promedio del curso se muestra cuando está disponible')
+})
+
+test('la ficha no expone ids de terceros: solo lo que trae el JSON del estudiante', () => {
+  const cont = { innerHTML: '' }
+  const nodos = { 'rend-ficha-cont': cont }
+  const document = { getElementById: id => nodos[id] }
+  const poblarIconos = () => {}
+  new Function('document', 'poblarIconos', `
+    const ASIST_UMBRAL_AMBAR = 10
+    const ASIST_UMBRAL_ROJO = 20
+    ${extraerFuncion('esc')}
+    ${extraerFuncion('colorAsistencia')}
+    ${extraerFuncion('chipAsistencia')}
+    ${extraerFuncion('chipNivelRend')}
+    ${extraerFuncion('celdaNotaRend')}
+    ${extraerFuncion('vigenteRend')}
+    ${extraerFuncion('textoPromediosRend')}
+    ${extraerFuncion('svgLineaRend')}
+    ${extraerFuncion('comparativaMateriaRend')}
+    ${extraerFuncion('renderFichaRendimiento')}
+    renderFichaRendimiento('rend-ficha-cont', {
+      estudiante: { nombre: 'EST A', curso: '9999' },
+      anio: '2026', comparacionDisponible: true, promedioVigente: 3.5, nivel: 'ALTO', materiasEnRiesgo: 0,
+      promedioPorPeriodo: { '1': 3.5 }, nivelPorPeriodo: { '1': 'ALTO' },
+      porMateria: [{ materiaId: 'm-propia', materiaNombre: 'MAT', definitivas: { '1': 3.5, '2': null, '3': null, '4': null }, definitivoPonderado: null, nivel: 'ALTO', promedioCurso: 3.2 }],
+      asistencia: { totales: { ausencias: 0, tardanzas: 0, excusas: 0 }, porMateria: [], ultimas: [] },
+    })
+  `)(document, poblarIconos)
+  // La respuesta de /estudiante no trae ids ni datos de terceros: el
+  // render no puede mostrar lo que no recibe, y nada de ids internally
+  assert.ok(!cont.innerHTML.includes('porEstudiante'), 'la ficha no expone la lista del curso')
+  assert.ok(!cont.innerHTML.includes('estudianteId'), 'ningún id de estudiante viaja al HTML de la ficha')
+  assert.ok(!cont.innerHTML.includes('m-propia'), 'ni siquiera los materiaId del propio JSON se imprimen: solo nombres y números')
+  assert.ok(cont.innerHTML.includes('EST A'), 'la ficha muestra al estudiante consultado')
+})
+
+test('reglas de impresión: la ficha tiene las suyas y las del boletín siguen intactas', () => {
+  // Ficha (nuevas, aisladas con su clase body propia)
+  assert.ok(HTML.includes('id="ficha-impresion-rendimiento"'), 'existe el contenedor de impresión de la ficha')
+  assert.ok(HTML.includes('body.imprimiendo-ficha-rendimiento > *:not(#ficha-impresion-rendimiento)'), 'la regla de impresión de la ficha aísla todo lo demás')
+  assert.ok(HTML.includes('body.imprimiendo-ficha-rendimiento .rend-print-block { break-inside: avoid;'), 'las tarjetas de la ficha no se parten entre páginas')
+  assert.ok(HTML.includes('@page { size: A4; margin: 14mm; }'), 'la ficha imprime en A4 (estilo inyectado por imprimirFichaRendimiento)')
+  // Boletín (las reglas preexistentes quedan literalmente iguales)
+  assert.ok(HTML.includes('body > *:not(#boletin-view) { display: none !important; }'), 'la regla de aislamiento del boletín sigue presente')
+  assert.ok(HTML.includes('#boletin-view { display: block !important; position: static;'), 'la regla del contenedor del boletín sigue presente')
+  assert.ok(HTML.includes('@page { size: letter; margin: 0; }'), 'el @page letter del boletín sigue intacto')
+  assert.ok(HTML.includes('.boletin-controles { display: none !important; }'), 'los controles del boletín se siguen ocultando')
+  // imprimirFichaRendimiento: imprime, activa la clase y la limpia después
+  const imp = extraerFuncion('imprimirFichaRendimiento')
+  assert.match(imp, /window\.print\(\)/, 'usa window.print()')
+  assert.match(imp, /classList\.add\('imprimiendo-ficha-rendimiento'\)/, 'activa la clase de aislamiento')
+  assert.match(imp, /afterprint/, 'limpia en afterprint')
+  const limpiar = extraerFuncion('_rendLimpiarImpresion')
+  assert.match(limpiar, /classList\.remove\('imprimiendo-ficha-rendimiento'\)/, 'y la remueve al terminar')
+})
+
+test('htmlEncabezadoImpresionRend: membrete institucional sin datos inventados', () => {
+  const html = new Function(`
+    const hoyBogotaUI = () => '2026-10-14'
+    ${extraerFuncion('esc')}
+    ${extraerFuncion('htmlEncabezadoImpresionRend')}
+    ${extraerFuncion('pieImpresionRend')}
+    return htmlEncabezadoImpresionRend({ estudiante: { nombre: 'EST ' + ${JSON.stringify(XSS_TAG)}, curso: '9999' }, anio: '2026' }) + pieImpresionRend()
+  `)()
+  assert.ok(html.includes('Institución Educativa Técnica Sagrado Corazón'), 'el nombre institucional es el oficial del portal')
+  assert.ok(html.includes('14/10/2026 (hora de Colombia)'), 'la fecha de impresión va en hora de Colombia')
+  assert.ok(html.includes('Reunión de padres de familia'), 'el encabezado declara el propósito')
+  assert.ok(html.includes('Documento informativo para reunión de padres de familia'), 'el pie informativo está presente')
+  assert.ok(html.includes('Año 2026'), 'el año del encabezado es el consultado')
+  afirmarSinXSS(html, 'encabezado de impresión de la ficha')
+})

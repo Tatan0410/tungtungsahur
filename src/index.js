@@ -53,7 +53,7 @@ async function asegurarPeriodosAnioActual() {
 }
 
 // Arrancar servidor
-app.listen(PORT, async () => {
+const server = app.listen(PORT, async () => {
   console.log('')
   console.log('╔══════════════════════════════════════════╗')
   console.log('║  Institución Educativa Técnica           ║')
@@ -66,3 +66,11 @@ app.listen(PORT, async () => {
   console.log('')
   await asegurarPeriodosAnioActual()
 })
+
+// Sockets ociosos: el keepAliveTimeout por defecto (5 s) cierra conexiones
+// mientras el cliente de las pruebas bloquea su event loop (bcrypt síncrono)
+// y undici reutiliza el socket ya cerrado → ECONNRESET. 65 s lo elimina y
+// es además el valor recomendado detrás de proxies (Nginx/Cloudflare deben
+// ser SIEMPRE > que su propio timeout de upstream para evitar 502 por carrera).
+server.keepAliveTimeout = 65000
+server.headersTimeout = 66000
