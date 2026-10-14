@@ -795,6 +795,22 @@ body::before {
     transition-duration: .01ms !important;
   }
 }
+/* ─── Asistencia (Fase 2B) ─── */
+.seg-btn { border:1px solid var(--line); background:var(--paper); color:var(--ink-600); font-size:11px; font-weight:600; padding:4px 12px; cursor:pointer; border-radius:999px; transition: background .12s, color .12s, border-color .12s; }
+.seg-btn:hover { background:var(--cream-50); }
+.seg-activo[data-estado="PRESENTE"] { background:var(--green-100); color:var(--green-700); border-color:var(--green-500); }
+.seg-activo[data-estado="AUSENTE"] { background:var(--red-100); color:var(--red-700); border-color:var(--red-500); }
+.seg-activo[data-estado="TARDANZA"] { background:var(--amber-100); color:var(--amber-700); border-color:var(--amber-500); }
+.seg-activo[data-estado="EXCUSA"] { background:var(--cream-100); color:var(--burgundy-700); border-color:var(--gold-300); }
+.asist-chip { display:inline-flex; align-items:center; gap:4px; padding:3px 12px; border-radius:999px; font-size:11px; font-weight:700; background:var(--cream-100); color:var(--ink-600); }
+.asist-chip.asist-ok { background:var(--green-100); color:var(--green-700); }
+.asist-chip.asist-medio { background:var(--amber-100); color:var(--amber-700); }
+.asist-chip.asist-alto { background:var(--red-100); color:var(--red-700); }
+.asist-barra { height:8px; background:var(--line); border-radius:999px; overflow:hidden; }
+.asist-barra > div { height:8px; border-radius:999px; }
+.fila-desglose { cursor:pointer; }
+.desglose-tr { display:none; }
+@media (max-width: 640px) { .seg-btn { padding:4px 8px; font-size:10px; } }
 </style>
 </head>
 <body>
@@ -869,6 +885,10 @@ body::before {
   <div id="stu-observaciones" style="padding:8px 0;">
     <div style="color:var(--ink-400);font-size:13px;">Cargando...</div>
   </div>
+  <div class="sec-label" style="margin-top:24px;">Mi asistencia</div>
+  <div id="stu-asistencia" style="padding:8px 0;">
+    <div style="color:var(--ink-400);font-size:13px;">Cargando...</div>
+  </div>
 </div>
 
 <div class="screen" id="sc-teacher">
@@ -882,9 +902,11 @@ body::before {
     <select class="sel" id="sel-materia"><option value="">Seleccionar materia</option></select>
     <button class="btn-sm success" id="btn-save-all" style="margin-left: auto; font-weight: 600; padding: 8px 14px;" onclick="guardarGrid()"><span class="icon" data-icon="guardar"></span> Guardar todos los cambios</button>
     <span id="save-status" style="font-size:12px;font-weight:600;color:var(--ink-500);align-self:center;white-space:nowrap;"></span>
+    <button class="btn-sm primary" onclick="abrirModalAsistenciaDocente()" id="btn-asistencia" style="font-weight:600;"><span class="icon" data-icon="calendario"></span> Asistencia</button>
     <button class="btn-sm" onclick="abrirMiCuenta()" style="font-weight:600;"><span class="icon" data-icon="engranaje"></span> Mi cuenta</button>
     <button class="btn-sm" id="btn-director-obs" style="display:none;font-weight:600;" onclick="mostrarObservacionesCursoDirector()"><span class="icon" data-icon="ojo"></span> Observaciones de mi curso</button>
     <button class="btn-sm" id="btn-director-reporte" style="display:none;font-weight:600;" onclick="mostrarReporteCorte()"><span class="icon" data-icon="advertencia"></span> Reporte de corte</button>
+    <button class="btn-sm" id="btn-director-asistencia" style="display:none;font-weight:600;" onclick="abrirModalAsistenciaCurso()"><span class="icon" data-icon="usuarios"></span> Asistencia de mi curso</button>
   </div>
   <div class="period-tabs" id="period-tabs"><div class="period-indicador" id="period-indicador" style="opacity:0;"></div>
     <div class="period-tab active" data-p="1" onclick="selPeriodo(1)">P1<span class="weight">20%</span></div>
@@ -971,6 +993,7 @@ body::before {
         <button class="nav-item" onclick="conCarga(this, cargarAdminEstudiantes)" id="nav-estudiantes"><span class="icon" data-icon="usuarios"></span><span class="sidebar-txt"> Estudiantes</span></button>
         <button class="nav-item" onclick="conCarga(this, cargarAdminDirectores)" id="nav-directores"><span class="icon" data-icon="estudiante"></span><span class="sidebar-txt"> Directores</span></button>
         <button class="nav-item" onclick="conCarga(this, cargarAdminObservaciones)" id="nav-obs"><span class="icon" data-icon="ojo"></span><span class="sidebar-txt"> Obs</span></button>
+        <button class="nav-item" onclick="conCarga(this, cargarAdminAsistencia)" id="nav-asistencia"><span class="icon" data-icon="calendario"></span><span class="sidebar-txt"> Asistencia</span></button>
       </div>
     </div>
     <button class="btn-sidebar-movil" onclick="alternarSidebar()" title="Abrir menú" aria-label="Abrir menú">
@@ -1028,6 +1051,18 @@ body::before {
       <div><button class="btn-sm primary" onclick="ejecutarAdminReporteCorte()" style="font-weight:600;">Generar reporte</button></div>
     </div>
     <div id="admin-reporte-corte-grid"></div>
+  </div>
+
+  <div id="admin-asistencia-section" style="display:none;">
+    <div style="font-size:15px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);margin-bottom:12px;"><span class="icon" data-icon="calendario"></span> Asistencia por curso</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:16px;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px;">
+      <div><div class="lbl">Curso</div><input class="inp" id="admin-asist-curso" placeholder="Ej: 301" style="width:80px;"></div>
+      <div><div class="lbl">Materia</div><select class="sel" id="admin-asist-materia"><option value="">Todas</option></select></div>
+      <div><div class="lbl">Desde</div><input class="inp" id="admin-asist-desde" type="date" style="width:150px;"></div>
+      <div><div class="lbl">Hasta</div><input class="inp" id="admin-asist-hasta" type="date" style="width:150px;"></div>
+      <div><button class="btn-sm primary" onclick="verAsistenciaAdmin()" style="font-weight:600;">Ver asistencia</button></div>
+    </div>
+    <div id="admin-asistencia-resumen"></div>
   </div>
 
   <div id="admin-obs-section" style="display:none;">
@@ -1293,6 +1328,48 @@ body::before {
     <div style="display:flex;gap:8px;justify-content:end;margin-top:14px;">
       <button class="btn-sm" onclick="cerrarModalEstudianteNuevo()">Cancelar</button>
       <button class="btn-sm primary" id="btn-est-nuevo" onclick="conCarga(this, crearEstudianteNuevo)" style="font-weight:600;"><span class="icon" data-icon="mas"></span> Crear estudiante</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal asistencia: toma de lista (docente) -->
+<div id="modal-asistencia-docente" style="display:none;position:fixed;inset:0;z-index:100;background:rgba(0,0,0,0.4);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);align-items:center;justify-content:center;" onclick="if(event.target===this)cerrarModalAsistenciaDocente()">
+  <div style="background:var(--paper);border-radius:var(--r-lg);padding:0;max-width:660px;width:92%;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.3);overflow:hidden;">
+    <div style="padding:18px 22px;border-bottom:1px solid var(--line);flex-shrink:0;">
+      <div style="font-size:16px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);"><span class="icon" data-icon="calendario"></span> Asistencia</div>
+      <div style="font-size:12px;color:var(--ink-500);margin-top:4px;" id="asist-info-curso">Curso y materia</div>
+    </div>
+    <div style="padding:14px 22px;display:flex;gap:12px;align-items:end;flex-wrap:wrap;border-bottom:1px solid var(--line);flex-shrink:0;">
+      <div><div class="lbl">Fecha</div><input class="inp" type="date" id="asist-fecha" style="width:160px;" onchange="cambiarFechaAsistencia()"></div>
+      <span class="asist-chip" id="asist-badge" style="margin-bottom:8px;">Lista nueva</span>
+      <span style="flex:1;"></span>
+      <button class="btn-sm" onclick="marcarTodosPresentes()" id="btn-marcar-presentes" style="font-weight:600;margin-bottom:4px;"><span class="icon" data-icon="check"></span> Marcar todos presentes</button>
+    </div>
+    <div style="padding:12px 22px 0;display:flex;gap:8px;flex-wrap:wrap;flex-shrink:0;" id="asist-contadores"></div>
+    <div id="asist-lista" onclick="clicEstadoAsistencia(event)" style="padding:8px 22px 6px;overflow-y:auto;flex:1;"></div>
+    <div style="padding:14px 22px;border-top:1px solid var(--line);display:flex;gap:10px;justify-content:flex-end;flex-shrink:0;">
+      <button class="btn-sm" onclick="cerrarModalAsistenciaDocente()">Cerrar</button>
+      <button class="btn-sm success" id="btn-guardar-asistencia" onclick="guardarAsistenciaDocente()" style="font-weight:600;"><span class="icon" data-icon="guardar"></span> Guardar lista</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal asistencia del curso (director de grupo) -->
+<div id="modal-asistencia-curso" style="display:none;position:fixed;inset:0;z-index:100;background:rgba(0,0,0,0.4);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);align-items:center;justify-content:center;" onclick="if(event.target===this)cerrarModalAsistenciaCurso()">
+  <div style="background:var(--paper);border-radius:var(--r-lg);padding:0;max-width:840px;width:94%;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.3);overflow:hidden;">
+    <div style="padding:18px 22px;border-bottom:1px solid var(--line);flex-shrink:0;">
+      <div style="font-size:16px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);"><span class="icon" data-icon="usuarios"></span> Asistencia de mi curso</div>
+      <div style="font-size:11px;color:var(--amber-700);background:var(--amber-100);border-radius:999px;padding:3px 12px;display:inline-flex;margin-top:8px;font-weight:600;">Información de uso interno del director</div>
+    </div>
+    <div style="padding:14px 22px;display:flex;gap:12px;align-items:end;flex-wrap:wrap;border-bottom:1px solid var(--line);flex-shrink:0;">
+      <div id="asist-dir-curso-fila"><div class="lbl">Curso</div><select class="sel" id="asist-dir-curso" onchange="verAsistenciaDirector()"></select></div>
+      <div><div class="lbl">Materia</div><select class="sel" id="asist-dir-materia" onchange="verAsistenciaDirector()"><option value="">Todas las materias</option></select></div>
+      <div><div class="lbl">Desde</div><input class="inp" type="date" id="asist-dir-desde" style="width:150px;" onchange="verAsistenciaDirector()"></div>
+      <div><div class="lbl">Hasta</div><input class="inp" type="date" id="asist-dir-hasta" style="width:150px;" onchange="verAsistenciaDirector()"></div>
+    </div>
+    <div id="asist-dir-resumen" style="padding:6px 22px 18px;overflow-y:auto;flex:1;"></div>
+    <div style="padding:14px 22px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;flex-shrink:0;">
+      <button class="btn-sm" onclick="cerrarModalAsistenciaCurso()">Cerrar</button>
     </div>
   </div>
 </div>
@@ -2119,6 +2196,7 @@ async function cargarAsignaciones() {
       if (currentUser && currentUser.rol === 'ESTUDIANTE') {
         cargarNotasEstudiante();
         cargarEstadoCorte();
+        cargarMiAsistencia();
       }
       // Check if teacher is a director
       try {
@@ -2135,10 +2213,14 @@ async function cargarAsignaciones() {
               reporteBtn.style.display = 'inline-block'
               reporteBtn.innerHTML = icon('advertencia') + ' Reporte de corte'
             }
+            const asistDirBtn = document.getElementById('btn-director-asistencia')
+            if (asistDirBtn) asistDirBtn.style.display = 'inline-block'
           } else {
             dirBtn.style.display = 'none'
             const reporteBtn = document.getElementById('btn-director-reporte')
             if (reporteBtn) reporteBtn.style.display = 'none'
+            const asistDirBtn = document.getElementById('btn-director-asistencia')
+            if (asistDirBtn) asistDirBtn.style.display = 'none'
           }
         }
       } catch (e) {}
@@ -6287,6 +6369,410 @@ function enviarPendientesAlSalir() {
   } catch (e) { /* el localStorage ya los tiene */ }
 }
 window.addEventListener('pagehide', enviarPendientesAlSalir)
+// ═══════════════════════════════════════════════════════════════
+// ASISTENCIA (Fase 2B) — el docente toma la lista de su curso/materia,
+// el director ve el resumen de SU curso, el admin ve cualquier curso y
+// el estudiante consulta la propia. Endpoints de /api/asistencia.
+// ═══════════════════════════════════════════════════════════════
+
+// Umbrales del semáforo de inasistencia (%). Con color Y texto.
+const ASIST_UMBRAL_AMBAR = 10
+const ASIST_UMBRAL_ROJO = 20
+const ASIST_ESTADOS = ['PRESENTE', 'AUSENTE', 'TARDANZA', 'EXCUSA']
+let _asistEstados = {}   // estudianteId → estado del modal de toma de lista
+let _asistData = null    // última respuesta de GET /sesion
+
+// "Hoy" en America/Bogota como AAAA-MM-DD (en-CA emite ese formato exacto)
+function hoyBogotaUI() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+}
+function restarDiasUI(f, n) {
+  const d = new Date(f + 'T12:00:00Z')
+  d.setUTCDate(d.getUTCDate() - n)
+  return d.toISOString().slice(0, 10)
+}
+function colorAsistencia(porcentaje) {
+  if (porcentaje >= ASIST_UMBRAL_ROJO) return 'var(--red-500)'
+  if (porcentaje >= ASIST_UMBRAL_AMBAR) return 'var(--amber-500)'
+  return 'var(--green-500)'
+}
+function chipAsistencia(porcentaje) {
+  if (porcentaje >= ASIST_UMBRAL_ROJO) return '<span class="asist-chip asist-alto">' + porcentaje + '% · Crítica</span>'
+  if (porcentaje >= ASIST_UMBRAL_AMBAR) return '<span class="asist-chip asist-medio">' + porcentaje + '% · Atención</span>'
+  return '<span class="asist-chip asist-ok">' + porcentaje + '% · Normal</span>'
+}
+
+// ─── DOCENTE: toma de lista ───
+
+function abrirModalAsistenciaDocente() {
+  if (!selectedCurso || !selectedMateria) {
+    mostrarToast('error', 'Elige un curso y una materia primero')
+    return
+  }
+  const hoy = hoyBogotaUI()
+  const inp = document.getElementById('asist-fecha')
+  inp.value = hoy
+  inp.min = restarDiasUI(hoy, 30)
+  inp.max = hoy
+  const selCurso = document.getElementById('sel-curso')
+  const selMat = document.getElementById('sel-materia')
+  const nombreCurso = (selCurso && selCurso.selectedIndex >= 0) ? selCurso.options[selCurso.selectedIndex].text : selectedCurso
+  const nombreMat = (selMat && selMat.selectedIndex >= 0) ? selMat.options[selMat.selectedIndex].text : selectedMateria
+  document.getElementById('asist-info-curso').textContent = nombreCurso + ' · ' + nombreMat
+  abrirModalSuave(document.getElementById('modal-asistencia-docente'))
+  cargarListaAsistencia()
+}
+
+function cambiarFechaAsistencia() { cargarListaAsistencia() }
+
+async function cargarListaAsistencia() {
+  const lista = document.getElementById('asist-lista')
+  const fecha = document.getElementById('asist-fecha').value
+  if (!fecha || !selectedCurso || !selectedMateria) return
+  lista.innerHTML = '<div style="color:var(--ink-400);font-size:13px;text-align:center;padding:24px;">Cargando...</div>'
+  try {
+    const res = await fetch(API + '/api/asistencia/sesion?curso=' + encodeURIComponent(selectedCurso) + '&materiaId=' + encodeURIComponent(selectedMateria) + '&fecha=' + fecha, { headers: { 'Authorization': 'Bearer ' + currentToken } })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      lista.innerHTML = '<div style="color:var(--red-700);font-size:13px;text-align:center;padding:24px;">' + esc(data.error || 'No se pudo cargar la lista') + '</div>'
+      return
+    }
+    const data = await res.json()
+    _asistData = data
+    _asistEstados = {}
+    for (const e of (data.estudiantes || [])) _asistEstados[e.estudianteId] = e.estado || 'PRESENTE'
+    renderListaAsistenciaDocente(data)
+  } catch (e) {
+    lista.innerHTML = '<div style="color:var(--red-700);font-size:13px;text-align:center;padding:24px;">Error de conexión</div>'
+  }
+}
+
+function renderListaAsistenciaDocente(data) {
+  const badge = document.getElementById('asist-badge')
+  if (badge) {
+    badge.textContent = data.tomada ? 'Lista ya tomada' : 'Lista nueva'
+    badge.className = 'asist-chip ' + (data.tomada ? 'asist-medio' : 'asist-ok')
+  }
+  let html = ''
+  const estudiantes = data.estudiantes || []
+  for (const e of estudiantes) {
+    const estado = _asistEstados[e.estudianteId] || 'PRESENTE'
+    html += '<div data-estudiante-id="' + esc(e.estudianteId) + '" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 4px;border-bottom:1px solid var(--line);flex-wrap:wrap;">'
+    html += '<div style="font-size:13px;font-weight:500;color:var(--ink-900);flex:1;min-width:150px;">' + esc(e.nombre) + '</div>'
+    html += '<div style="display:flex;gap:6px;flex-wrap:wrap;">'
+    for (const st of ASIST_ESTADOS) {
+      html += '<button type="button" class="seg-btn' + (estado === st ? ' seg-activo' : '') + '" data-estado="' + st + '">' + (st === 'PRESENTE' ? 'Presente' : st === 'AUSENTE' ? 'Ausente' : st === 'TARDANZA' ? 'Tardanza' : 'Excusa') + '</button>'
+    }
+    html += '</div></div>'
+  }
+  if (!estudiantes.length) {
+    html = '<div style="color:var(--ink-400);font-size:13px;text-align:center;padding:24px;">No hay estudiantes activos en este curso</div>'
+  }
+  document.getElementById('asist-lista').innerHTML = html
+  actualizarContadoresAsistencia()
+}
+
+// Delegación: un solo onclick estático en el contenedor #asist-lista
+function clicEstadoAsistencia(ev) {
+  const btn = ev.target.closest('.seg-btn')
+  if (!btn) return
+  const fila = btn.closest('[data-estudiante-id]')
+  if (!fila) return
+  _asistEstados[fila.getAttribute('data-estudiante-id')] = btn.getAttribute('data-estado')
+  fila.querySelectorAll('.seg-btn').forEach(b => b.classList.remove('seg-activo'))
+  btn.classList.add('seg-activo')
+  actualizarContadoresAsistencia()
+}
+
+function marcarTodosPresentes() {
+  if (!_asistData) return
+  for (const e of (_asistData.estudiantes || [])) _asistEstados[e.estudianteId] = 'PRESENTE'
+  renderListaAsistenciaDocente(_asistData)
+}
+
+function actualizarContadoresAsistencia() {
+  const n = { PRESENTE: 0, AUSENTE: 0, TARDANZA: 0, EXCUSA: 0 }
+  for (const e of (_asistData ? _asistData.estudiantes : [])) n[_asistEstados[e.estudianteId] || 'PRESENTE']++
+  const el = document.getElementById('asist-contadores')
+  if (el) {
+    el.innerHTML =
+      '<span class="asist-chip asist-ok">' + n.PRESENTE + ' presente(s)</span>' +
+      '<span class="asist-chip asist-alto">' + n.AUSENTE + ' ausente(s)</span>' +
+      '<span class="asist-chip asist-medio">' + n.TARDANZA + ' tardanza(s)</span>' +
+      '<span class="asist-chip">' + n.EXCUSA + ' excusa(s)</span>'
+  }
+}
+
+async function guardarAsistenciaDocente() {
+  const fecha = document.getElementById('asist-fecha').value
+  const registros = []
+  for (const [id, estado] of Object.entries(_asistEstados)) {
+    if (estado !== 'PRESENTE') registros.push({ estudianteId: id, estado })
+  }
+  const btn = document.getElementById('btn-guardar-asistencia')
+  btn.disabled = true
+  btn.innerHTML = '<span class="spinner"></span> Guardando...'
+  try {
+    const res = await fetch(API + '/api/asistencia/sesion', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + currentToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ curso: selectedCurso, materiaId: selectedMateria, fecha, registros })
+    })
+    const data = await res.json().catch(() => ({}))
+    if (res.ok) {
+      mostrarToast('ok', 'Lista guardada: ' + data.ausentes + ' ausente(s), ' + data.tardanzas + ' tardanza(s), ' + data.excusas + ' excusa(s)')
+      await cargarListaAsistencia()
+    } else {
+      mostrarToast('error', data.error || 'Error al guardar la lista')
+    }
+  } catch (e) {
+    mostrarToast('error', 'Error de conexión')
+  } finally {
+    btn.disabled = false
+    btn.innerHTML = icon('guardar') + ' Guardar lista'
+    poblarIconos()
+  }
+}
+
+function cerrarModalAsistenciaDocente() {
+  cerrarModalSuave(document.getElementById('modal-asistencia-docente'))
+}
+
+// ─── DIRECTOR DE GRUPO: resumen de SU curso ───
+
+function abrirModalAsistenciaCurso() {
+  if (!window._directorCursos || !window._directorCursos.length) return
+  const hoy = hoyBogotaUI()
+  document.getElementById('asist-dir-desde').value = restarDiasUI(hoy, 30)
+  document.getElementById('asist-dir-hasta').value = hoy
+  document.getElementById('asist-dir-materia').innerHTML = '<option value="">Todas las materias</option>'
+  const filaCurso = document.getElementById('asist-dir-curso-fila')
+  const selCurso = document.getElementById('asist-dir-curso')
+  if (window._directorCursos.length > 1) {
+    filaCurso.style.display = ''
+    selCurso.innerHTML = window._directorCursos.map(c => '<option value="' + esc(c) + '">' + esc(c) + '</option>').join('')
+  } else {
+    filaCurso.style.display = 'none'
+    selCurso.innerHTML = '<option value="' + esc(window._directorCursos[0]) + '">' + esc(window._directorCursos[0]) + '</option>'
+  }
+  abrirModalSuave(document.getElementById('modal-asistencia-curso'))
+  verAsistenciaDirector()
+}
+
+async function verAsistenciaDirector() {
+  const curso = document.getElementById('asist-dir-curso').value
+  const desde = document.getElementById('asist-dir-desde').value
+  const hasta = document.getElementById('asist-dir-hasta').value
+  const materiaId = document.getElementById('asist-dir-materia').value
+  const cont = document.getElementById('asist-dir-resumen')
+  cont.innerHTML = '<div style="color:var(--ink-400);font-size:13px;text-align:center;padding:24px;">Cargando...</div>'
+  try {
+    let url = API + '/api/asistencia/resumen?curso=' + encodeURIComponent(curso) + '&desde=' + desde + '&hasta=' + hasta
+    if (materiaId) url += '&materiaId=' + encodeURIComponent(materiaId)
+    const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + currentToken } })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      cont.innerHTML = '<div style="color:var(--red-700);font-size:13px;text-align:center;padding:24px;">' + esc(data.error || 'No se pudo cargar el resumen') + '</div>'
+      return
+    }
+    const data = await res.json()
+    renderResumenAsistencia('asist-dir-resumen', data)
+    // Opciones de materia: las que tienen sesiones en el rango (una sola vez)
+    const selMat = document.getElementById('asist-dir-materia')
+    if (selMat.options.length <= 1) {
+      const vistos = new Set()
+      let opts = '<option value="">Todas las materias</option>'
+      for (const est of (data.porEstudiante || [])) {
+        for (const m of (est.porMateria || [])) {
+          if (vistos.has(m.materiaId)) continue
+          vistos.add(m.materiaId)
+          opts += '<option value="' + esc(m.materiaId) + '">' + esc(m.materiaNombre) + '</option>'
+        }
+      }
+      selMat.innerHTML = opts
+      if (materiaId) selMat.value = materiaId
+    }
+  } catch (e) {
+    cont.innerHTML = '<div style="color:var(--red-700);font-size:13px;text-align:center;padding:24px;">Error de conexión</div>'
+  }
+}
+
+function cerrarModalAsistenciaCurso() {
+  cerrarModalSuave(document.getElementById('modal-asistencia-curso'))
+}
+
+// ─── Resumen común (director y admin): tabla por estudiante con desglose ───
+
+function renderResumenAsistencia(idContenedor, data) {
+  const cont = document.getElementById(idContenedor)
+  if (!cont) return
+  let html = ''
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:16px 0;">'
+  html += '<span class="asist-chip">' + icon('calendario') + ' ' + (data.sesiones || 0) + ' sesión(es) entre ' + esc(data.desde || '') + ' y ' + esc(data.hasta || '') + '</span>'
+  html += '</div>'
+  const filas = data.porEstudiante || []
+  if (!filas.length) {
+    html += '<div style="background:var(--paper);border:1px solid var(--line);border-radius:var(--r-md);padding:28px;text-align:center;color:var(--ink-400);font-size:13px;">No hay listas tomadas en este rango</div>'
+  } else {
+    html += '<div style="overflow-x:auto;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);">'
+    html += '<table style="width:100%;border-collapse:collapse;font-size:13px;min-width:560px;">'
+    html += '<thead><tr style="background:var(--cream-50);">'
+    html += '<th style="padding:12px 14px;text-align:left;border-bottom:1px solid var(--line);">Estudiante</th>'
+    html += '<th style="padding:12px 10px;text-align:center;border-bottom:1px solid var(--line);">Ausencias</th>'
+    html += '<th style="padding:12px 10px;text-align:center;border-bottom:1px solid var(--line);">Tardanzas</th>'
+    html += '<th style="padding:12px 10px;text-align:center;border-bottom:1px solid var(--line);">Excusas</th>'
+    html += '<th style="padding:12px 10px;text-align:center;border-bottom:1px solid var(--line);">% Inasistencia</th>'
+    html += '</tr></thead><tbody>'
+    for (const e of filas) {
+      html += '<tr class="fila-desglose" data-estudiante-id="' + esc(e.estudianteId) + '" onclick="toggleDesgloseAsistencia(event)">'
+      html += '<td style="padding:12px 14px;border-bottom:1px solid var(--line);font-weight:500;color:var(--ink-900);">' + icon('chevron-der') + ' ' + esc(e.nombre) + '</td>'
+      html += '<td style="padding:12px 10px;border-bottom:1px solid var(--line);text-align:center;">' + e.ausencias + '</td>'
+      html += '<td style="padding:12px 10px;border-bottom:1px solid var(--line);text-align:center;">' + e.tardanzas + '</td>'
+      html += '<td style="padding:12px 10px;border-bottom:1px solid var(--line);text-align:center;">' + e.excusas + '</td>'
+      html += '<td style="padding:12px 10px;border-bottom:1px solid var(--line);text-align:center;">' + chipAsistencia(e.porcentajeInasistencia) + '</td>'
+      html += '</tr>'
+      html += '<tr class="desglose-tr" id="desglose-' + esc(e.estudianteId) + '">'
+      html += '<td colspan="5" style="padding:16px 18px;background:var(--cream-50);border-bottom:1px solid var(--line);">'
+      if ((e.porMateria || []).length) {
+        html += '<div style="display:flex;gap:18px;flex-wrap:wrap;">'
+        for (const m of e.porMateria) {
+          html += '<div style="min-width:190px;flex:1;">'
+          html += '<div style="font-size:12px;font-weight:600;color:var(--ink-700);margin-bottom:5px;">' + esc(m.materiaNombre) + '</div>'
+          html += '<div style="font-size:11px;color:var(--ink-400);margin-bottom:8px;">' + m.sesiones + ' sesión(es) · ' + m.ausencias + ' ausente(s) · ' + m.tardanzas + ' tardanza(s) · ' + m.excusas + ' excusa(s)</div>'
+          html += '<div class="asist-barra" style="margin-bottom:6px;"><div style="width:' + Math.min(100, m.porcentajeInasistencia) + '%;background:' + colorAsistencia(m.porcentajeInasistencia) + ';"></div></div>'
+          html += '<div style="font-size:11px;font-weight:600;color:var(--ink-600);">' + m.porcentajeInasistencia + '% de inasistencia</div>'
+          html += '</div>'
+        }
+        html += '</div>'
+      } else {
+        html += '<div style="font-size:12px;color:var(--ink-400);">Sin desglose por materia en este rango</div>'
+      }
+      html += '</td></tr>'
+    }
+    html += '</tbody></table></div>'
+    html += '<div style="font-size:11px;color:var(--ink-400);margin-top:10px;">Toca una fila para ver el desglose por materia.</div>'
+  }
+  cont.innerHTML = html
+  poblarIconos()
+}
+
+// Delegación: el tr lleva un onclick estático; el id se lee del data-attr
+function toggleDesgloseAsistencia(ev) {
+  const fila = ev.target.closest('[data-estudiante-id]')
+  if (!fila) return
+  const tr = document.getElementById('desglose-' + fila.getAttribute('data-estudiante-id'))
+  if (!tr) return
+  tr.style.display = tr.style.display === 'table-row' ? 'none' : 'table-row'
+}
+
+// ─── ADMIN: asistencia de cualquier curso ───
+
+async function cargarAdminAsistencia() {
+  document.getElementById('admin-periodos-section').style.display = 'none'
+  document.getElementById('admin-reporte-corte-section').style.display = 'none'
+  document.getElementById('admin-estudiantes-section').style.display = 'none'
+  document.getElementById('admin-directores-section').style.display = 'none'
+  document.getElementById('admin-obs-section').style.display = 'none'
+  document.getElementById('admin-areas-section').style.display = 'none'
+  mostrarSeccion('admin-asistencia-section')
+  actualizarNavActivo('nav-asistencia')
+  const hoy = hoyBogotaUI()
+  const inpDesde = document.getElementById('admin-asist-desde')
+  if (!inpDesde.value) inpDesde.value = restarDiasUI(hoy, 30)
+  document.getElementById('admin-asist-hasta').value = hoy
+  try {
+    const matsRes = await fetch(API + '/api/admin/materias', { headers: { 'Authorization': 'Bearer ' + currentToken } })
+    if (matsRes.ok) {
+      const mats = await matsRes.json()
+      const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim()
+      const vistos = new Set()
+      const unicas = mats.filter(m => { const k = norm(m.nombre); if (vistos.has(k)) return false; vistos.add(k); return true })
+      unicas.sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), 'es'))
+      document.getElementById('admin-asist-materia').innerHTML = '<option value="">Todas</option>' + unicas.map(m => '<option value="' + m.id + '">' + esc(m.nombre) + '</option>').join('')
+    }
+  } catch (e) {}
+}
+
+async function verAsistenciaAdmin() {
+  const curso = document.getElementById('admin-asist-curso').value.trim()
+  if (!curso) { mostrarToast('error', 'Escribe un curso'); return }
+  const desde = document.getElementById('admin-asist-desde').value
+  const hasta = document.getElementById('admin-asist-hasta').value
+  const materiaId = document.getElementById('admin-asist-materia').value
+  const cont = document.getElementById('admin-asistencia-resumen')
+  cont.innerHTML = '<div style="color:var(--ink-400);font-size:13px;text-align:center;padding:24px;">Cargando...</div>'
+  try {
+    let url = API + '/api/asistencia/resumen?curso=' + encodeURIComponent(curso) + '&desde=' + desde + '&hasta=' + hasta
+    if (materiaId) url += '&materiaId=' + encodeURIComponent(materiaId)
+    const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + currentToken } })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      cont.innerHTML = '<div style="color:var(--red-700);font-size:13px;text-align:center;padding:24px;">' + esc(data.error || 'No se pudo cargar el resumen') + '</div>'
+      return
+    }
+    renderResumenAsistencia('admin-asistencia-resumen', await res.json())
+  } catch (e) {
+    cont.innerHTML = '<div style="color:var(--red-700);font-size:13px;text-align:center;padding:24px;">Error de conexión</div>'
+  }
+}
+
+// ─── ESTUDIANTE: mi asistencia ───
+
+async function cargarMiAsistencia() {
+  const cont = document.getElementById('stu-asistencia')
+  if (!cont) return
+  try {
+    const res = await fetch(API + '/api/asistencia/mia', { headers: { 'Authorization': 'Bearer ' + currentToken } })
+    if (!res.ok) {
+      cont.innerHTML = '<div style="font-size:12px;color:var(--ink-400);padding:6px 0;">La asistencia no está disponible por ahora.</div>'
+      return
+    }
+    renderMiAsistencia(await res.json())
+  } catch (e) {
+    cont.innerHTML = '<div style="font-size:12px;color:var(--ink-400);padding:6px 0;">La asistencia no está disponible por ahora.</div>'
+  }
+}
+
+function renderMiAsistencia(data) {
+  const cont = document.getElementById('stu-asistencia')
+  if (!cont) return
+  const t = data.totales || { ausencias: 0, tardanzas: 0, excusas: 0 }
+  let html = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">'
+  html += '<span class="asist-chip asist-alto">' + t.ausencias + ' inasistencia(s)</span>'
+  html += '<span class="asist-chip asist-medio">' + t.tardanzas + ' tardanza(s)</span>'
+  html += '<span class="asist-chip">' + t.excusas + ' excusa(s)</span>'
+  html += '</div>'
+  const mats = data.porMateria || []
+  if (mats.length) {
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;margin-bottom:16px;">'
+    for (const m of mats) {
+      html += '<div style="background:var(--paper);border:1px solid var(--line);border-radius:var(--r-md);padding:16px 18px;">'
+      html += '<div style="font-size:13px;font-weight:600;color:var(--ink-900);margin-bottom:6px;">' + esc(m.materiaNombre) + '</div>'
+      html += '<div style="font-size:11px;color:var(--ink-400);margin-bottom:10px;">' + m.sesiones + ' sesión(es)</div>'
+      html += '<div class="asist-barra" style="margin-bottom:7px;"><div style="width:' + Math.min(100, m.porcentajeInasistencia) + '%;background:' + colorAsistencia(m.porcentajeInasistencia) + ';"></div></div>'
+      html += '<div style="font-size:11px;font-weight:600;color:var(--ink-600);">' + m.porcentajeInasistencia + '% de inasistencia</div>'
+      html += '</div>'
+    }
+    html += '</div>'
+  }
+  const ult = data.ultimas || []
+  if (ult.length) {
+    html += '<div style="font-size:12px;font-weight:700;color:var(--ink-700);margin:12px 0 4px;">Últimas novedades</div>'
+    for (const u of ult) {
+      const clase = u.estado === 'AUSENTE' ? ' asist-alto' : u.estado === 'TARDANZA' ? ' asist-medio' : ''
+      const etiqueta = u.estado === 'AUSENTE' ? 'Ausente' : u.estado === 'TARDANZA' ? 'Tardanza' : 'Excusa'
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);font-size:12px;flex-wrap:wrap;">'
+      html += '<span style="color:var(--ink-700);">' + esc(u.materiaNombre) + ' · ' + esc(u.fecha) + '</span>'
+      html += '<span class="asist-chip' + clase + '">' + etiqueta + '</span>'
+      html += '</div>'
+    }
+  }
+  if (!mats.length && !ult.length) {
+    html += '<div style="background:var(--paper);border:1px solid var(--line);border-radius:var(--r-md);padding:26px;text-align:center;color:var(--ink-400);font-size:13px;">No hay registros de asistencia todavía. ¡Sigue así!</div>'
+  }
+  cont.innerHTML = html
+}
+
 window.addEventListener('beforeunload', enviarPendientesAlSalir)
 
 // Aviso antes de cerrar/navegar si quedan notas sin guardar (el envío

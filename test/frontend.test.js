@@ -801,3 +801,80 @@ test('cargarCursosMasiva: curso y jornada con payload en <option> quedan inertes
   assert.ok(sel.innerHTML.includes('<option'), 'las opciones se renderizaron')
   afirmarSinXSS(sel.innerHTML, 'impresión masiva: <option> curso/jornada')
 })
+
+test('renderListaAsistenciaDocente: nombre del estudiante con payload queda inerte', () => {
+  const nodos = {
+    'asist-lista': { innerHTML: '' },
+    'asist-badge': { textContent: '', className: '' },
+    'asist-contadores': { innerHTML: '' },
+  }
+  const document = { getElementById: id => nodos[id] }
+  new Function('document', `
+    const ASIST_ESTADOS = ['PRESENTE', 'AUSENTE', 'TARDANZA', 'EXCUSA']
+    let _asistEstados = {}
+    let _asistData = null
+    ${extraerFuncion('esc')}
+    ${extraerFuncion('icon')}
+    ${extraerFuncion('actualizarContadoresAsistencia')}
+    ${extraerFuncion('renderListaAsistenciaDocente')}
+    _asistEstados = { e1: 'AUSENTE', e2: 'PRESENTE' }
+    _asistData = { estudiantes: [
+      { estudianteId: 'e1', nombre: 'EST ' + ${JSON.stringify(XSS_TAG)} },
+      { estudianteId: 'e2', nombre: 'EST ' + ${JSON.stringify(XSS_ONCLICK)} },
+    ] }
+    renderListaAsistenciaDocente({ tomada: true, estudiantes: _asistData.estudiantes })
+  `)(document)
+  const html = nodos['asist-lista'].innerHTML
+  assert.ok(html.includes('EST'), 'la lista se renderizó')
+  assert.ok(html.includes('data-estudiante-id="e1"'), 'la fila lleva su id')
+  afirmarSinXSS(html, 'toma de asistencia: lista de estudiantes')
+  afirmarSinXSS(nodos['asist-contadores'].innerHTML, 'toma de asistencia: contadores')
+})
+
+test('renderResumenAsistencia: nombres de estudiantes y materias con payload quedan inertes', () => {
+  const cont = { innerHTML: '' }
+  const document = { getElementById: () => cont }
+  const poblarIconos = () => {}
+  new Function('document', 'poblarIconos', `
+    const ASIST_UMBRAL_AMBAR = 10
+    const ASIST_UMBRAL_ROJO = 20
+    const ICONS = {}
+    ${extraerFuncion('icon')}
+    ${extraerFuncion('esc')}
+    ${extraerFuncion('colorAsistencia')}
+    ${extraerFuncion('chipAsistencia')}
+    ${extraerFuncion('renderResumenAsistencia')}
+    renderResumenAsistencia('cont', {
+      curso: '9999', desde: '2026-09-13', hasta: '2026-10-13', sesiones: 3,
+      porEstudiante: [
+        {
+          estudianteId: 'e1', nombre: 'EST ' + ${JSON.stringify(XSS_TAG)},
+          ausencias: 2, tardanzas: 1, excusas: 0, porcentajeInasistencia: 66.7,
+          porMateria: [{ materiaId: 'm1', materiaNombre: 'MAT ' + ${JSON.stringify(XSS_ONCLICK)}, sesiones: 3, ausencias: 2, tardanzas: 1, excusas: 0, porcentajeInasistencia: 66.7 }],
+        },
+        { estudianteId: 'e2', nombre: 'EST C', ausencias: 0, tardanzas: 0, excusas: 0, porcentajeInasistencia: 0, porMateria: [] },
+      ],
+    })
+  `)(document, poblarIconos)
+  assert.ok(cont.innerHTML.includes('% Inasistencia'), 'la tabla se renderizó')
+  afirmarSinXSS(cont.innerHTML, 'resumen de asistencia (director/admin)')
+})
+
+test('renderMiAsistencia: materia y fecha con payload quedan inertes', () => {
+  const cont = { innerHTML: '' }
+  const document = { getElementById: () => cont }
+  new Function('document', `
+    const ASIST_UMBRAL_AMBAR = 10
+    const ASIST_UMBRAL_ROJO = 20
+    ${extraerFuncion('esc')}
+    ${extraerFuncion('colorAsistencia')}
+    ${extraerFuncion('renderMiAsistencia')}
+    renderMiAsistencia({
+      totales: { ausencias: 1, tardanzas: 1, excusas: 0 },
+      porMateria: [{ materiaId: 'm1', materiaNombre: 'MAT ' + ${JSON.stringify(XSS_TAG)}, sesiones: 4, ausencias: 1, tardanzas: 1, excusas: 0, porcentajeInasistencia: 25 }],
+      ultimas: [{ fecha: '2026-10-10', materiaNombre: 'MAT ' + ${JSON.stringify(XSS_ONCLICK)}, estado: 'TARDANZA' }],
+    })
+  `)(document)
+  assert.ok(cont.innerHTML.includes('% de inasistencia'), 'la tarjeta se renderizó')
+  afirmarSinXSS(cont.innerHTML, 'portal del estudiante: mi asistencia')
+})
