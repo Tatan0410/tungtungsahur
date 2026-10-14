@@ -306,3 +306,38 @@ CREATE TABLE IF NOT EXISTS boletines_impresiones_log (
     cantidad INTEGER NOT NULL DEFAULT 0,
     fecha TEXT NOT NULL
 );
+
+-- ─── MIGRACIÓN: asistencia (Fase 2A) ───
+-- Solo se guardan los estados NO presentes (AUSENTE/TARDANZA/EXCUSA): los
+-- estudiantes activos del curso sin registro cuentan como presentes.
+-- docenteId es AUTORÍA HISTÓRICA y NO lleva FK hacia docentes: si el docente
+-- es eliminado, el historial de asistencia se conserva (misma decisión de
+-- negocio que calificaciones y observaciones).
+-- PRODUCCIÓN: el runner registra 'supabase_schema' una sola vez, así que en
+-- la BD existente de Supabase esta sección NO se aplica sola: pegar este
+-- archivo completo en el SQL Editor (todo es idempotente). En BD nuevas el
+-- runner la aplica al arrancar.
+CREATE TABLE IF NOT EXISTS asistencia_sesiones (
+    id TEXT PRIMARY KEY,
+    curso TEXT NOT NULL,
+    materiaId TEXT NOT NULL,
+    docenteId TEXT NOT NULL,
+    fecha TEXT NOT NULL,
+    creadoEn TEXT NOT NULL DEFAULT to_char((now() at time zone 'utc'), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+    actualizadoEn TEXT NOT NULL,
+    CONSTRAINT asistencia_sesiones_curso_materiaId_fecha_key UNIQUE (curso, materiaId, fecha)
+);
+
+CREATE TABLE IF NOT EXISTS asistencia_registros (
+    id TEXT PRIMARY KEY,
+    sesionId TEXT NOT NULL,
+    estudianteId TEXT NOT NULL,
+    estado TEXT NOT NULL,
+    CONSTRAINT asistencia_registros_sesionId_estudianteId_key UNIQUE (sesionId, estudianteId),
+    CONSTRAINT asistencia_registros_sesionId_fkey FOREIGN KEY (sesionId) REFERENCES asistencia_sesiones (id) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT asistencia_registros_estudianteId_fkey FOREIGN KEY (estudianteId) REFERENCES estudiantes (id) ON DELETE RESTRICT ON UPDATE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS asistencia_sesiones_curso_idx ON asistencia_sesiones (curso);
+CREATE INDEX IF NOT EXISTS asistencia_sesiones_fecha_idx ON asistencia_sesiones (fecha);
+CREATE INDEX IF NOT EXISTS asistencia_registros_estudianteId_idx ON asistencia_registros (estudianteId);
