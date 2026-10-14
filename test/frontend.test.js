@@ -878,3 +878,50 @@ test('renderMiAsistencia: materia y fecha con payload quedan inertes', () => {
   assert.ok(cont.innerHTML.includes('% de inasistencia'), 'la tarjeta se renderizó')
   afirmarSinXSS(cont.innerHTML, 'portal del estudiante: mi asistencia')
 })
+
+test('renderResumenAsistencia y renderMiAsistencia: números entregados como TEXTO se muestran normalizados', () => {
+  const resumen = { innerHTML: '' }
+  const mia = { innerHTML: '' }
+  const nodos = { contResumen: resumen, 'stu-asistencia': mia }
+  const document = { getElementById: id => nodos[id] }
+  const poblarIconos = () => {}
+  new Function('document', 'poblarIconos', `
+    const ASIST_UMBRAL_AMBAR = 10
+    const ASIST_UMBRAL_ROJO = 20
+    const ICONS = {}
+    ${extraerFuncion('icon')}
+    ${extraerFuncion('esc')}
+    ${extraerFuncion('colorAsistencia')}
+    ${extraerFuncion('chipAsistencia')}
+    ${extraerFuncion('renderResumenAsistencia')}
+    ${extraerFuncion('renderMiAsistencia')}
+    // El backend normaliza, pero si algo intermedio entrega strings
+    // ("012", "25"), el render debe mostrar 12 y 25, sin comillas
+    renderResumenAsistencia('contResumen', {
+      curso: '9999', desde: '2026-09-13', hasta: '2026-10-13', sesiones: '012',
+      porEstudiante: [{
+        estudianteId: 'e1', nombre: 'EST A', ausencias: '003', tardanzas: '1', excusas: '0',
+        porcentajeInasistencia: '25',
+        porMateria: [{ materiaId: 'm1', materiaNombre: 'MAT', sesiones: '012', ausencias: '003', tardanzas: '1', excusas: '0', porcentajeInasistencia: '25' }],
+      }],
+    })
+    renderMiAsistencia({
+      totales: { ausencias: '003', tardanzas: '1', excusas: '0' },
+      porMateria: [{ materiaId: 'm1', materiaNombre: 'MAT', sesiones: '012', ausencias: '003', tardanzas: '1', excusas: '0', porcentajeInasistencia: '25' }],
+      ultimas: [],
+    })
+  `)(document, poblarIconos)
+
+  // Resumen: sesiones, conteos y % impresos como números sin ceros a la izquierda
+  assert.ok(resumen.innerHTML.includes('>12 sesión(es)'), 'sesiones del resumen: "012" → 12')
+  assert.ok(resumen.innerHTML.includes('>3</td>'), 'ausencias del resumen: "003" → 3')
+  assert.ok(resumen.innerHTML.includes('25% · Crítica'), 'porcentaje del resumen: "25" → 25 (texto con etiqueta)')
+  assert.ok(resumen.innerHTML.includes('width:25%'), 'ancho de barra del resumen: 25%')
+  assert.ok(!resumen.innerHTML.includes('"012"') && !resumen.innerHTML.includes('>012<'), 'ningún "012" crudo en el resumen')
+  // /mia
+  assert.ok(mia.innerHTML.includes('3 inasistencia(s)'), 'totales de /mia: "003" → 3')
+  assert.ok(mia.innerHTML.includes('12 sesión(es)'), 'sesiones de /mia: "012" → 12')
+  assert.ok(mia.innerHTML.includes('>25% de inasistencia'), 'porcentaje de /mia: "25" → 25')
+  assert.ok(mia.innerHTML.includes('width:25%'), 'ancho de barra de /mia: 25%')
+  assert.ok(!mia.innerHTML.includes('>012<') && !mia.innerHTML.includes('>003'), 'ningún número-crudo en /mia')
+})

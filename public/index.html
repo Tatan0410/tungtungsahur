@@ -6505,6 +6505,10 @@ function actualizarContadoresAsistencia() {
 
 async function guardarAsistenciaDocente() {
   const fecha = document.getElementById('asist-fecha').value
+  if (!fecha) {
+    mostrarToast('error', 'Elige una fecha')
+    return
+  }
   const registros = []
   for (const [id, estado] of Object.entries(_asistEstados)) {
     if (estado !== 'PRESENTE') registros.push({ estudianteId: id, estado })
@@ -6606,9 +6610,12 @@ function cerrarModalAsistenciaCurso() {
 function renderResumenAsistencia(idContenedor, data) {
   const cont = document.getElementById(idContenedor)
   if (!cont) return
+  // El servidor siempre devuelve números, pero por defensa: todo valor
+  // numérico se normaliza (Number(x) || 0) antes de imprimirse
+  const num = x => Number(x) || 0
   let html = ''
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:16px 0;">'
-  html += '<span class="asist-chip">' + icon('calendario') + ' ' + (data.sesiones || 0) + ' sesión(es) entre ' + esc(data.desde || '') + ' y ' + esc(data.hasta || '') + '</span>'
+  html += '<span class="asist-chip">' + icon('calendario') + ' ' + num(data.sesiones) + ' sesión(es) entre ' + esc(data.desde || '') + ' y ' + esc(data.hasta || '') + '</span>'
   html += '</div>'
   const filas = data.porEstudiante || []
   if (!filas.length) {
@@ -6626,10 +6633,10 @@ function renderResumenAsistencia(idContenedor, data) {
     for (const e of filas) {
       html += '<tr class="fila-desglose" data-estudiante-id="' + esc(e.estudianteId) + '" onclick="toggleDesgloseAsistencia(event)">'
       html += '<td style="padding:12px 14px;border-bottom:1px solid var(--line);font-weight:500;color:var(--ink-900);">' + icon('chevron-der') + ' ' + esc(e.nombre) + '</td>'
-      html += '<td style="padding:12px 10px;border-bottom:1px solid var(--line);text-align:center;">' + e.ausencias + '</td>'
-      html += '<td style="padding:12px 10px;border-bottom:1px solid var(--line);text-align:center;">' + e.tardanzas + '</td>'
-      html += '<td style="padding:12px 10px;border-bottom:1px solid var(--line);text-align:center;">' + e.excusas + '</td>'
-      html += '<td style="padding:12px 10px;border-bottom:1px solid var(--line);text-align:center;">' + chipAsistencia(e.porcentajeInasistencia) + '</td>'
+      html += '<td style="padding:12px 10px;border-bottom:1px solid var(--line);text-align:center;">' + num(e.ausencias) + '</td>'
+      html += '<td style="padding:12px 10px;border-bottom:1px solid var(--line);text-align:center;">' + num(e.tardanzas) + '</td>'
+      html += '<td style="padding:12px 10px;border-bottom:1px solid var(--line);text-align:center;">' + num(e.excusas) + '</td>'
+      html += '<td style="padding:12px 10px;border-bottom:1px solid var(--line);text-align:center;">' + chipAsistencia(num(e.porcentajeInasistencia)) + '</td>'
       html += '</tr>'
       html += '<tr class="desglose-tr" id="desglose-' + esc(e.estudianteId) + '">'
       html += '<td colspan="5" style="padding:16px 18px;background:var(--cream-50);border-bottom:1px solid var(--line);">'
@@ -6638,9 +6645,9 @@ function renderResumenAsistencia(idContenedor, data) {
         for (const m of e.porMateria) {
           html += '<div style="min-width:190px;flex:1;">'
           html += '<div style="font-size:12px;font-weight:600;color:var(--ink-700);margin-bottom:5px;">' + esc(m.materiaNombre) + '</div>'
-          html += '<div style="font-size:11px;color:var(--ink-400);margin-bottom:8px;">' + m.sesiones + ' sesión(es) · ' + m.ausencias + ' ausente(s) · ' + m.tardanzas + ' tardanza(s) · ' + m.excusas + ' excusa(s)</div>'
-          html += '<div class="asist-barra" style="margin-bottom:6px;"><div style="width:' + Math.min(100, m.porcentajeInasistencia) + '%;background:' + colorAsistencia(m.porcentajeInasistencia) + ';"></div></div>'
-          html += '<div style="font-size:11px;font-weight:600;color:var(--ink-600);">' + m.porcentajeInasistencia + '% de inasistencia</div>'
+          html += '<div style="font-size:11px;color:var(--ink-400);margin-bottom:8px;">' + num(m.sesiones) + ' sesión(es) · ' + num(m.ausencias) + ' ausente(s) · ' + num(m.tardanzas) + ' tardanza(s) · ' + num(m.excusas) + ' excusa(s)</div>'
+          html += '<div class="asist-barra" style="margin-bottom:6px;"><div style="width:' + Math.min(100, num(m.porcentajeInasistencia)) + '%;background:' + colorAsistencia(num(m.porcentajeInasistencia)) + ';"></div></div>'
+          html += '<div style="font-size:11px;font-weight:600;color:var(--ink-600);">' + num(m.porcentajeInasistencia) + '% de inasistencia</div>'
           html += '</div>'
         }
         html += '</div>'
@@ -6688,7 +6695,7 @@ async function cargarAdminAsistencia() {
       const vistos = new Set()
       const unicas = mats.filter(m => { const k = norm(m.nombre); if (vistos.has(k)) return false; vistos.add(k); return true })
       unicas.sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), 'es'))
-      document.getElementById('admin-asist-materia').innerHTML = '<option value="">Todas</option>' + unicas.map(m => '<option value="' + m.id + '">' + esc(m.nombre) + '</option>').join('')
+      document.getElementById('admin-asist-materia').innerHTML = '<option value="">Todas</option>' + unicas.map(m => '<option value="' + esc(m.id) + '">' + esc(m.nombre) + '</option>').join('')
     }
   } catch (e) {}
 }
@@ -6736,11 +6743,14 @@ async function cargarMiAsistencia() {
 function renderMiAsistencia(data) {
   const cont = document.getElementById('stu-asistencia')
   if (!cont) return
+  // Defensa: valores numéricos normalizados (Number(x) || 0) por si el
+  // servidor o un middleware intermedio los entrega como texto
+  const num = x => Number(x) || 0
   const t = data.totales || { ausencias: 0, tardanzas: 0, excusas: 0 }
   let html = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">'
-  html += '<span class="asist-chip asist-alto">' + t.ausencias + ' inasistencia(s)</span>'
-  html += '<span class="asist-chip asist-medio">' + t.tardanzas + ' tardanza(s)</span>'
-  html += '<span class="asist-chip">' + t.excusas + ' excusa(s)</span>'
+  html += '<span class="asist-chip asist-alto">' + num(t.ausencias) + ' inasistencia(s)</span>'
+  html += '<span class="asist-chip asist-medio">' + num(t.tardanzas) + ' tardanza(s)</span>'
+  html += '<span class="asist-chip">' + num(t.excusas) + ' excusa(s)</span>'
   html += '</div>'
   const mats = data.porMateria || []
   if (mats.length) {
@@ -6748,9 +6758,9 @@ function renderMiAsistencia(data) {
     for (const m of mats) {
       html += '<div style="background:var(--paper);border:1px solid var(--line);border-radius:var(--r-md);padding:16px 18px;">'
       html += '<div style="font-size:13px;font-weight:600;color:var(--ink-900);margin-bottom:6px;">' + esc(m.materiaNombre) + '</div>'
-      html += '<div style="font-size:11px;color:var(--ink-400);margin-bottom:10px;">' + m.sesiones + ' sesión(es)</div>'
-      html += '<div class="asist-barra" style="margin-bottom:7px;"><div style="width:' + Math.min(100, m.porcentajeInasistencia) + '%;background:' + colorAsistencia(m.porcentajeInasistencia) + ';"></div></div>'
-      html += '<div style="font-size:11px;font-weight:600;color:var(--ink-600);">' + m.porcentajeInasistencia + '% de inasistencia</div>'
+      html += '<div style="font-size:11px;color:var(--ink-400);margin-bottom:10px;">' + num(m.sesiones) + ' sesión(es)</div>'
+      html += '<div class="asist-barra" style="margin-bottom:7px;"><div style="width:' + Math.min(100, num(m.porcentajeInasistencia)) + '%;background:' + colorAsistencia(num(m.porcentajeInasistencia)) + ';"></div></div>'
+      html += '<div style="font-size:11px;font-weight:600;color:var(--ink-600);">' + num(m.porcentajeInasistencia) + '% de inasistencia</div>'
       html += '</div>'
     }
     html += '</div>'
