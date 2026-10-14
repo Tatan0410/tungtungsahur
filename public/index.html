@@ -981,9 +981,8 @@ body::before {
     <!-- Main content area -->
     <div style="flex:1;min-width:0;">
       <div id="admin-periodos-section" style="display:none;">
-    <div style="font-size:15px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);margin-bottom:12px;">Configuración de Períodos por Sede</div>
+    <div style="font-size:15px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);margin-bottom:12px;">Configuración de Períodos</div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:16px;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px;">
-      <div><div class="lbl">Sede</div><select class="sel" id="admin-sel-sede"><option value="">Todas</option></select></div>
       <div><div class="lbl">Año</div><input class="inp" id="admin-input-anio" style="width:80px;"></div>
       <div><button class="btn-sm primary" onclick="cargarAdminPeriodos()" style="font-weight:600;">Filtrar</button></div>
     </div>
@@ -1023,7 +1022,6 @@ body::before {
   <div id="admin-reporte-corte-section" style="display:none;">
     <div style="font-size:15px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);margin-bottom:12px;"><span class="icon" data-icon="advertencia"></span> Reporte de Corte</div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:16px;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px;">
-      <div><div class="lbl">Sede</div><select class="sel" id="admin-reporte-sede"><option value="">Todas</option></select></div>
       <div><div class="lbl">Curso</div><input class="inp" id="admin-reporte-curso" placeholder="Ej: 301" style="width:80px;"></div>
       <div><div class="lbl">Período</div><select class="sel" id="admin-reporte-periodo"><option value="1">P1</option><option value="2">P2</option><option value="3">P3</option><option value="4">P4</option></select></div>
       <div><div class="lbl">Año</div><input class="inp" id="admin-reporte-anio" style="width:80px;"></div>
@@ -1035,7 +1033,6 @@ body::before {
   <div id="admin-obs-section" style="display:none;">
     <div style="font-size:15px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);margin-bottom:12px;">Observaciones globales</div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:16px;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px;">
-      <div><div class="lbl">Sede</div><select class="sel" id="admin-obs-sede"><option value="">Todas</option></select></div>
       <div><div class="lbl">Curso</div><input class="inp" id="admin-obs-curso" placeholder="Ej: 301" style="width:80px;"></div>
       <div><div class="lbl">Materia</div><select class="sel" id="admin-obs-materia"><option value="">Todas</option></select></div>
       <div><div class="lbl">Desde</div><input class="inp" id="admin-obs-desde" type="date" style="width:150px;"></div>
@@ -4340,59 +4337,57 @@ async function cargarAdminPeriodos() {
   cargarAdminBoletines() // misma sección: boletines publicados + firma del rector
   cargarCursosMasiva() // selector de impresión masiva
   try {
-    const sedesRes = await fetch(API + '/api/admin/sedes', { headers: { 'Authorization': 'Bearer ' + currentToken } })
-    const sedes = sedesRes.ok ? await sedesRes.json() : []
-    const selSede = document.getElementById('admin-sel-sede')
-    const selectedSede = selSede.value
-    selSede.innerHTML = '<option value="">Todas</option>' + sedes.map(s => '<option value="' + esc(s) + '">' + esc(s) + '</option>').join('')
-    if (selectedSede) selSede.value = selectedSede
-
     const anio = document.getElementById('admin-input-anio').value || new Date().getFullYear()
-    const sedeParam = selSede.value ? '&sede=' + encodeURIComponent(selSede.value) : ''
-    const res = await fetch(API + '/api/admin/periodos?anio=' + anio + sedeParam, { headers: { 'Authorization': 'Bearer ' + currentToken } })
+    const res = await fetch(API + '/api/admin/periodos?anio=' + anio, { headers: { 'Authorization': 'Bearer ' + currentToken } })
     if (!res.ok) return
     const configs = await res.json()
 
     const grid = document.getElementById('admin-periodos-grid')
     if (!configs.length) { grid.innerHTML = '<div style="color:var(--ink-400);padding:24px;text-align:center;">No hay configuraciones para este filtro</div>'; return }
 
+    // UNA fila por período del año. La configuración interna sigue siendo
+    // por sede (dato interno): las acciones de cada fila se aplican a TODAS
+    // las filas de ese período/año, una llamada al endpoint por cada sede.
+    _periodosCache = configs
     const agrupado = {}
-    for (const c of configs) {
-      if (!agrupado[c.sede]) agrupado[c.sede] = []
-      agrupado[c.sede].push(c)
+    for (const fila of configs) {
+      if (!agrupado[fila.periodo]) agrupado[fila.periodo] = []
+      agrupado[fila.periodo].push(fila)
     }
 
     let html = ''
-    const sedeKeys = Object.keys(agrupado).sort()
-    for (const sede of sedeKeys) {
-      html += '<div style="background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);margin-bottom:16px;overflow:hidden;">'
-      html += '<div style="background:var(--cream-100);padding:10px 14px;font-weight:700;font-size:14px;border-bottom:1px solid var(--line);">' + esc(sede) + '</div>'
-      html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
-      html += '<thead><tr style="background:var(--cream-50);"><th style="padding:8px 10px;text-align:left;border-bottom:1px solid var(--line);">Período</th><th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);">Inicio</th><th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);">Corte preventivo</th><th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);">Corte final</th><th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);">Estado</th><th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);">Acciones</th></tr></thead>'
-      html += '<tbody>'
-      for (const c of agrupado[sede]) {
-        let estadoHtml = ''
-        if (c.estado === 'ABIERTO') estadoHtml = '<span style="background:var(--green-100);color:var(--green-700);padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">' + icon('punto-estado') + ' Abierto</span>'
-        else if (c.estado === 'CERRADO_MANUAL') estadoHtml = '<span style="background:var(--red-100);color:var(--red-700);padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">' + icon('punto-estado') + ' Cerrado manual</span>'
-        else estadoHtml = '<span style="background:var(--amber-100);color:var(--amber-700);padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">' + icon('punto-estado') + ' Cerrado automático</span>'
-        const fmtFecha = (f) => f ? new Date(f + 'T00:00:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'America/Bogota' }) : '—'
-        let acciones = '<button class="btn-sm" onclick="abrirModalFechas(\'' + c.id + '\')" style="font-size:11px;margin-right:4px;">' + icon('lapiz') + ' Editar fechas</button>'
-        if (c.estado === 'ABIERTO') {
-          acciones += '<button class="btn-sm" onclick="cerrarPeriodo(\'' + escArg(c.sede) + '\', ' + c.periodo + ', ' + c.anio + ')" style="font-size:11px;background:var(--red-100);color:var(--red-700);border:1px solid var(--red-500);">' + icon('candado-cerrado') + ' Cerrar ahora</button>'
-        } else {
-          acciones += '<button class="btn-sm" onclick="reabrirPeriodo(\'' + escArg(c.sede) + '\', ' + c.periodo + ', ' + c.anio + ')" style="font-size:11px;background:var(--green-100);color:var(--green-700);border:1px solid var(--green-500);font-weight:600;">' + icon('candado-abierto') + ' Reabrir</button>'
-        }
-        html += '<tr>'
-        html += '<td style="padding:8px 10px;border-bottom:1px solid var(--line);font-weight:600;">' + esc(c.nombre) + '</td>'
-        html += '<td style="padding:8px 10px;border-bottom:1px solid var(--line);text-align:center;">' + fmtFecha(c.fecha_inicio) + '</td>'
-        html += '<td style="padding:8px 10px;border-bottom:1px solid var(--line);text-align:center;">' + fmtFecha(c.fecha_corte) + '</td>'
-        html += '<td style="padding:8px 10px;border-bottom:1px solid var(--line);text-align:center;">' + fmtFecha(c.fecha_fin) + '</td>'
-        html += '<td style="padding:8px 10px;border-bottom:1px solid var(--line);text-align:center;">' + estadoHtml + '</td>'
-        html += '<td style="padding:8px 10px;border-bottom:1px solid var(--line);text-align:center;">' + acciones + '</td>'
-        html += '</tr>'
+    html += '<div style="background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);margin-bottom:16px;overflow:hidden;">'
+    html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
+    html += '<thead><tr style="background:var(--cream-50);"><th style="padding:8px 10px;text-align:left;border-bottom:1px solid var(--line);">Período</th><th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);">Inicio</th><th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);">Corte preventivo</th><th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);">Corte final</th><th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);">Estado</th><th style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);">Acciones</th></tr></thead>'
+    html += '<tbody>'
+    for (const numero of Object.keys(agrupado).map(Number).sort((a, b) => a - b)) {
+      const c = agrupado[numero][0]
+      const filas = agrupado[numero]
+      const mismaFecha = (k) => filas.every(f => (f[k] || '') === (c[k] || ''))
+      const fmtFecha = (f) => f ? new Date(f + 'T00:00:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'America/Bogota' }) : '—'
+      const fechaCelda = (k) => mismaFecha(k) ? fmtFecha(c[k]) : 'Varía'
+      const abiertas = filas.filter(f => f.estado === 'ABIERTO').length
+      let estadoHtml = ''
+      if (abiertas === filas.length) estadoHtml = '<span style="background:var(--green-100);color:var(--green-700);padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">' + icon('punto-estado') + ' Abierto</span>'
+      else if (abiertas === 0 && filas.every(f => f.estado === 'CERRADO_MANUAL')) estadoHtml = '<span style="background:var(--red-100);color:var(--red-700);padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">' + icon('punto-estado') + ' Cerrado manual</span>'
+      else if (abiertas === 0) estadoHtml = '<span style="background:var(--amber-100);color:var(--amber-700);padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">' + icon('punto-estado') + ' Cerrado automático</span>'
+      else estadoHtml = '<span style="background:var(--amber-100);color:var(--amber-700);padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">' + icon('punto-estado') + ' Mixto</span>'
+      let acciones = '<button class="btn-sm" onclick="abrirModalFechas(' + c.periodo + ', ' + c.anio + ')" style="font-size:11px;margin-right:4px;">' + icon('lapiz') + ' Editar fechas</button>'
+      if (abiertas > 0) {
+        acciones += '<button class="btn-sm" onclick="cerrarPeriodo(' + c.periodo + ', ' + c.anio + ')" style="font-size:11px;background:var(--red-100);color:var(--red-700);border:1px solid var(--red-500);">' + icon('candado-cerrado') + ' Cerrar ahora</button>'
+      } else {
+        acciones += '<button class="btn-sm" onclick="reabrirPeriodo(' + c.periodo + ', ' + c.anio + ')" style="font-size:11px;background:var(--green-100);color:var(--green-700);border:1px solid var(--green-500);font-weight:600;">' + icon('candado-abierto') + ' Reabrir</button>'
       }
-      html += '</tbody></table></div>'
+      html += '<tr>'
+      html += '<td style="padding:8px 10px;border-bottom:1px solid var(--line);font-weight:600;">' + esc(c.nombre) + '</td>'
+      html += '<td style="padding:8px 10px;border-bottom:1px solid var(--line);text-align:center;">' + fechaCelda('fecha_inicio') + '</td>'
+      html += '<td style="padding:8px 10px;border-bottom:1px solid var(--line);text-align:center;">' + fechaCelda('fecha_corte') + '</td>'
+      html += '<td style="padding:8px 10px;border-bottom:1px solid var(--line);text-align:center;">' + fechaCelda('fecha_fin') + '</td>'
+      html += '<td style="padding:8px 10px;border-bottom:1px solid var(--line);text-align:center;">' + estadoHtml + '</td>'
+      html += '<td style="padding:8px 10px;border-bottom:1px solid var(--line);text-align:center;">' + acciones + '</td>'
+      html += '</tr>'
     }
+    html += '</tbody></table></div>'
     grid.innerHTML = html
   } catch (e) {
     document.getElementById('admin-periodos-grid').innerHTML = '<div style="color:var(--red-700);padding:24px;text-align:center;">Error al cargar</div>'
@@ -4642,24 +4637,19 @@ async function cargarCursosMasiva() {
 }
 
 window._periodoFechas = null
+let _periodosCache = []
 
-function abrirModalFechas(id) {
-  // Busca la fila local desde el cache renderizado
-  fetch(API + '/api/admin/periodos?anio=' + document.getElementById('admin-input-anio').value + (document.getElementById('admin-sel-sede').value ? '&sede=' + encodeURIComponent(document.getElementById('admin-sel-sede').value) : ''), {
-    headers: { 'Authorization': 'Bearer ' + currentToken }
-  })
-  .then(function(r){ return r.json() })
-  .then(function(rows) {
-    const cfg = rows.find(r => r.id === id)
-    if (!cfg) { mostrarToast('error', 'No se encontró el período'); return }
-    document.getElementById('modal-fechas-titulo').textContent = 'Editar fechas — ' + cfg.sede + ' Período ' + cfg.periodo
-    document.getElementById('modal-fecha-inicio').value = cfg.fecha_inicio || ''
-    document.getElementById('modal-fecha-corte').value = cfg.fecha_corte || ''
-    document.getElementById('modal-fecha-fin').value = cfg.fecha_fin || ''
-    window._periodoFechas = cfg
-    abrirModalSuave(document.getElementById('modal-fechas'))
-  })
-  .catch(function(){ mostrarToast('error', 'Error de conexión') })
+function abrirModalFechas(periodo, anio) {
+  // Busca TODAS las filas de ese período/año en el cache renderizado (la
+  // configuración interna es por sede: las mismas fechas se aplican a todas)
+  const filas = (_periodosCache || []).filter(c => String(c.periodo) === String(periodo) && String(c.anio) === String(anio))
+  if (!filas.length) { mostrarToast('error', 'No se encontró el período'); return }
+  document.getElementById('modal-fechas-titulo').textContent = 'Editar fechas — Período ' + periodo
+  document.getElementById('modal-fecha-inicio').value = filas[0].fecha_inicio || ''
+  document.getElementById('modal-fecha-corte').value = filas[0].fecha_corte || ''
+  document.getElementById('modal-fecha-fin').value = filas[0].fecha_fin || ''
+  window._periodoFechas = { filas }
+  abrirModalSuave(document.getElementById('modal-fechas'))
 }
 
 async function guardarFechasPeriodo() {
@@ -4669,18 +4659,20 @@ async function guardarFechasPeriodo() {
   const fc = document.getElementById('modal-fecha-corte').value
   const ff = document.getElementById('modal-fecha-fin').value
   try {
-    const res = await fetch(API + '/api/admin/periodos/' + cfg.id, {
-      method: 'PUT',
-      headers: { 'Authorization': 'Bearer ' + currentToken, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fecha_inicio: fi || null, fecha_corte: fc || null, fecha_fin: ff || null })
-    })
-    const data = await res.json()
-    if (res.ok) {
-      mostrarToast('ok', data.mensaje || 'Fechas actualizadas')
+    const resultados = await Promise.allSettled(cfg.filas.map(f =>
+      fetch(API + '/api/admin/periodos/' + f.id, {
+        method: 'PUT',
+        headers: { 'Authorization': 'Bearer ' + currentToken, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fecha_inicio: fi || null, fecha_corte: fc || null, fecha_fin: ff || null })
+      }).then(r => r.ok ? Promise.resolve() : Promise.reject(new Error('fallo')))
+    ))
+    const fallidas = resultados.filter(r => r.status === 'rejected').length
+    if (fallidas > 0) {
+      mostrarToast('error', 'La operación quedó incompleta: ' + fallidas + ' de ' + cfg.filas.length + ' no se pudieron actualizar')
+    } else {
+      mostrarToast('ok', 'Fechas actualizadas')
       cerrarModalFechas()
       cargarAdminPeriodos()
-    } else {
-      mostrarToast('error', data.error || 'Error')
     }
   } catch (e) {
     mostrarToast('error', 'Error de conexión')
@@ -4951,44 +4943,52 @@ btn.innerHTML = icon('guardar') + ' Guardar cambios'
   btn.innerHTML = icon('guardar') + ' Guardar cambios'
 }
 
-async function cerrarPeriodo(sede, periodo, anio) {
-  confirmarAccion('¿Cerrar el período para ' + sede + ' (P' + periodo + ' / ' + anio + ')?\nLos profesores ya no podrán guardar notas.', async (ok) => {
+async function cerrarPeriodo(periodo, anio) {
+  confirmarAccion('¿Cerrar el período ' + periodo + ' (año ' + anio + ')?\nLos profesores ya no podrán guardar notas.', async (ok) => {
   if (!ok) return
+  const filas = (_periodosCache || []).filter(c => String(c.periodo) === String(periodo) && String(c.anio) === String(anio))
+  if (!filas.length) { mostrarToast('error', 'No se encontró el período'); return }
   try {
-    const res = await fetch(API + '/api/admin/periodos/cerrar', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + currentToken, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sede, periodo, anio })
-    })
-    const data = await res.json()
-    if (res.ok) {
-      mostrarToast('ok', data.mensaje || 'Período cerrado')
-      cargarAdminPeriodos()
+    const resultados = await Promise.allSettled(filas.map(f =>
+      fetch(API + '/api/admin/periodos/cerrar', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + currentToken, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sede: f.sede, periodo, anio })
+      }).then(r => r.ok ? Promise.resolve() : Promise.reject(new Error('fallo')))
+    ))
+    const fallidas = resultados.filter(r => r.status === 'rejected').length
+    if (fallidas > 0) {
+      mostrarToast('error', 'La operación quedó incompleta: ' + fallidas + ' de ' + filas.length + ' no se pudieron cerrar')
     } else {
-      mostrarToast('error', data.error || 'Error')
+      mostrarToast('ok', 'Período ' + periodo + ' cerrado')
     }
+    cargarAdminPeriodos()
   } catch (e) {
     mostrarToast('error', 'Error de conexión')
   }
   })
 }
 
-async function reabrirPeriodo(sede, periodo, anio) {
-  confirmarAccion('¿Reabrir el período ' + sede + ' (P' + periodo + ' / ' + anio + ')?\nLos profesores podrán subir notas aunque haya pasado la fecha de corte final.', async (ok) => {
+async function reabrirPeriodo(periodo, anio) {
+  confirmarAccion('¿Reabrir el período ' + periodo + ' (año ' + anio + ')?\nLos profesores podrán subir notas aunque haya pasado la fecha de corte final.', async (ok) => {
   if (!ok) return
+  const filas = (_periodosCache || []).filter(c => String(c.periodo) === String(periodo) && String(c.anio) === String(anio))
+  if (!filas.length) { mostrarToast('error', 'No se encontró el período'); return }
   try {
-    const res = await fetch(API + '/api/admin/periodos/reabrir', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + currentToken, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sede, periodo, anio })
-    })
-    const data = await res.json()
-    if (res.ok) {
-      mostrarToast('ok', data.mensaje || 'Período reabierto')
-      cargarAdminPeriodos()
+    const resultados = await Promise.allSettled(filas.map(f =>
+      fetch(API + '/api/admin/periodos/reabrir', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + currentToken, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sede: f.sede, periodo, anio })
+      }).then(r => r.ok ? Promise.resolve() : Promise.reject(new Error('fallo')))
+    ))
+    const fallidas = resultados.filter(r => r.status === 'rejected').length
+    if (fallidas > 0) {
+      mostrarToast('error', 'La operación quedó incompleta: ' + fallidas + ' de ' + filas.length + ' no se pudieron reabrir')
     } else {
-      mostrarToast('error', data.error || 'Error')
+      mostrarToast('ok', 'Período ' + periodo + ' reabierto')
     }
+    cargarAdminPeriodos()
   } catch (e) {
     mostrarToast('error', 'Error de conexión')
   }
@@ -5006,22 +5006,14 @@ async function cargarAdminReporteCorte() {
   document.getElementById('admin-areas-section').style.display = 'none'
   mostrarSeccion('admin-reporte-corte-section')
   actualizarNavActivo('nav-reporte')
-  try {
-    const sedesRes = await fetch(API + '/api/admin/sedes', { headers: { 'Authorization': 'Bearer ' + currentToken } })
-    const sedes = sedesRes.ok ? await sedesRes.json() : []
-    const selSede = document.getElementById('admin-reporte-sede')
-    selSede.innerHTML = '<option value="">Todas</option>' + sedes.map(s => '<option value="' + esc(s) + '">' + esc(s) + '</option>').join('')
-  } catch (e) {}
 }
 
 async function ejecutarAdminReporteCorte() {
   const curso = document.getElementById('admin-reporte-curso').value.trim()
   const periodo = document.getElementById('admin-reporte-periodo').value
   const anio = document.getElementById('admin-reporte-anio').value || new Date().getFullYear()
-  const sede = document.getElementById('admin-reporte-sede').value
   let url = API + '/api/admin/reporte-corte?periodo=' + periodo + '&anio=' + anio
   if (curso) url += '&curso=' + encodeURIComponent(curso)
-  if (sede) url += '&sede=' + encodeURIComponent(sede)
   const grid = document.getElementById('admin-reporte-corte-grid')
   grid.innerHTML = '<div style="color:var(--ink-400);font-size:13px;text-align:center;padding:16px;">Cargando...</div>'
   try {
@@ -5422,17 +5414,17 @@ function adminMostrarModalCambioCurso(id, nombre, cursoActual) {
       let html = ''
       if (mañana.length) {
         html += '<optgroup label="Mañana">'
-        html += mañana.map(c => '<option value="' + esc(c.curso) + '" data-grado="' + c.grado + '">' + esc(c.curso) + ' (grado ' + c.grado + '°) — ' + esc(c.sede) + '</option>').join('')
+        html += mañana.map(c => '<option value="' + esc(c.curso) + '" data-grado="' + c.grado + '">' + esc(c.curso) + ' (grado ' + c.grado + '°)</option>').join('')
         html += '</optgroup>'
       }
       if (tarde.length) {
         html += '<optgroup label="Tarde">'
-        html += tarde.map(c => '<option value="' + esc(c.curso) + '" data-grado="' + c.grado + '">' + esc(c.curso) + ' (grado ' + c.grado + '°) — ' + esc(c.sede) + '</option>').join('')
+        html += tarde.map(c => '<option value="' + esc(c.curso) + '" data-grado="' + c.grado + '">' + esc(c.curso) + ' (grado ' + c.grado + '°)</option>').join('')
         html += '</optgroup>'
       }
       if (otros.length) {
         html += '<optgroup label="Otra">'
-        html += otros.map(c => '<option value="' + esc(c.curso) + '" data-grado="' + c.grado + '">' + esc(c.curso) + ' (grado ' + c.grado + '°) — ' + esc(c.sede) + '</option>').join('')
+        html += otros.map(c => '<option value="' + esc(c.curso) + '" data-grado="' + c.grado + '">' + esc(c.curso) + ' (grado ' + c.grado + '°)</option>').join('')
         html += '</optgroup>'
       }
       select.innerHTML = html
@@ -5648,18 +5640,10 @@ async function cargarAdminObservaciones(pagina) {
   mostrarSeccion('admin-obs-section')
   actualizarNavActivo('nav-obs')
 
-  // Load sedes and materias into filters
+  // Load materias into filters
   try {
     const token = currentToken
-    const [sedesRes, matsRes] = await Promise.all([
-      fetch(API + '/api/admin/sedes', { headers: { 'Authorization': 'Bearer ' + token } }),
-      fetch(API + '/api/admin/materias', { headers: { 'Authorization': 'Bearer ' + token } })
-    ])
-    if (sedesRes.ok) {
-      const sedes = await sedesRes.json()
-      const selSede = document.getElementById('admin-obs-sede')
-      selSede.innerHTML = '<option value="">Todas</option>' + sedes.map(s => '<option value="' + esc(s) + '">' + esc(s) + '</option>').join('')
-    }
+    const matsRes = await fetch(API + '/api/admin/materias', { headers: { 'Authorization': 'Bearer ' + token } })
     if (matsRes.ok) {
       const mats = await matsRes.json()
       // Nombres únicos (ya sin grado): una fila por materia
@@ -5673,13 +5657,11 @@ async function cargarAdminObservaciones(pagina) {
   } catch (e) {}
 
   window._adminObsPagina = pagina || 1; var p = window._adminObsPagina
-  const sede = document.getElementById('admin-obs-sede').value
   const curso = document.getElementById('admin-obs-curso').value.trim()
   const materiaId = document.getElementById('admin-obs-materia').value
   const desde = document.getElementById('admin-obs-desde').value
   const hasta = document.getElementById('admin-obs-hasta').value
   let url = API + '/api/admin/observaciones?pagina=' + p
-  if (sede) url += '&sede=' + encodeURIComponent(sede)
   if (curso) url += '&curso=' + encodeURIComponent(curso)
   if (materiaId) url += '&materiaId=' + encodeURIComponent(materiaId)
   if (desde) url += '&desde=' + encodeURIComponent(desde)
