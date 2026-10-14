@@ -333,6 +333,58 @@ router.get('/resumen', async (req, res) => {
   }
 })
 
+// Helper compartido: resumen de asistencia de UN estudiante en un rango.
+// Lo usan GET /api/asistencia/mia (portal del estudiante) y el panel de
+// rendimiento del director (vista individual para reuniones con padres).
+// Solo agregados del estudiante: nunca expone datos de terceros.
+async function resumenAsistenciaEstudiante(db, estudianteId, curso, desde, hasta) {
+  const regs = await db.prepare(`
+    SELECT s.fecha, s.materiaId, r.estado
+    FROM asistencia_registros r JOIN asistencia_sesiones s ON s.id = r.sesionId
+    WHERE r.estudianteId = ? AND s.fecha BETWEEN ? AND ?
+    ORDER BY s.fecha DESC
+  `).all(estudianteId, desde, hasta)
+
+  const sesionesCurso = await db.prepare(
+    'SELECT materiaId, COUNT(*) AS c FROM asistencia_sesiones WHERE curso = ? AND fecha BETWEEN ? AND ? GROUP BY materiaId'
+  ).all(curso, desde, hasta)
+
+  const nombresMaterias = new Map(
+    (await db.prepare('SELECT id, nombre FROM materias').all()).map(m => [m.id, m.nombre])
+  )
+  // Number(): en Postgres el driver devuelve COUNT(*) (int8) como TEXTO
+  const sesionesPorMat = new Map(sesionesCurso.map(s => [s.materiaId, Number(s.c)]))
+
+  const tot = { AUSENTE: 0, TARDANZA: 0, EXCUSA: 0 }
+  const porMat = {}
+  for (const r of regs) {
+    tot[r.estado]++
+    if (!porMat[r.materiaId]) porMat[r.materiaId] = { AUSENTE: 0, TARDANZA: 0, EXCUSA: 0 }
+    porMat[r.materiaId][r.estado]++
+  }
+
+  return {
+    totales: { ausencias: tot.AUSENTE, tardanzas: tot.TARDANZA, excusas: tot.EXCUSA },
+    porMateria: [...sesionesPorMat.keys()].map(mid => {
+      const m = porMat[mid] || { AUSENTE: 0, TARDANZA: 0, EXCUSA: 0 }
+      return {
+        materiaId: mid,
+        materiaNombre: nombresMaterias.get(mid) || '—',
+        sesiones: sesionesPorMat.get(mid) || 0,
+        ausencias: m.AUSENTE,
+        tardanzas: m.TARDANZA,
+        excusas: m.EXCUSA,
+        porcentajeInasistencia: pct(m.AUSENTE, sesionesPorMat.get(mid) || 0),
+      }
+    }),
+    ultimas: regs.slice(0, 10).map(r => ({
+      fecha: r.fecha,
+      materiaNombre: nombresMaterias.get(r.materiaId) || '—',
+      estado: r.estado,
+    })),
+  }
+}
+
 // ─── (d) GET /api/asistencia/mia — SOLO el estudiante del token ───
 router.get('/mia', async (req, res) => {
   try {
@@ -357,52 +409,8 @@ router.get('/mia', async (req, res) => {
     const est = await db.prepare('SELECT curso FROM estudiantes WHERE id = ?').get(estudianteId)
     if (!est) return res.status(404).json({ error: 'Estudiante no encontrado' })
 
-    const regs = await db.prepare(`
-      SELECT s.fecha, s.materiaId, r.estado
-      FROM asistencia_registros r JOIN asistencia_sesiones s ON s.id = r.sesionId
-      WHERE r.estudianteId = ? AND s.fecha BETWEEN ? AND ?
-      ORDER BY s.fecha DESC
-    `).all(estudianteId, desde, hasta)
-
-    const sesionesCurso = await db.prepare(
-      'SELECT materiaId, COUNT(*) AS c FROM asistencia_sesiones WHERE curso = ? AND fecha BETWEEN ? AND ? GROUP BY materiaId'
-    ).all(est.curso, desde, hasta)
-
-    const nombresMaterias = new Map(
-      (await db.prepare('SELECT id, nombre FROM materias').all()).map(m => [m.id, m.nombre])
-    )
-    // Number(): en Postgres el driver devuelve COUNT(*) (int8) como TEXTO
-    const sesionesPorMat = new Map(sesionesCurso.map(s => [s.materiaId, Number(s.c)]))
-
-    const tot = { AUSENTE: 0, TARDANZA: 0, EXCUSA: 0 }
-    const porMat = {}
-    for (const r of regs) {
-      tot[r.estado]++
-      if (!porMat[r.materiaId]) porMat[r.materiaId] = { AUSENTE: 0, TARDANZA: 0, EXCUSA: 0 }
-      porMat[r.materiaId][r.estado]++
-    }
-
-    res.json({
-      desde, hasta,
-      totales: { ausencias: tot.AUSENTE, tardanzas: tot.TARDANZA, excusas: tot.EXCUSA },
-      porMateria: [...sesionesPorMat.keys()].map(mid => {
-        const m = porMat[mid] || { AUSENTE: 0, TARDANZA: 0, EXCUSA: 0 }
-        return {
-          materiaId: mid,
-          materiaNombre: nombresMaterias.get(mid) || '—',
-          sesiones: sesionesPorMat.get(mid) || 0,
-          ausencias: m.AUSENTE,
-          tardanzas: m.TARDANZA,
-          excusas: m.EXCUSA,
-          porcentajeInasistencia: pct(m.AUSENTE, sesionesPorMat.get(mid) || 0),
-        }
-      }),
-      ultimas: regs.slice(0, 10).map(r => ({
-        fecha: r.fecha,
-        materiaNombre: nombresMaterias.get(r.materiaId) || '—',
-        estado: r.estado,
-      })),
-    })
+    const resumen = await resumenAsistenciaEstudiante(db, estudianteId, est.curso, desde, hasta)
+    res.json({ desde, hasta, ...resumen })
   } catch (error) {
     console.error('Error GET /asistencia/mia:', error)
     res.status(500).json({ error: 'Error interno' })
@@ -410,3 +418,6 @@ router.get('/mia', async (req, res) => {
 })
 
 module.exports = router
+// Reutilizable (panel de rendimiento del director): el resumen de asistencia
+// del estudiante, compartido sin duplicar la lógica.
+module.exports.resumenAsistenciaEstudiante = resumenAsistenciaEstudiante
