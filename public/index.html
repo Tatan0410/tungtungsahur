@@ -338,6 +338,40 @@ body::before {
   @page { size: letter; margin: 0; }
 }
 
+/* ─── Fase 3B: panel de rendimiento del director ───
+   Impresión de la ficha individual, AISLADA del boletín: solo se activa
+   con la clase body.imprimiendo-ficha-rendimiento (la pone y la quita
+   imprimirFichaRendimiento). Sin esa clase las reglas del boletín de
+   arriba siguen mandando exactamente igual que hoy. */
+#ficha-impresion-rendimiento { display: none; }
+@media print {
+  body.imprimiendo-ficha-rendimiento > *:not(#ficha-impresion-rendimiento) { display: none !important; }
+  body.imprimiendo-ficha-rendimiento #ficha-impresion-rendimiento {
+    display: block !important;
+    /* Se imprime SIEMPRE en tema claro, aunque la pantalla esté oscura */
+    --paper:#FFFFFF; --cream-50:#FAF7F1; --cream-100:#F1EADC;
+    --ink-900:#2A2420; --ink-600:#5C5347; --ink-400:#8A8175;
+    --line:#E6DECC; --line-soft:#EFE7D6;
+    --red-700:#A32D2D; --red-500:#E24B4A; --red-100:#FCEBEB;
+    --amber-700:#854F0B; --amber-500:#EF9F27; --amber-100:#FAEEDA;
+    --green-700:#3B6D11; --green-500:#639922; --green-100:#EAF3DE;
+    --gold-700:#9C7A2E; --gold-600:#B08D3E; --gold-100:#F3E7C8;
+    --burgundy-700:#7B1C2E; --burgundy-600:#8F2438;
+    font-family: var(--font-b); color: #2A2420; background: #fff;
+  }
+  body.imprimiendo-ficha-rendimiento .rend-print-block { break-inside: avoid; page-break-inside: avoid; }
+}
+/* Pestañas del panel (tablist accesible: flechas del teclado incluidas) */
+.rend-tabs { display: flex; gap: 6px; }
+.rend-tab {
+  border: 1px solid var(--line); background: var(--cream-50); color: var(--ink-600);
+  padding: 8px 16px; border-radius: 999px; font-size: 12.5px; font-weight: 600;
+  cursor: pointer; font-family: var(--font-b);
+}
+.rend-tab:hover { background: var(--cream-100); }
+.rend-tab[aria-selected="true"] { background: var(--burgundy-600); border-color: var(--burgundy-600); color: #fff; }
+.rend-tab:focus-visible { outline: 2px solid var(--gold-600); outline-offset: 2px; }
+
 /* ---------- Micro-interacciones: skeleton, spinner, shake, salida de modales ---------- */
 @keyframes skeletonPulse {
   0%, 100% { opacity: .45; }
@@ -907,6 +941,7 @@ body::before {
     <button class="btn-sm" id="btn-director-obs" style="display:none;font-weight:600;" onclick="mostrarObservacionesCursoDirector()"><span class="icon" data-icon="ojo"></span> Observaciones de mi curso</button>
     <button class="btn-sm" id="btn-director-reporte" style="display:none;font-weight:600;" onclick="mostrarReporteCorte()"><span class="icon" data-icon="advertencia"></span> Reporte de corte</button>
     <button class="btn-sm" id="btn-director-asistencia" style="display:none;font-weight:600;" onclick="abrirModalAsistenciaCurso()"><span class="icon" data-icon="usuarios"></span> Asistencia de mi curso</button>
+    <button class="btn-sm" id="btn-director-rendimiento" style="display:none;font-weight:600;" onclick="abrirModalRendimiento()"><span class="icon" data-icon="grafico"></span> Rendimiento de mi curso</button>
   </div>
   <div class="period-tabs" id="period-tabs"><div class="period-indicador" id="period-indicador" style="opacity:0;"></div>
     <div class="period-tab active" data-p="1" onclick="selPeriodo(1)">P1<span class="weight">20%</span></div>
@@ -1370,6 +1405,38 @@ body::before {
     <div id="asist-dir-resumen" style="padding:6px 22px 18px;overflow-y:auto;flex:1;"></div>
     <div style="padding:14px 22px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;flex-shrink:0;">
       <button class="btn-sm" onclick="cerrarModalAsistenciaCurso()">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Fase 3B: panel de rendimiento del director (ficha individual + vista del curso) -->
+<div id="modal-rendimiento" style="display:none;position:fixed;inset:0;z-index:100;background:rgba(0,0,0,0.4);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);align-items:center;justify-content:center;" onclick="if(event.target===this)cerrarModalRendimiento()">
+  <div style="background:var(--paper);border-radius:var(--r-lg);padding:0;max-width:980px;width:96%;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.3);overflow:hidden;">
+    <div style="padding:18px 22px;border-bottom:1px solid var(--line);flex-shrink:0;">
+      <div style="font-size:16px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);"><span class="icon" data-icon="grafico"></span> Rendimiento de mi curso</div>
+      <div style="font-size:11px;color:var(--ink-400);margin-top:4px;">Ficha individual para la reunión de padres · Vista interna del curso</div>
+    </div>
+    <div style="padding:12px 22px;display:flex;gap:12px;align-items:end;flex-wrap:wrap;border-bottom:1px solid var(--line);flex-shrink:0;">
+      <div id="rend-curso-fila"><div class="lbl">Curso</div><select class="sel" id="rend-curso-sel" onchange="cargarRendimientoCurso()"></select></div>
+      <div><div class="lbl">Año</div><select class="sel" id="rend-anio-sel" onchange="cargarRendimientoCurso()"></select></div>
+      <div class="rend-tabs" role="tablist" aria-label="Vistas del panel de rendimiento" style="margin-left:auto;" onkeydown="teclasPestanasRendimiento(event)">
+        <button type="button" role="tab" class="rend-tab" id="rend-tab-ficha" aria-selected="true" aria-controls="rend-panel-ficha" onclick="selPestanaRendimiento('ficha')">Ficha individual</button>
+        <button type="button" role="tab" class="rend-tab" id="rend-tab-curso" aria-selected="false" aria-controls="rend-panel-curso" tabindex="-1" onclick="selPestanaRendimiento('curso')">Vista del curso</button>
+      </div>
+    </div>
+    <div id="rend-panel-ficha" role="tabpanel" aria-labelledby="rend-tab-ficha" style="padding:16px 22px;overflow-y:auto;flex:1;">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:14px;">
+        <div style="flex:1;min-width:230px;"><div class="lbl">Estudiante</div><select class="sel" id="rend-ficha-estudiante" style="width:100%;"></select></div>
+        <button type="button" class="btn-sm primary" style="font-weight:600;" onclick="verFichaRendimiento()"><span class="icon" data-icon="ojo"></span> Ver ficha</button>
+      </div>
+      <div id="rend-ficha-cont"><div style="color:var(--ink-400);font-size:13px;text-align:center;padding:24px;">Elige un estudiante y pulsa «Ver ficha» para preparar la información de la reunión.</div></div>
+      <div style="text-align:right;margin-top:12px;"><button type="button" class="btn-sm success" id="rend-ficha-imprimir" style="display:none;font-weight:600;" onclick="imprimirFichaRendimiento()"><span class="icon" data-icon="documento"></span> Imprimir / guardar PDF</button></div>
+    </div>
+    <div id="rend-panel-curso" role="tabpanel" aria-labelledby="rend-tab-curso" style="padding:16px 22px;overflow-y:auto;flex:1;" hidden>
+      <div id="rend-curso-cont"></div>
+    </div>
+    <div style="padding:14px 22px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;flex-shrink:0;">
+      <button class="btn-sm" onclick="cerrarModalRendimiento()">Cerrar</button>
     </div>
   </div>
 </div>
@@ -2215,12 +2282,16 @@ async function cargarAsignaciones() {
             }
             const asistDirBtn = document.getElementById('btn-director-asistencia')
             if (asistDirBtn) asistDirBtn.style.display = 'inline-block'
+            const rendDirBtn = document.getElementById('btn-director-rendimiento')
+            if (rendDirBtn) rendDirBtn.style.display = 'inline-block'
           } else {
             dirBtn.style.display = 'none'
             const reporteBtn = document.getElementById('btn-director-reporte')
             if (reporteBtn) reporteBtn.style.display = 'none'
             const asistDirBtn = document.getElementById('btn-director-asistencia')
             if (asistDirBtn) asistDirBtn.style.display = 'none'
+            const rendDirBtn = document.getElementById('btn-director-rendimiento')
+            if (rendDirBtn) rendDirBtn.style.display = 'none'
           }
         }
       } catch (e) {}
@@ -6644,7 +6715,7 @@ function renderResumenAsistencia(idContenedor, data) {
         html += '<div style="display:flex;gap:18px;flex-wrap:wrap;">'
         for (const m of e.porMateria) {
           html += '<div style="min-width:190px;flex:1;">'
-          html += '<div style="font-size:12px;font-weight:600;color:var(--ink-700);margin-bottom:5px;">' + esc(m.materiaNombre) + '</div>'
+          html += '<div style="font-size:12px;font-weight:600;color:var(--ink-600);margin-bottom:5px;">' + esc(m.materiaNombre) + '</div>'
           html += '<div style="font-size:11px;color:var(--ink-400);margin-bottom:8px;">' + num(m.sesiones) + ' sesión(es) · ' + num(m.ausencias) + ' ausente(s) · ' + num(m.tardanzas) + ' tardanza(s) · ' + num(m.excusas) + ' excusa(s)</div>'
           html += '<div class="asist-barra" style="margin-bottom:6px;"><div style="width:' + Math.min(100, num(m.porcentajeInasistencia)) + '%;background:' + colorAsistencia(num(m.porcentajeInasistencia)) + ';"></div></div>'
           html += '<div style="font-size:11px;font-weight:600;color:var(--ink-600);">' + num(m.porcentajeInasistencia) + '% de inasistencia</div>'
@@ -6767,12 +6838,12 @@ function renderMiAsistencia(data) {
   }
   const ult = data.ultimas || []
   if (ult.length) {
-    html += '<div style="font-size:12px;font-weight:700;color:var(--ink-700);margin:12px 0 4px;">Últimas novedades</div>'
+    html += '<div style="font-size:12px;font-weight:700;color:var(--ink-600);margin:12px 0 4px;">Últimas novedades</div>'
     for (const u of ult) {
       const clase = u.estado === 'AUSENTE' ? ' asist-alto' : u.estado === 'TARDANZA' ? ' asist-medio' : ''
       const etiqueta = u.estado === 'AUSENTE' ? 'Ausente' : u.estado === 'TARDANZA' ? 'Tardanza' : 'Excusa'
       html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);font-size:12px;flex-wrap:wrap;">'
-      html += '<span style="color:var(--ink-700);">' + esc(u.materiaNombre) + ' · ' + esc(u.fecha) + '</span>'
+      html += '<span style="color:var(--ink-600);">' + esc(u.materiaNombre) + ' · ' + esc(u.fecha) + '</span>'
       html += '<span class="asist-chip' + clase + '">' + etiqueta + '</span>'
       html += '</div>'
     }
@@ -6781,6 +6852,694 @@ function renderMiAsistencia(data) {
     html += '<div style="background:var(--paper);border:1px solid var(--line);border-radius:var(--r-md);padding:26px;text-align:center;color:var(--ink-400);font-size:13px;">No hay registros de asistencia todavía. ¡Sigue así!</div>'
   }
   cont.innerHTML = html
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Fase 3B — PANEL DE RENDIMIENTO DEL DIRECTOR DE GRUPO
+//  · Ficha individual (reunión de padres): promedios por período
+//    idénticos al boletín, tabla por materia, asistencia del año y
+//    materias por reforzar. «Imprimir / guardar PDF» imprime SOLO
+//    la ficha, en A4 (el @page letter del boletín no se toca).
+//  · Vista del curso (uso interno): barras agrupadas por período,
+//    distribución por niveles y tabla ordenable de estudiantes.
+// Backend: GET /api/rendimiento/curso y /estudiante (intactos).
+// Regla del barrido estático: NINGUNA línea con onclick=/onchange=
+// interpola variables — los th ordenables se arman línea por línea.
+// ═══════════════════════════════════════════════════════════════
+
+let _rendFichaDatos = null                 // última ficha (encabezado de impresión)
+let _rendOrden = { col: 'promedio', asc: false }   // orden de la tabla del curso
+let _rendCursoEstudiantes = null           // filas actuales (re-ordenar sin refetch)
+
+// Nivel → chip con TEXTO + color (el color nunca es la única señal)
+function chipNivelRend(nivel) {
+  const paleta = {
+    'BAJO': ['var(--red-100)', 'var(--red-700)'],
+    'BÁSICO': ['var(--amber-100)', 'var(--amber-700)'],
+    'ALTO': ['var(--green-100)', 'var(--green-700)'],
+    'SUPERIOR': ['var(--gold-100)', 'var(--gold-700)'],
+  }
+  if (!nivel || !paleta[nivel]) return '<span style="color:var(--ink-400);font-weight:600;">—</span>'
+  const c = paleta[nivel]
+  return '<span style="display:inline-flex;align-items:center;padding:2px 11px;border-radius:999px;font-size:11px;font-weight:700;background:' + c[0] + ';color:' + c[1] + ';white-space:nowrap;">' + esc(nivel) + '</span>'
+}
+
+// Celda P1-P4: coloreada por nivel Y con el número ("—" si no hay nota)
+function celdaNotaRend(v) {
+  if (v === null || v === undefined || v === '' || !isFinite(Number(v))) {
+    return '<td style="padding:9px 8px;border-bottom:1px solid var(--line);text-align:center;color:var(--ink-400);">—</td>'
+  }
+  const val = parseFloat(Number(v).toFixed(2))
+  let f = 'var(--red-700)', b = 'var(--red-100)'
+  if (val >= 4.6) { f = 'var(--gold-700)'; b = 'var(--gold-100)' }
+  else if (val >= 4) { f = 'var(--green-700)'; b = 'var(--green-100)' }
+  else if (val >= 3) { f = 'var(--amber-700)'; b = 'var(--amber-100)' }
+  return '<td style="padding:9px 8px;border-bottom:1px solid var(--line);text-align:center;font-weight:700;background:' + b + ';color:' + f + ';">' + val + '</td>'
+}
+
+// La definitiva VIGENTE de una materia (la del último período con nota)
+function vigenteRend(definitivas) {
+  for (let p = 4; p >= 1; p--) {
+    const v = (definitivas || {})[String(p)]
+    if (v === null || v === undefined || v === '') continue
+    const n = Number(v)
+    if (isFinite(n)) return n
+  }
+  return null
+}
+
+// Texto equivalente de los promedios por período (solo los que existen)
+function textoPromediosRend(prom) {
+  const datos = prom || {}
+  const partes = []
+  for (let p = 1; p <= 4; p++) {
+    const v = datos[String(p)]
+    if (v === null || v === undefined || v === '') continue
+    const n = Number(v)
+    if (!isFinite(n)) continue
+    partes.push('P' + p + ': ' + String(parseFloat(n.toFixed(2))))
+  }
+  return partes.length ? partes.join(' · ') : 'Sin promedios registrados'
+}
+
+// Gráfica de línea del promedio por período. Los puntos sin nota se
+// OMITEN (nunca se dibujan como 0). Guía punteada en 3.0 rotulada.
+function svgLineaRend(prom) {
+  const W = 380, H = 200, pl = 36, pr = 14, pt = 18, pb = 36
+  const fx = p => pl + (p - 1) * ((W - pl - pr) / 3)
+  const fy = v => pt + (1 - Math.max(0, Math.min(5, v)) / 5) * (H - pt - pb)
+  const datos = prom || {}
+  const puntos = []
+  for (let p = 1; p <= 4; p++) {
+    const v = datos[String(p)]
+    if (v === null || v === undefined || v === '') continue
+    const n = Number(v)
+    if (!isFinite(n)) continue
+    puntos.push({ p: p, v: n })
+  }
+  const y30 = fy(3)
+  let s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" style="width:100%;max-width:520px;height:auto;display:block;" aria-label="Línea del promedio por período. ' + esc(textoPromediosRend(datos)) + '. La línea punteada marca 3.0, la nota mínima para aprobar.">'
+  s += '<rect x="' + pl + '" y="' + pt + '" width="' + (W - pl - pr) + '" height="' + (H - pt - pb) + '" style="fill:var(--cream-50);stroke:var(--line);stroke-width:1;"></rect>'
+  s += '<line x1="' + pl + '" y1="' + y30 + '" x2="' + (W - pr) + '" y2="' + y30 + '" style="stroke:var(--red-500);stroke-width:1.5;stroke-dasharray:5 4;"></line>'
+  s += '<text x="' + (pl - 5) + '" y="' + (y30 + 3) + '" text-anchor="end" style="fill:var(--red-700);font-size:9.5px;font-weight:700;">3.0</text>'
+  s += '<text x="' + (W - pr - 4) + '" y="' + (y30 - 5) + '" text-anchor="end" style="fill:var(--red-700);font-size:10px;font-weight:600;">3.0 Aprueba</text>'
+  s += '<text x="' + (pl - 5) + '" y="' + (pt + 4) + '" text-anchor="end" style="fill:var(--ink-400);font-size:9.5px;">5</text>'
+  s += '<text x="' + (pl - 5) + '" y="' + (pt + (H - pt - pb) + 3) + '" text-anchor="end" style="fill:var(--ink-400);font-size:9.5px;">0</text>'
+  for (let p = 1; p <= 4; p++) {
+    s += '<text x="' + fx(p) + '" y="' + (H - pb + 15) + '" text-anchor="middle" style="fill:var(--ink-600);font-size:11px;font-weight:600;">P' + p + '</text>'
+  }
+  if (puntos.length >= 2) {
+    s += '<polyline points="' + puntos.map(q => fx(q.p) + ',' + fy(q.v).toFixed(1)).join(' ') + '" style="fill:none;stroke:var(--gold-600);stroke-width:2.5;stroke-linejoin:round;"></polyline>'
+  }
+  for (const q of puntos) {
+    s += '<circle class="rend-punto" cx="' + fx(q.p) + '" cy="' + fy(q.v).toFixed(1) + '" r="4.5" style="fill:var(--gold-600);stroke:var(--paper);stroke-width:2;"></circle>'
+    s += '<text x="' + fx(q.p) + '" y="' + (fy(q.v) - 9) + '" text-anchor="middle" style="fill:var(--ink-900);font-size:10px;font-weight:700;">' + String(parseFloat(q.v.toFixed(2))) + '</text>'
+  }
+  if (!puntos.length) {
+    s += '<text x="' + (W / 2) + '" y="' + (H / 2) + '" text-anchor="middle" style="fill:var(--ink-400);font-size:12px;">Sin promedios registrados</text>'
+  }
+  s += '</svg>'
+  return s
+}
+
+// Comparativa "Estudiante vs curso" por materia (dos barras con TEXTO)
+function comparativaMateriaRend(est, curso) {
+  const lim = x => {
+    if (x === null || x === undefined || x === '') return null
+    const n = Number(x)
+    return isFinite(n) ? Math.max(0, Math.min(5, n)) : null
+  }
+  const ve = lim(est), vc = lim(curso)
+  const fmt = v => v === null ? '—' : String(parseFloat(v.toFixed(2)))
+  let s = '<div style="min-width:140px;">'
+  s += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">'
+  s += '<span style="font-size:9.5px;color:var(--gold-700);font-weight:700;white-space:nowrap;width:54px;">Estudiante</span>'
+  s += '<div class="asist-barra" style="flex:1;min-width:50px;"><div style="width:' + (ve === null ? 0 : Math.round(ve / 5 * 100)) + '%;background:var(--gold-600);"></div></div>'
+  s += '<span style="font-size:10.5px;font-weight:700;color:var(--ink-900);min-width:26px;text-align:right;">' + fmt(ve) + '</span></div>'
+  s += '<div style="display:flex;align-items:center;gap:6px;">'
+  s += '<span style="font-size:9.5px;color:var(--ink-400);font-weight:700;white-space:nowrap;width:54px;">Curso</span>'
+  s += '<div class="asist-barra" style="flex:1;min-width:50px;"><div style="width:' + (vc === null ? 0 : Math.round(vc / 5 * 100)) + '%;background:var(--ink-400);"></div></div>'
+  s += '<span style="font-size:10.5px;font-weight:600;color:var(--ink-600);min-width:26px;text-align:right;">' + fmt(vc) + '</span></div>'
+  s += '</div>'
+  return s
+}
+
+// ─── Ficha individual (reunión de padres) ───
+function renderFichaRendimiento(idCont, data) {
+  const cont = document.getElementById(idCont)
+  if (!cont) return
+  const num = x => Number(x) || 0
+  const nf = v => {
+    if (v === null || v === undefined || v === '') return '—'
+    const n = Number(v)
+    return isFinite(n) ? String(parseFloat(n.toFixed(2))) : '—'
+  }
+  const d = data || {}
+  const mats = d.porMateria || []
+  const prom = d.promedioPorPeriodo || {}
+  const niveles = d.nivelPorPeriodo || {}
+  const asist = d.asistencia || {}
+  const totals = asist.totales || {}
+  const conNotas = mats.some(m => {
+    const defs = m.definitivas || {}
+    for (let p = 1; p <= 4; p++) {
+      const v = defs[String(p)]
+      if (v !== null && v !== undefined && v !== '') return true
+    }
+    return false
+  })
+  // Período más reciente con nota (para la tarjeta resumen)
+  let ultP = null
+  for (let p = 4; p >= 1; p--) {
+    const v = prom[String(p)]
+    if (v !== null && v !== undefined && v !== '') { ultP = p; break }
+  }
+  let html = ''
+  // Encabezado
+  html += '<div style="display:flex;justify-content:space-between;align-items:start;gap:10px;flex-wrap:wrap;margin-bottom:12px;">'
+  html += '<div><div style="font-size:16px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);">' + esc((d.estudiante || {}).nombre || '') + '</div>'
+  html += '<div style="font-size:12px;color:var(--ink-400);margin-top:2px;">Curso ' + esc((d.estudiante || {}).curso || '') + ' · Año ' + esc(d.anio || '') + '</div></div>'
+  html += '</div>'
+  // Tarjetas resumen
+  html += '<div class="rend-print-block" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px;">'
+  html += '<div style="background:var(--cream-50);border:1px solid var(--line);border-radius:var(--r-md);padding:12px 14px;">'
+  html += '<div style="font-size:10.5px;font-weight:700;color:var(--ink-400);text-transform:uppercase;letter-spacing:.05em;">Promedio ' + (ultP !== null ? 'P' + ultP : 'por período') + '</div>'
+  if (ultP !== null) {
+    html += '<div style="font-size:22px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);margin:4px 0;">' + nf(prom[String(ultP)]) + '</div>'
+    html += '<div>' + chipNivelRend(niveles[String(ultP)]) + '</div>'
+  } else {
+    html += '<div style="font-size:15px;color:var(--ink-400);margin:8px 0 4px;">Sin notas todavía</div>'
+  }
+  html += '</div>'
+  const riesgo = num(d.materiasEnRiesgo)
+  html += '<div style="background:var(--cream-50);border:1px solid var(--line);border-radius:var(--r-md);padding:12px 14px;">'
+  html += '<div style="font-size:10.5px;font-weight:700;color:var(--ink-400);text-transform:uppercase;letter-spacing:.05em;">Materias en riesgo</div>'
+  html += '<div style="font-size:22px;font-weight:700;font-family:var(--font-d);margin:4px 0;color:' + (riesgo > 0 ? 'var(--red-700)' : 'var(--green-700)') + ';">' + riesgo + '</div>'
+  html += '<div style="font-size:10.5px;color:var(--ink-400);">Con nota vigente bajo 3.0</div>'
+  html += '</div>'
+  html += '<div style="background:var(--cream-50);border:1px solid var(--line);border-radius:var(--r-md);padding:12px 14px;">'
+  html += '<div style="font-size:10.5px;font-weight:700;color:var(--ink-400);text-transform:uppercase;letter-spacing:.05em;">Inasistencias del año</div>'
+  html += '<div style="font-size:22px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);margin:4px 0;">' + num(totals.ausencias) + '</div>'
+  html += '<div style="font-size:10.5px;color:var(--ink-400);">' + num(totals.tardanzas) + ' tardanza(s) · ' + num(totals.excusas) + ' excusa(s)</div>'
+  html += '</div>'
+  html += '</div>'
+  if (conNotas) {
+    // Gráfica de línea: promedio por período
+    html += '<div class="rend-print-block" style="background:var(--paper);border:1px solid var(--line);border-radius:var(--r-md);padding:14px 16px;margin-bottom:14px;">'
+    html += '<div style="font-size:12px;font-weight:700;color:var(--ink-600);margin-bottom:8px;">Promedio por período (escala 0 a 5)</div>'
+    html += svgLineaRend(prom)
+    html += '<div style="font-size:11px;color:var(--ink-600);margin-top:6px;">' + esc(textoPromediosRend(prom)) + '. La línea punteada marca 3.0, la nota mínima para aprobar.</div>'
+    html += '</div>'
+    // Tabla por materia
+    html += '<div class="rend-print-block" style="background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);overflow:hidden;margin-bottom:14px;">'
+    html += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:' + (d.comparacionDisponible ? '640px' : '500px') + ';">'
+    html += '<thead><tr style="background:var(--cream-50);">'
+    html += '<th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);">Materia</th>'
+    for (let p = 1; p <= 4; p++) html += '<th style="padding:10px 6px;text-align:center;border-bottom:1px solid var(--line);">P' + p + '</th>'
+    html += '<th style="padding:10px 8px;text-align:center;border-bottom:1px solid var(--line);">Def. ponderada</th>'
+    html += '<th style="padding:10px 10px;text-align:center;border-bottom:1px solid var(--line);">Nivel</th>'
+    if (d.comparacionDisponible) html += '<th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);">Estudiante vs curso</th>'
+    html += '</tr></thead><tbody>'
+    for (const m of mats) {
+      const defs = m.definitivas || {}
+      html += '<tr>'
+      html += '<td style="padding:9px 12px;border-bottom:1px solid var(--line);font-weight:600;color:var(--ink-900);">' + esc(m.materiaNombre) + '</td>'
+      for (let p = 1; p <= 4; p++) html += celdaNotaRend(defs[String(p)])
+      html += '<td style="padding:9px 8px;border-bottom:1px solid var(--line);text-align:center;font-weight:600;color:var(--ink-900);">' + nf(m.definitivoPonderado) + '</td>'
+      html += '<td style="padding:9px 10px;border-bottom:1px solid var(--line);text-align:center;">' + chipNivelRend(m.nivel) + '</td>'
+      if (d.comparacionDisponible) html += '<td style="padding:9px 12px;border-bottom:1px solid var(--line);">' + comparativaMateriaRend(vigenteRend(defs), m.promedioCurso) + '</td>'
+      html += '</tr>'
+    }
+    html += '</tbody></table></div>'
+    if (!d.comparacionDisponible) {
+      html += '<div style="padding:8px 14px;font-size:11px;color:var(--ink-400);border-top:1px solid var(--line);">Comparación con el curso no disponible</div>'
+    }
+    html += '</div>'
+    // Materias por reforzar
+    html += '<div class="rend-print-block" style="background:var(--paper);border:1px solid var(--line);border-radius:var(--r-md);padding:14px 16px;margin-bottom:14px;">'
+    html += '<div style="font-size:12px;font-weight:700;color:var(--ink-600);margin-bottom:8px;">Materias por reforzar</div>'
+    const porReforzar = mats.filter(m => { const v = vigenteRend(m.definitivas || {}); return v !== null && v < 3 })
+    if (!porReforzar.length) {
+      html += '<div style="display:flex;align-items:center;gap:8px;color:var(--green-700);font-size:13px;font-weight:600;"><span class="icon" data-icon="check"></span> Sin materias por reforzar: va al día en todas las materias.</div>'
+    } else {
+      html += '<ul style="margin:0;padding-left:18px;color:var(--ink-900);font-size:13px;">'
+      for (const m of porReforzar) {
+        html += '<li style="margin-bottom:4px;">' + esc(m.materiaNombre) + ' — nota vigente <strong style="color:var(--red-700);">' + nf(vigenteRend(m.definitivas)) + '</strong></li>'
+      }
+      html += '</ul>'
+    }
+    html += '</div>'
+  } else {
+    // Estado vacío amable
+    html += '<div class="rend-print-block" style="background:var(--cream-50);border:1px solid var(--line);border-radius:var(--r-md);padding:22px;text-align:center;color:var(--ink-400);font-size:13px;margin-bottom:14px;">Aún no hay notas registradas para este año. La ficha se completará a medida que los docentes publiquen las notas de cada período.</div>'
+  }
+  // Asistencia del año (siempre visible: reutiliza chips y barras de asistencia)
+  html += '<div class="rend-print-block" style="background:var(--paper);border:1px solid var(--line);border-radius:var(--r-md);padding:14px 16px;">'
+  html += '<div style="font-size:12px;font-weight:700;color:var(--ink-600);margin-bottom:8px;">Asistencia del año</div>'
+  html += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">'
+  html += '<span class="asist-chip">' + num(totals.ausencias) + ' inasistencia(s)</span>'
+  html += '<span class="asist-chip">' + num(totals.tardanzas) + ' tardanza(s)</span>'
+  html += '<span class="asist-chip">' + num(totals.excusas) + ' excusa(s)</span>'
+  html += '</div>'
+  const amats = asist.porMateria || []
+  if (amats.length) {
+    for (const m of amats) {
+      const pct = num(m.porcentajeInasistencia)
+      html += '<div style="margin-bottom:10px;">'
+      html += '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:11.5px;margin-bottom:4px;flex-wrap:wrap;"><span style="font-weight:600;color:var(--ink-900);">' + esc(m.materiaNombre) + ' · ' + num(m.sesiones) + ' sesión(es)</span>' + chipAsistencia(pct) + '</div>'
+      html += '<div class="asist-barra"><div style="width:' + Math.min(100, pct) + '%;background:' + colorAsistencia(pct) + ';"></div></div>'
+      html += '</div>'
+    }
+  } else {
+    html += '<div style="color:var(--ink-400);font-size:12px;">Sin listas de asistencia registradas en el año.</div>'
+  }
+  html += '</div>'
+  cont.innerHTML = html
+  poblarIconos(cont)
+}
+
+// ─── Vista del curso (uso interno) ───
+
+// Texto equivalente de las barras agrupadas (solo períodos con nota)
+function textoPromediosMateriasRend(mats) {
+  const partes = []
+  for (const m of (mats || [])) {
+    const prom = m.promedioPorPeriodo || {}
+    const ps = []
+    for (let p = 1; p <= 4; p++) {
+      const v = prom[String(p)]
+      if (v === null || v === undefined || v === '') continue
+      const n = Number(v)
+      if (!isFinite(n)) continue
+      ps.push('P' + p + ' ' + String(parseFloat(n.toFixed(2))))
+    }
+    if (ps.length) partes.push(String(m.materiaNombre || '') + ': ' + ps.join(', '))
+  }
+  return partes.length ? partes.join(' — ') : 'Sin promedios registrados'
+}
+
+// Barras agrupadas por materia (P1-P4 en rampa dorada, P4 en burdeú).
+// Los períodos sin nota no se dibujan. Guía punteada en 3.0 rotulada.
+function svgBarrasCursoRend(mats) {
+  const lista = (mats || []).slice()
+  const gw = 122
+  const W = Math.max(380, lista.length * gw + 44)
+  const H = 252
+  const pl = 36, pr = 8, pt = 26, pb = 62
+  const fh = H - pt - pb
+  const fy = v => pt + (1 - Math.max(0, Math.min(5, v)) / 5) * fh
+  const colores = ['var(--gold-100)', 'var(--gold-300)', 'var(--gold-600)', 'var(--burgundy-600)']
+  const y30 = fy(3)
+  let s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" style="width:' + W + 'px;max-width:none;height:auto;display:block;" aria-label="Barras del promedio del curso por materia y período. ' + esc(textoPromediosMateriasRend(lista)) + '. La línea punteada marca 3.0, la nota mínima para aprobar.">'
+  for (let p = 1; p <= 4; p++) {
+    s += '<rect x="' + (pl + (p - 1) * 72) + '" y="6" width="11" height="11" rx="2" style="fill:' + colores[p - 1] + ';stroke:var(--line);stroke-width:1;"></rect>'
+    s += '<text x="' + (pl + (p - 1) * 72 + 15) + '" y="15" style="fill:var(--ink-600);font-size:10px;font-weight:600;">P' + p + '</text>'
+  }
+  s += '<rect x="' + pl + '" y="' + pt + '" width="' + (W - pl - pr) + '" height="' + fh + '" style="fill:var(--cream-50);stroke:var(--line);stroke-width:1;"></rect>'
+  s += '<line x1="' + pl + '" y1="' + y30 + '" x2="' + (W - pr) + '" y2="' + y30 + '" style="stroke:var(--red-500);stroke-width:1.5;stroke-dasharray:5 4;"></line>'
+  s += '<text x="' + (W - pr - 4) + '" y="' + (y30 - 5) + '" text-anchor="end" style="fill:var(--red-700);font-size:10px;font-weight:600;">3.0 Aprueba</text>'
+  s += '<text x="' + (pl - 6) + '" y="' + (pt + 4) + '" text-anchor="end" style="fill:var(--ink-400);font-size:9px;">5</text>'
+  s += '<text x="' + (pl - 6) + '" y="' + (y30 + 3) + '" text-anchor="end" style="fill:var(--red-700);font-size:9px;">3</text>'
+  s += '<text x="' + (pl - 6) + '" y="' + (pt + fh + 3) + '" text-anchor="end" style="fill:var(--ink-400);font-size:9px;">0</text>'
+  for (let i = 0; i < lista.length; i++) {
+    const m = lista[i]
+    const prom = m.promedioPorPeriodo || {}
+    const gx = pl + 10 + i * gw
+    for (let p = 1; p <= 4; p++) {
+      const v = prom[String(p)]
+      if (v === null || v === undefined || v === '') continue
+      const n = Number(v)
+      if (!isFinite(n)) continue
+      const bv = Math.max(0, Math.min(5, n))
+      const bh = bv / 5 * fh
+      s += '<rect x="' + (gx + (p - 1) * 17) + '" y="' + (pt + fh - bh) + '" width="13" height="' + Math.max(bh, 1) + '" rx="2" style="fill:' + colores[p - 1] + ';"></rect>'
+    }
+    const nom = String(m.materiaNombre || '')
+    const corto = nom.length > 18 ? nom.slice(0, 17) + '…' : nom
+    s += '<text x="' + (gx + 34) + '" y="' + (H - pb + 16) + '" text-anchor="middle" style="fill:var(--ink-600);font-size:9px;">' + esc(corto) + '</text>'
+  }
+  s += '</svg>'
+  return s
+}
+
+// Barra apilada horizontal de niveles, con conteos en texto
+function barraApiladaNivelesRend(dist) {
+  const num = x => Number(x) || 0
+  const dd = dist || {}
+  const total = num(dd.total)
+  const niveles = [
+    ['BAJO', num(dd.BAJO), 'var(--red-500)'],
+    ['BÁSICO', num(dd['BÁSICO']), 'var(--amber-500)'],
+    ['ALTO', num(dd.ALTO), 'var(--green-500)'],
+    ['SUPERIOR', num(dd.SUPERIOR), 'var(--gold-600)'],
+  ]
+  if (!total) return '<div style="font-size:11px;color:var(--ink-400);">Sin notas registradas.</div>'
+  const leyenda = niveles.filter(n => n[1] > 0).map(n => n[0] + ' ' + n[1]).join(' · ')
+  let s = '<div style="display:flex;height:12px;border-radius:999px;overflow:hidden;background:var(--line);min-width:130px;" role="img" aria-label="Distribución por niveles: ' + esc(leyenda) + '">'
+  for (const nv of niveles) {
+    if (!nv[1]) continue
+    s += '<div style="width:' + (nv[1] / total * 100) + '%;background:' + nv[2] + ';"></div>'
+  }
+  s += '</div>'
+  s += '<div style="font-size:10.5px;color:var(--ink-600);margin-top:3px;">' + esc(leyenda) + '</div>'
+  return s
+}
+
+// Leyenda en texto de la distribución general
+function leyendaNivelesRend(dist) {
+  const num = x => Number(x) || 0
+  const dd = dist || {}
+  const niveles = [
+    ['BAJO', num(dd.BAJO), 'var(--red-500)'],
+    ['BÁSICO', num(dd['BÁSICO']), 'var(--amber-500)'],
+    ['ALTO', num(dd.ALTO), 'var(--green-500)'],
+    ['SUPERIOR', num(dd.SUPERIOR), 'var(--gold-600)'],
+  ]
+  let s = '<div style="font-size:12px;font-weight:700;color:var(--ink-600);margin-bottom:8px;">Distribución general del curso</div>'
+  for (const nv of niveles) {
+    s += '<div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-900);margin-bottom:4px;"><span style="width:11px;height:11px;border-radius:3px;background:' + nv[2] + ';display:inline-block;flex-shrink:0;"></span> ' + nv[0] + ': <strong>' + nv[1] + '</strong></div>'
+  }
+  s += '<div style="font-size:11px;color:var(--ink-400);margin-top:4px;">Total con notas: ' + num(dd.total) + '</div>'
+  return s
+}
+
+// Dona SVG de la distribución general (leyenda al lado, en texto)
+function svgDonaNiveles(dist) {
+  const num = x => Number(x) || 0
+  const dd = dist || {}
+  const total = num(dd.total)
+  if (!total) return '<div style="color:var(--ink-400);font-size:13px;padding:12px 0;flex:1;min-width:190px;">Sin notas registradas en el curso para este año.</div>'
+  const niveles = [
+    ['BAJO', num(dd.BAJO), 'var(--red-500)'],
+    ['BÁSICO', num(dd['BÁSICO']), 'var(--amber-500)'],
+    ['ALTO', num(dd.ALTO), 'var(--green-500)'],
+    ['SUPERIOR', num(dd.SUPERIOR), 'var(--gold-600)'],
+  ]
+  const texto = niveles.filter(n => n[1] > 0).map(n => n[0] + ' ' + n[1]).join(', ')
+  const r = 52
+  const c = 2 * Math.PI * r
+  let off = 0
+  let s = '<svg viewBox="0 0 140 140" role="img" style="width:150px;height:150px;flex-shrink:0;" aria-label="Distribución general del curso por niveles: ' + esc(texto) + '">'
+  s += '<circle cx="70" cy="70" r="' + r + '" style="fill:none;stroke:var(--line);stroke-width:16;"></circle>'
+  for (const nv of niveles) {
+    if (!nv[1]) continue
+    const frac = nv[1] / total
+    s += '<circle cx="70" cy="70" r="' + r + '" style="fill:none;stroke:' + nv[2] + ';stroke-width:16;stroke-dasharray:' + (frac * c).toFixed(3) + ' ' + c.toFixed(3) + ';stroke-dashoffset:' + (-off * c).toFixed(3) + ';transform:rotate(-90deg);transform-origin:70px 70px;"></circle>'
+    off += frac
+  }
+  s += '<text x="70" y="68" text-anchor="middle" style="fill:var(--ink-900);font-size:21px;font-weight:700;">' + total + '</text>'
+  s += '<text x="70" y="84" text-anchor="middle" style="fill:var(--ink-400);font-size:9px;">estudiante(s)</text>'
+  s += '</svg>'
+  return s
+}
+
+// Tabla de estudiantes (ordenable con los encabezados, aria-sort)
+function tablaEstudiantesRend(ests) {
+  const num = x => Number(x) || 0
+  const nf = v => {
+    if (v === null || v === undefined || v === '') return '—'
+    const n = Number(v)
+    return isFinite(n) ? String(parseFloat(n.toFixed(2))) : '—'
+  }
+  const asc = _rendOrden.asc
+  const col = _rendOrden.col
+  const flecha = t => t === 'mejora' ? '↑ Mejora' : t === 'baja' ? '↓ Baja' : t === 'estable' ? '→ Estable' : '— Sin datos'
+  const filas = (ests || []).slice().sort((a, b) => {
+    if (col === 'nombre') return String(a.nombre || '').localeCompare(String(b.nombre || '')) * (asc ? 1 : -1)
+    if (col === 'riesgo') return (num(a.materiasEnRiesgo) - num(b.materiasEnRiesgo)) * (asc ? 1 : -1)
+    const pa = (a.promedioGeneral === null || a.promedioGeneral === undefined) ? -1 : Number(a.promedioGeneral)
+    const pb = (b.promedioGeneral === null || b.promedioGeneral === undefined) ? -1 : Number(b.promedioGeneral)
+    return (pa - pb) * (asc ? 1 : -1)
+  })
+  // Encabezados ordenables: delegación con data-orden. El onclick es una
+  // CONSTANTE y va en su PROPIA línea (regla del barrido estático).
+  const thEnc = (c, etiqueta) => {
+    const activo = _rendOrden.col === c
+    const ordenTxt = activo ? (asc ? 'ascending' : 'descending') : 'none'
+    let cabeza = '<th data-orden="' + c + '"'
+    cabeza += ' onclick="ordenarTablaRendimiento(event)"'
+    cabeza += ' aria-sort="' + ordenTxt + '" style="padding:10px 12px;border-bottom:1px solid var(--line);cursor:pointer;white-space:nowrap;' + (activo ? 'text-decoration:underline;' : '') + '">'
+    return cabeza + etiqueta + (activo ? (asc ? ' ▲' : ' ▼') : '') + '</th>'
+  }
+  let s = '<div style="background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);overflow:hidden;">'
+  s += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:600px;">'
+  s += '<thead><tr style="background:var(--cream-50);">'
+  s += thEnc('nombre', 'Estudiante')
+  s += thEnc('promedio', 'Promedio vigente')
+  s += '<th style="padding:10px 10px;border-bottom:1px solid var(--line);text-align:center;">Nivel</th>'
+  s += thEnc('riesgo', 'Materias en riesgo')
+  s += '<th style="padding:10px 12px;border-bottom:1px solid var(--line);text-align:center;">Tendencia</th>'
+  s += '</tr></thead><tbody>'
+  if (!filas.length) {
+    s += '<tr><td colspan="5" style="padding:22px;text-align:center;color:var(--ink-400);font-size:13px;">Sin estudiantes activos en este curso.</td></tr>'
+  }
+  for (const e of filas) {
+    const riesgo = num(e.materiasEnRiesgo)
+    s += '<tr style="' + (riesgo > 0 ? 'border-left:3px solid var(--red-500);' : '') + '">'
+    s += '<td style="padding:10px 12px;border-bottom:1px solid var(--line);font-weight:' + (riesgo > 0 ? '700' : '500') + ';color:var(--ink-900);">' + esc(e.nombre) + '</td>'
+    s += '<td style="padding:10px 10px;border-bottom:1px solid var(--line);text-align:center;font-weight:700;color:var(--ink-900);">' + nf(e.promedioGeneral) + '</td>'
+    s += '<td style="padding:10px 10px;border-bottom:1px solid var(--line);text-align:center;">' + chipNivelRend(e.nivel) + '</td>'
+    s += '<td style="padding:10px 10px;border-bottom:1px solid var(--line);text-align:center;' + (riesgo > 0 ? 'color:var(--red-700);font-weight:700;' : 'color:var(--ink-600);') + '">' + riesgo
+    if (riesgo > 0) s += ' <span style="font-size:10px;font-weight:700;background:var(--red-100);color:var(--red-700);border-radius:999px;padding:1px 8px;">En riesgo</span>'
+    s += '</td>'
+    s += '<td style="padding:10px 12px;border-bottom:1px solid var(--line);text-align:center;color:var(--ink-600);white-space:nowrap;">' + esc(flecha(e.tendencia)) + '</td>'
+    s += '</tr>'
+  }
+  s += '</tbody></table></div></div>'
+  return s
+}
+
+function renderVistaCursoRendimiento(idCont, data) {
+  const cont = document.getElementById(idCont)
+  if (!cont) return
+  const num = x => Number(x) || 0
+  const d = data || {}
+  const mats = d.porMateria || []
+  const ests = d.porEstudiante || []
+  _rendCursoEstudiantes = ests
+  let html = ''
+  // Banner de uso interno (texto, no solo color)
+  html += '<div style="font-size:11px;color:var(--amber-700);background:var(--amber-100);border-radius:999px;padding:4px 14px;display:inline-flex;margin-bottom:14px;font-weight:600;">Información de uso interno del director — contiene datos de todo el curso. No proyectar en reuniones con padres.</div>'
+  // 1) Barras agrupadas: promedio del curso por materia y período
+  html += '<div class="rend-print-block" style="background:var(--paper);border:1px solid var(--line);border-radius:var(--r-md);padding:14px 16px;margin-bottom:14px;">'
+  html += '<div style="font-size:12px;font-weight:700;color:var(--ink-600);margin-bottom:8px;">Promedio del curso por materia y período (escala 0 a 5)</div>'
+  if (mats.length) {
+    html += '<div style="overflow-x:auto;">' + svgBarrasCursoRend(mats) + '</div>'
+    html += '<div style="font-size:11px;color:var(--ink-600);margin-top:6px;">' + esc(textoPromediosMateriasRend(mats)) + '. La línea punteada marca 3.0, la nota mínima para aprobar.</div>'
+  } else {
+    html += '<div style="color:var(--ink-400);font-size:13px;padding:8px 0;">Este curso no tiene materias asignadas.</div>'
+  }
+  html += '</div>'
+  // 2) Distribución por nivel en cada materia
+  html += '<div class="rend-print-block" style="background:var(--paper);border:1px solid var(--line);border-radius:var(--r-md);padding:14px 16px;margin-bottom:14px;">'
+  html += '<div style="font-size:12px;font-weight:700;color:var(--ink-600);margin-bottom:8px;">Distribución por nivel en cada materia (nota vigente)</div>'
+  let algunaConNotas = false
+  for (const m of mats) {
+    const dist = m.distribucion || {}
+    if (num(dist.total) > 0) algunaConNotas = true
+    html += '<div style="margin-bottom:10px;">'
+    html += '<div style="font-size:11.5px;font-weight:600;color:var(--ink-900);margin-bottom:4px;">' + esc(m.materiaNombre) + '</div>'
+    html += barraApiladaNivelesRend(dist)
+    html += '</div>'
+  }
+  if (!mats.length || !algunaConNotas) {
+    html += '<div style="color:var(--ink-400);font-size:12px;">Sin notas registradas todavía.</div>'
+  }
+  html += '</div>'
+  // 3) Distribución general del curso (dona + leyenda en texto)
+  html += '<div class="rend-print-block" style="background:var(--paper);border:1px solid var(--line);border-radius:var(--r-md);padding:14px 16px;margin-bottom:14px;display:flex;gap:20px;align-items:center;flex-wrap:wrap;">'
+  html += svgDonaNiveles(d.distribucionGeneral || {})
+  html += '<div style="flex:1;min-width:190px;">' + leyendaNivelesRend(d.distribucionGeneral || {}) + '</div>'
+  html += '</div>'
+  // 4) Tabla de estudiantes
+  html += '<div style="font-size:12px;font-weight:700;color:var(--ink-600);margin:0 0 8px;">Estudiantes del curso (toca los encabezados para ordenar)</div>'
+  html += '<div id="rend-curso-tabla">' + tablaEstudiantesRend(ests) + '</div>'
+  cont.innerHTML = html
+  poblarIconos(cont)
+}
+
+// Re-ordena la tabla con los datos ya cargados (delegación, sin refetch)
+function ordenarTablaRendimiento(event) {
+  const t = event && event.target
+  const th = t && t.closest ? t.closest('[data-orden]') : null
+  if (!th) return
+  const col = th.dataset ? th.dataset.orden : th.getAttribute('data-orden')
+  if (!col) return
+  if (_rendOrden.col === col) { _rendOrden.asc = !_rendOrden.asc } else { _rendOrden.col = col; _rendOrden.asc = col === 'nombre' }
+  const cont = document.getElementById('rend-curso-tabla')
+  if (cont && _rendCursoEstudiantes) cont.innerHTML = tablaEstudiantesRend(_rendCursoEstudiantes)
+}
+
+// ─── Orquestación del modal ───
+
+function abrirModalRendimiento() {
+  if (!window._directorCursos || !window._directorCursos.length) return
+  const anioActual = hoyBogotaUI().slice(0, 4)
+  const anioPrevio = String(Number(anioActual) - 1)
+  const selAnio = document.getElementById('rend-anio-sel')
+  if (selAnio) {
+    selAnio.innerHTML = '<option value="' + esc(anioActual) + '">' + esc(anioActual) + '</option><option value="' + esc(anioPrevio) + '">' + esc(anioPrevio) + '</option>'
+    selAnio.value = anioActual
+  }
+  const filaCurso = document.getElementById('rend-curso-fila')
+  const selCurso = document.getElementById('rend-curso-sel')
+  if (selCurso) {
+    if (window._directorCursos.length > 1) {
+      if (filaCurso) filaCurso.style.display = ''
+      selCurso.innerHTML = window._directorCursos.map(c => '<option value="' + esc(c) + '">' + esc(c) + '</option>').join('')
+    } else {
+      if (filaCurso) filaCurso.style.display = 'none'
+      selCurso.innerHTML = '<option value="' + esc(window._directorCursos[0]) + '">' + esc(window._directorCursos[0]) + '</option>'
+    }
+  }
+  selPestanaRendimiento('ficha')
+  abrirModalSuave(document.getElementById('modal-rendimiento'))
+  cargarRendimientoCurso()
+}
+
+function _rendLimpiarImpresion() {
+  document.body.classList.remove('imprimiendo-ficha-rendimiento')
+  const st = document.getElementById('rend-estilo-impresion')
+  if (st) st.remove()
+}
+
+function cerrarModalRendimiento() {
+  _rendLimpiarImpresion()   // defensa: nunca dejar la clase de impresión activa
+  cerrarModalSuave(document.getElementById('modal-rendimiento'))
+}
+
+function selPestanaRendimiento(cual) {
+  const tabF = document.getElementById('rend-tab-ficha')
+  const tabC = document.getElementById('rend-tab-curso')
+  const panF = document.getElementById('rend-panel-ficha')
+  const panC = document.getElementById('rend-panel-curso')
+  if (!tabF || !tabC || !panF || !panC) return
+  const esFicha = cual === 'ficha'
+  tabF.setAttribute('aria-selected', esFicha ? 'true' : 'false')
+  tabF.tabIndex = esFicha ? 0 : -1
+  tabC.setAttribute('aria-selected', esFicha ? 'false' : 'true')
+  tabC.tabIndex = esFicha ? -1 : 0
+  panF.hidden = !esFicha
+  panC.hidden = esFicha
+}
+
+// Flechas del teclado mueven entre las dos pestañas (tablist accesible)
+function teclasPestanasRendimiento(e) {
+  if (!e || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return
+  const tabF = document.getElementById('rend-tab-ficha')
+  if (!tabF) return
+  const nueva = tabF.getAttribute('aria-selected') === 'true' ? 'curso' : 'ficha'
+  selPestanaRendimiento(nueva)
+  const btn = document.getElementById(nueva === 'ficha' ? 'rend-tab-ficha' : 'rend-tab-curso')
+  if (btn && btn.focus) btn.focus()
+}
+
+async function cargarRendimientoCurso() {
+  const selCurso = document.getElementById('rend-curso-sel')
+  const selAnio = document.getElementById('rend-anio-sel')
+  const selEst = document.getElementById('rend-ficha-estudiante')
+  const contCurso = document.getElementById('rend-curso-cont')
+  const contFicha = document.getElementById('rend-ficha-cont')
+  const btnImp = document.getElementById('rend-ficha-imprimir')
+  const curso = selCurso ? selCurso.value : ''
+  const anio = selAnio ? selAnio.value : ''
+  if (contCurso) contCurso.innerHTML = '<div style="color:var(--ink-400);font-size:13px;text-align:center;padding:24px;">Cargando...</div>'
+  try {
+    const res = await fetch(API + '/api/rendimiento/curso?curso=' + encodeURIComponent(curso) + '&anio=' + encodeURIComponent(anio), { headers: { 'Authorization': 'Bearer ' + currentToken } })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      const msg = esc(data.error || 'No se pudo cargar el rendimiento del curso')
+      if (contCurso) contCurso.innerHTML = '<div style="color:var(--red-700);font-size:13px;text-align:center;padding:24px;">' + msg + '</div>'
+      if (selEst) selEst.innerHTML = '<option value="">Elige un estudiante…</option>'
+      if (contFicha) contFicha.innerHTML = ''
+      if (btnImp) btnImp.style.display = 'none'
+      return
+    }
+    const data = await res.json()
+    // Opciones del selector: la lista del curso NO queda expuesta en pantalla
+    if (selEst) {
+      let opts = '<option value="">Elige un estudiante…</option>'
+      for (const e of (data.porEstudiante || [])) {
+        opts += '<option value="' + esc(e.estudianteId) + '">' + esc(e.nombre) + '</option>'
+      }
+      selEst.innerHTML = opts
+    }
+    renderVistaCursoRendimiento('rend-curso-cont', data)
+    _rendFichaDatos = null
+    if (contFicha) contFicha.innerHTML = '<div style="color:var(--ink-400);font-size:13px;text-align:center;padding:24px;">Elige un estudiante y pulsa «Ver ficha» para preparar la información de la reunión.</div>'
+    if (btnImp) btnImp.style.display = 'none'
+  } catch (e) {
+    if (contCurso) contCurso.innerHTML = '<div style="color:var(--red-700);font-size:13px;text-align:center;padding:24px;">Error de conexión</div>'
+  }
+}
+
+async function verFichaRendimiento() {
+  const selEst = document.getElementById('rend-ficha-estudiante')
+  const cont = document.getElementById('rend-ficha-cont')
+  const btnImp = document.getElementById('rend-ficha-imprimir')
+  const selAnio = document.getElementById('rend-anio-sel')
+  const estudianteId = selEst ? selEst.value : ''
+  const anio = selAnio ? selAnio.value : ''
+  if (!estudianteId) { mostrarToast('error', 'Elige un estudiante de la lista'); return }
+  if (!cont) return
+  cont.innerHTML = '<div style="color:var(--ink-400);font-size:13px;text-align:center;padding:24px;">Cargando ficha...</div>'
+  try {
+    const res = await fetch(API + '/api/rendimiento/estudiante?estudianteId=' + encodeURIComponent(estudianteId) + '&anio=' + encodeURIComponent(anio), { headers: { 'Authorization': 'Bearer ' + currentToken } })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      if (btnImp) btnImp.style.display = 'none'
+      cont.innerHTML = '<div style="color:var(--red-700);font-size:13px;text-align:center;padding:24px;">' + esc(data.error || 'No se pudo cargar la ficha') + '</div>'
+      return
+    }
+    const data = await res.json()
+    _rendFichaDatos = data
+    renderFichaRendimiento('rend-ficha-cont', data)
+    if (btnImp) btnImp.style.display = ''
+  } catch (e) {
+    if (btnImp) btnImp.style.display = 'none'
+    cont.innerHTML = '<div style="color:var(--red-700);font-size:13px;text-align:center;padding:24px;">Error de conexión</div>'
+  }
+}
+
+// ─── Impresión de la ficha (A4, SOLO la ficha) ───
+
+// Membrete institucional: nombre oficial del portal, sin datos inventados
+function htmlEncabezadoImpresionRend(d) {
+  const iso = hoyBogotaUI()
+  const q = iso.split('-')
+  const fecha = q.length === 3 ? q[2] + '/' + q[1] + '/' + q[0] : iso
+  const e = (d && d.estudiante) || {}
+  let s = '<div style="text-align:center;border-bottom:3px solid var(--burgundy-600);padding-bottom:10px;margin-bottom:16px;">'
+  s += '<div style="font-family:var(--font-d);font-size:19px;font-weight:700;color:var(--burgundy-700);">Institución Educativa Técnica Sagrado Corazón</div>'
+  s += '<div style="font-size:12px;color:var(--ink-600);margin-top:4px;">Ficha de rendimiento del estudiante · Reunión de padres de familia</div>'
+  s += '<div style="font-size:12.5px;color:var(--ink-900);margin-top:6px;font-weight:600;">' + esc(e.nombre || '') + ' · Curso ' + esc(e.curso || '') + ' · Año ' + esc((d && d.anio) || '') + '</div>'
+  s += '<div style="font-size:11px;color:var(--ink-400);margin-top:2px;">Fecha de impresión: ' + esc(fecha) + ' (hora de Colombia)</div>'
+  s += '</div>'
+  return s
+}
+
+function pieImpresionRend() {
+  return '<div style="margin-top:18px;padding-top:10px;border-top:1px solid var(--line);text-align:center;font-size:10.5px;color:var(--ink-400);">Documento informativo para reunión de padres de familia</div>'
+}
+
+function imprimirFichaRendimiento() {
+  const cont = document.getElementById('rend-ficha-cont')
+  const prin = document.getElementById('ficha-impresion-rendimiento')
+  if (!cont || !prin || !cont.innerHTML.trim() || !_rendFichaDatos) return
+  prin.innerHTML = htmlEncabezadoImpresionRend(_rendFichaDatos) + cont.innerHTML + pieImpresionRend()
+  // A4 SOLO para esta impresión: el estilo se inyecta al vuelo y se retira
+  // al terminar. El @page letter del boletín queda intacto.
+  const estilo = document.createElement('style')
+  estilo.id = 'rend-estilo-impresion'
+  estilo.textContent = '@page { size: A4; margin: 14mm; }'
+  document.head.appendChild(estilo)
+  document.body.classList.add('imprimiendo-ficha-rendimiento')
+  const limpiar = () => {
+    _rendLimpiarImpresion()
+    window.removeEventListener('afterprint', limpiar)
+  }
+  window.addEventListener('afterprint', limpiar)
+  window.print()
 }
 
 window.addEventListener('beforeunload', enviarPendientesAlSalir)
@@ -6809,6 +7568,11 @@ iniciarAutoenvio()
     <div id="boletin-doc"></div>
   </div>
 </div>
+
+<!-- Fase 3B: contenedor de impresión de la ficha de rendimiento.
+     Hijo directo de body (como #boletin-view) para que la regla
+     body.imprimiendo-ficha-rendimiento pueda aislarlo al imprimir. -->
+<div id="ficha-impresion-rendimiento"></div>
 
 <!-- Pantalla de carga (servidor lento) -->
 <div id="pantalla-carga">
