@@ -281,7 +281,28 @@ router.get('/estudiante', async (req, res) => {
     })
 
     const vigentes = porMateria.map(m => ultimaVigente([m.definitivas['1'], m.definitivas['2'], m.definitivas['3'], m.definitivas['4']]))
-    const promedioGeneral = promedio(vigentes)
+
+    // Promedio por período: la MISMA aritmética del promedio general del
+    // boletín (notas.js:1937-1941: AVG(definitiva) simple de las materias
+    // del curso con nota EN ese período; null si ninguna la tiene),
+    // calculada en memoria sobre el consolidado ya obtenido (sin consultas
+    // nuevas). Es el valor que calza 1:1 con un boletín impreso.
+    const promedioPorPeriodo = {}
+    const nivelPorPeriodo = {}
+    for (let p = 1; p <= 4; p++) {
+      const prom = promedio(porMateria.map(m => m.definitivas[String(p)]))
+      promedioPorPeriodo[String(p)] = prom
+      nivelPorPeriodo[String(p)] = prom !== null ? nivelDeDesempeno(prom) : null
+    }
+
+    // promedioVigente (antes promedioGeneral): promedio de las definitivas
+    // VIGENTES (la última con nota de cada materia). NO es el promedio del
+    // boletín: el boletín promedia las notas DE un período fijo (AVG de
+    // definitivas del período), así que a mitad de año difieren cuando las
+    // materias tienen distintos períodos con nota. Es un valor REFERENCIAL
+    // del estado actual del año; para comparar contra un boletín impreso
+    // está promedioPorPeriodo.
+    const promedioVigente = promedio(vigentes)
 
     // Asistencia del año: desde anio-01-01 hasta el MENOR entre hoy
     // (Bogotá) y anio-12-31. Si anio es futuro (desde > hasta) → vacía
@@ -302,8 +323,10 @@ router.get('/estudiante', async (req, res) => {
       uso: 'reunion-padres',
       comparacionDisponible,
       porMateria,
-      promedioGeneral,
-      nivel: promedioGeneral !== null ? nivelDeDesempeno(promedioGeneral) : null,
+      promedioPorPeriodo,
+      nivelPorPeriodo,
+      promedioVigente,
+      nivel: promedioVigente !== null ? nivelDeDesempeno(promedioVigente) : null,
       materiasEnRiesgo: vigentes.filter(v => v !== null && v < 3.0).length,
       asistencia,
     })

@@ -247,6 +247,15 @@ test('vista individual: SIN datos de terceros; comparación null con < 5 activos
   // Sin campo porEstudiante ni puestos
   assert.ok(!('porEstudiante' in r.data), 'la vista individual no expone porEstudiante')
 
+  // Forma de promedioPorPeriodo / nivelPorPeriodo: exactamente las claves
+  // "1".."4"; valores number|null y nivel válido|null
+  assert.deepEqual(Object.keys(r.data.promedioPorPeriodo), ['1', '2', '3', '4'])
+  assert.deepEqual(Object.keys(r.data.nivelPorPeriodo), ['1', '2', '3', '4'])
+  for (const k of ['1', '2', '3', '4']) {
+    assert.ok(r.data.promedioPorPeriodo[k] === null || typeof r.data.promedioPorPeriodo[k] === 'number', 'promedioPorPeriodo[' + k + '] number|null')
+    assert.ok(r.data.nivelPorPeriodo[k] === null || ['BAJO', 'BÁSICO', 'ALTO', 'SUPERIOR'].includes(r.data.nivelPorPeriodo[k]), 'nivelPorPeriodo[' + k + '] nivel válido|null')
+  }
+
   // Comparación: curso 9999 tiene 31 activos → presente y numérico
   assert.equal(r.data.comparacionDisponible, true)
   const conProm = r.data.porMateria.filter(m => m.promedioCurso !== null)
@@ -261,6 +270,10 @@ test('vista individual: SIN datos de terceros; comparación null con < 5 activos
   assert.equal(rAjeno.data.comparacionDisponible, false, '9998 tiene < 5 activos')
   for (const m of rAjeno.data.porMateria) {
     assert.equal(m.promedioCurso, null, 'sin comparación en curso pequeño (anonimato)')
+  }
+  // 9998 no tiene calificaciones: promedioPorPeriodo todo null (documentado)
+  for (const k of ['1', '2', '3', '4']) {
+    assert.equal(rAjeno.data.promedioPorPeriodo[k], null, 'sin notas → P' + k + ' null')
   }
 })
 
@@ -352,5 +365,48 @@ test('año por defecto = año Bogotá; asistencia acotada al año pedido; año f
   assert.deepEqual(rFuturo.data.asistencia.porMateria, [], 'año futuro → sin materias')
   assert.deepEqual(rFuturo.data.asistencia.ultimas, [], 'año futuro → sin últimas')
   // Las notas también vienen vacías (no hay calificaciones de 2099) pero sin error
-  assert.equal(rFuturo.data.promedioGeneral, null, 'sin notas de un año futuro → promedio null (documentado)')
+  assert.equal(rFuturo.data.promedioVigente, null, 'sin notas de un año futuro → promedio vigente null (documentado)')
+  for (const k of ['1', '2', '3', '4']) {
+    assert.equal(rFuturo.data.promedioPorPeriodo[k], null, 'año futuro → P' + k + ' null')
+  }
+})
+
+test('promedioPorPeriodo: misma fórmula del boletín (SQL por período) y calza 1:1 con /mi-boletin', async () => {
+  const est1 = estudiantesCreados[0]
+  const r = await getEstudiante(tokDirector, 'estudianteId=' + est1.id)
+  assert.equal(r.status, 200)
+
+  // Valor esperado: la MISMA consulta SQL del promedio general del boletín
+  // (notas.js:1937-1941), ejecutada aquí por período
+  for (let p = 1; p <= 4; p++) {
+    const fila = db.prepare(`
+      SELECT AVG(definitiva) prom FROM calificaciones
+      WHERE estudianteId = ? AND periodo = ? AND anio = ? AND definitiva IS NOT NULL
+    `).get(est1.id, p, anio)
+    const esperado = fila && fila.prom !== null ? parseFloat(Number(fila.prom).toFixed(2)) : null
+    assert.equal(r.data.promedioPorPeriodo[String(p)], esperado, 'P' + p + ' = AVG(definitiva) del boletín')
+  }
+
+  // Niveles por período con las notas CONOCIDAS del fixture (est 1:
+  // mat1 = 3.5·4.0·3.0·4.6, mat2 = 2.0·2.5·—·—)
+  assert.deepEqual(r.data.promedioPorPeriodo, { '1': 2.75, '2': 3.25, '3': 3.0, '4': 4.6 })
+  assert.deepEqual(r.data.nivelPorPeriodo, { '1': 'BAJO', '2': 'BÁSICO', '3': 'BÁSICO', '4': 'SUPERIOR' })
+
+  // End-to-end con el boletín real: publicar los 4 períodos del curso 9999
+  // (vía la API de admin, como boletin.test.js) y consultar /mi-boletin con
+  // el token del PROPIO estudiante
+  try {
+    for (let p = 1; p <= 4; p++) {
+      const pub = await api.post('/api/admin/boletines', { token: tokenAdmin, body: { periodo: p, anio, curso: '9999' } })
+      assert.ok(pub.status === 200 || pub.status === 201, 'publicación P' + p + ': ' + JSON.stringify(pub.data))
+    }
+    const tokEst1 = await login(api, est1.doc, est1.doc)
+    for (let p = 1; p <= 4; p++) {
+      const bol = await api.get('/api/notas/mi-boletin?periodo=' + p + '&anio=' + anio, { token: tokEst1 })
+      assert.equal(bol.status, 200, 'mi-boletin P' + p + ': ' + JSON.stringify(bol.data))
+      assert.equal(bol.data.promedio, r.data.promedioPorPeriodo[String(p)], 'boletín P' + p + ' = promedioPorPeriodo del panel')
+    }
+  } finally {
+    db.prepare("DELETE FROM boletines_publicados WHERE curso = '9999'").run()
+  }
 })
