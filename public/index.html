@@ -226,6 +226,14 @@ body::before {
 .vista-row.en-areas::before { transform: translateX(100%); }
 /* Variante para los switches de dos segmentos del docente */
 .vista-row.en-segundo::before { transform: translateX(100%); }
+/* Submenú del estudiante con TRES pestañas (Materias | Áreas | Rendimiento):
+   tres columnas iguales y la pastilla desliza ALINEADA a cada pestaña (el
+   calc del translate suma el gap de 8px para caer exacta). Los switches de
+   dos segmentos del docente no se tocan. */
+#vista-notas-row { grid-template-columns:1fr 1fr 1fr; width:auto; min-width:290px; }
+#vista-notas-row::before { width:calc(33.333% - 8px); }
+#vista-notas-row.en-areas::before { transform: translateX(calc(100% + 8px)); }
+#vista-notas-row.en-rendimiento::before { transform: translateX(calc(200% + 16px)); }
 .vista-opt { padding: 7px 8px; border-radius: 7px; text-align:center; cursor:pointer; font-size:12px; color: var(--ink-600); transition: color .2s var(--ease), font-weight .2s var(--ease); font-weight:500; position:relative; z-index:1; }
 .vista-opt.sel { color: var(--burgundy-700); font-weight:600; }
 
@@ -917,7 +925,7 @@ body::before {
   <div class="vista-row" id="vista-notas-row">
     <div class="vista-opt sel" id="vista-materias" onclick="selVistaNotas('materias')">Materias</div>
     <div class="vista-opt" id="vista-areas" onclick="selVistaNotas('areas')">Áreas</div>
-    <div class="vista-opt" id="vista-rendimiento" onclick="selVistaNotas('rendimiento')">Mi rendimiento</div>
+    <div class="vista-opt" id="vista-rendimiento" onclick="selVistaNotas('rendimiento')">Rendimiento</div>
   </div>
 </div>
   <div class="notas-grid" id="notas-grid">
@@ -3284,7 +3292,10 @@ function selVistaNotas(v) {
   const vistaRend = document.getElementById('vista-rendimiento')
   if (vistaRend) vistaRend.classList.toggle('sel', v === 'rendimiento')
   const fila = document.getElementById('vista-notas-row')
-  if (fila) fila.classList.toggle('en-areas', v === 'areas')
+  if (fila) {
+    fila.classList.toggle('en-areas', v === 'areas')
+    fila.classList.toggle('en-rendimiento', v === 'rendimiento')
+  }
   if (v === 'materias') {
     renderStudentGrid(_notasEstudianteCalificaciones || [])
   } else if (v === 'rendimiento') {
