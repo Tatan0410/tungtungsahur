@@ -1205,7 +1205,7 @@ test('menú del admin: ni botones ni secciones quedan fuera del arreglo central'
   const menu = extraerMenuAdmin()
   // Solo los botones del ADMIN: el portal del estudiante tiene su propio
   // arreglo MENU_ESTUDIANTE con sus nav-est-*
-  const navsHtml = [...HTML.matchAll(/id="(nav-(?!est-)[a-z-]+)"/g)].map(x => x[1])
+  const navsHtml = [...HTML.matchAll(/id="(nav-(?!est-|doc-)[a-z-]+)"/g)].map(x => x[1])
   const seccionesHtml = [...HTML.matchAll(/id="(admin-[a-z-]+-section)"/g)].map(x => x[1])
   assert.equal(navsHtml.length, 11, 'hay exactamente 11 botones nav-* del ADMIN en el HTML')
   assert.equal(seccionesHtml.length, 11, 'hay exactamente 11 secciones admin-*-section en el HTML')
@@ -1564,4 +1564,170 @@ test('boletín del panel: lista solo los publicados del año en curso o el mensa
   const vb = extraerFuncion('verBoletin')
   assert.match(vb, /periodoPedido/, 'verBoletin acepta un período opcional')
   assert.match(vb, /includes\(pedido\)/, 'solo lo abre si está en la lista de publicados')
+})
+
+// ═══════════════════════════════════════════════════════════════
+// PANEL LATERAL DEL DOCENTE: MENU_DOCENTE como fuente única, submenú
+// "Mi curso" solo para directores, plegable con localStorage, drawer.
+// ═══════════════════════════════════════════════════════════════
+
+function bloqueMenuDocente() {
+  const bloque = HTML.match(/const MENU_DOCENTE = \[[\s\S]*?\n\]/)
+  assert.ok(bloque, 'debe existir el arreglo MENU_DOCENTE en el HTML')
+  return bloque[0]
+}
+function extraerMenuDocente() {
+  return new Function(bloqueMenuDocente() + '\nreturn MENU_DOCENTE')()
+}
+
+test('menú del docente: cada ítem apunta a un botón y una acción existentes en el HTML', () => {
+  const menu = extraerMenuDocente()
+  for (const m of menu) {
+    assert.ok(HTML.includes(`id="${m.nav}"`), `falta el botón #${m.nav} en el panel del docente`)
+    if (m.accion) {
+      assert.ok(HTML.includes(`data-accion="${m.accion}"`), `la acción ${m.accion} debe estar en data-accion del botón`)
+      assert.ok(HTML.includes(`function ${m.accion}(`), `la función ${m.accion}() existe en el HTML`)
+    }
+  }
+  // Inversa: TODOS los botones nav-doc-* del HTML están en el arreglo
+  const navsHtml = [...HTML.matchAll(/id="(nav-doc-[\w-]+)"/g)].map(x => x[1])
+  assert.equal(new Set(navsHtml).size, navsHtml.length, 'sin botones doc duplicados')
+  const enMenu = new Set(menu.map(m => m.nav))
+  for (const n of navsHtml) {
+    const esSubMenu = ['nav-doc-obs', 'nav-doc-asist-curso', 'nav-doc-rendimiento', 'nav-doc-reporte'].includes(n)
+    assert.ok(enMenu.has(n) || esSubMenu, `el botón ${n} NO está en MENU_DOCENTE ni es del submenú`)
+  }
+  // El docente NUNCA ve ítems de otros roles
+  for (const m of menu) assert.ok(m.nav.startsWith('nav-doc-'), `${m.nav} es del portal del docente`)
+})
+
+test('menú del docente: "Mi curso" nace OCULTO y solo aparece con dirección de grupo', () => {
+  const menu = extraerMenuDocente()
+  const micurso = menu.find(m => m.nav === 'nav-doc-micurso')
+  assert.ok(micurso, 'existe el ítem Mi curso')
+  assert.equal(micurso.accion, null, 'Mi curso no tiene acción directa (es submenú)')
+  // En el HTML nace oculto
+  assert.match(HTML, /id="nav-doc-micurso"[^>]*style="display:none;"/, 'Mi curso nace display:none')
+  assert.match(HTML, /id="doc-micurso-lista"[^>]*style="display:none;"/, 'el submenú nace oculto')
+  // refrescarMiCursoPanel: con cursos → visible; sin cursos → oculto
+  const nodos = {
+    'nav-doc-micurso': { style: {}, setAttribute(k, v) { this[k] = v } },
+    'doc-micurso-lista': { style: {} },
+  }
+  const document = { getElementById: id => nodos[id] }
+  new Function('document', 'window', `
+    ${extraerFuncion('refrescarMiCursoPanel')}
+    window._directorCursos = ['1104']
+    refrescarMiCursoPanel()
+  `)(document, { _directorCursos: ['1104'] })
+  assert.equal(nodos['nav-doc-micurso'].style.display, '', 'con dirección → Mi curso visible')
+  new Function('document', 'window', `
+    ${extraerFuncion('refrescarMiCursoPanel')}
+    window._directorCursos = []
+    refrescarMiCursoPanel()
+  `)(document, { _directorCursos: [] })
+  assert.equal(nodos['nav-doc-micurso'].style.display, 'none', 'sin dirección → Mi curso OCULTO')
+  assert.equal(nodos['doc-micurso-lista'].style.display, 'none', 'y el submenú cerrado')
+  assert.equal(nodos['nav-doc-micurso']['aria-expanded'], 'false', 'aria-expanded=false al ocultar')
+})
+
+test('menú del docente: submenú abre/cierra, plegable guarda estado, Escape y drawer', () => {
+  const nodos = {
+    'doc-sidebar': {
+      classList: { clases: new Set(), toggle(c) { if (this.clases.has(c)) this.clases.delete(c); else this.clases.add(c); return this.clases.has(c) }, remove(c) { this.clases.delete(c) }, add(c) { this.clases.add(c) }, contains(c) { return this.clases.has(c) } },
+      style: {},
+    },
+    'btn-sidebar-doc': { setAttribute(k, v) { this[k] = v } },
+    'doc-sidebar-overlay': { classList: { clases: new Set(), toggle(_c, on) { if (on) this.clases.add('visible'); else this.clases.delete('visible') }, remove(c) { this.clases.delete(c) } } },
+    'doc-micurso-lista': { style: { display: 'none' }, innerHTML: '' },
+    'nav-doc-micurso': { style: {}, setAttribute(k, v) { this[k] = v }, offsetTop: 10 },
+    'doc-sidebar-indicador': { style: {} },
+  }
+  const document = { getElementById: id => nodos[id] }
+  const window = { scrollTo() {} }
+  const localStorage = {
+    datos: new Map(),
+    getItem(k) { return this.datos.get(k) || null },
+    setItem(k, v) { this.datos.set(k, v) },
+  }
+  // toggleMiCurso abre el submenú
+  new Function('document', 'window', `
+    ${bloqueMenuDocente()}
+    ${extraerFuncion('actualizarNavDocente')}
+    ${extraerFuncion('toggleMiCurso')}
+    toggleMiCurso({ target: { closest: () => null } })
+  `)(document, window)
+  assert.equal(nodos['doc-micurso-lista'].style.display, '', 'el submenú se abre')
+  assert.equal(nodos['nav-doc-micurso']['aria-expanded'], 'true', 'aria-expanded=true')
+  // Plegado + clic en "Mi curso": EXPANDE el panel y abre el submenú
+  nodos['doc-sidebar'].classList.add('colapsado')
+  nodos['doc-micurso-lista'].style.display = 'none'
+  new Function('document', 'window', 'localStorage', `
+    ${bloqueMenuDocente()}
+    ${extraerFuncion('actualizarNavDocente')}
+    ${extraerFuncion('toggleMiCurso')}
+    toggleMiCurso({ target: { closest: () => null } })
+  `)(document, window, localStorage)
+  assert.ok(!nodos['doc-sidebar'].classList.contains('colapsado'), 'clic en Mi curso plegado EXPANDE el panel')
+  assert.equal(localStorage.getItem('doc-sidebar-plegado'), '0', 'y persiste el estado expandido')
+  assert.equal(nodos['doc-micurso-lista'].style.display, '', 'el submenú queda abierto')
+  // togglePlegadoDocente guarda en localStorage
+  new Function('document', 'localStorage', `
+    ${extraerFuncion('togglePlegadoDocente')}
+    togglePlegadoDocente()
+  `)(document, localStorage)
+  assert.ok(nodos['doc-sidebar'].classList.clases.has('colapsado'), 'el panel queda colapsado')
+  assert.equal(localStorage.getItem('doc-sidebar-plegado'), '1', 'el estado se guarda')
+  // restaurarPlegadoDocente lee el estado
+  new Function('document', 'localStorage', `
+    ${extraerFuncion('restaurarPlegadoDocente')}
+    restaurarPlegadoDocente()
+  `)(document, localStorage)
+  assert.ok(nodos['doc-sidebar'].classList.clases.has('colapsado'), 'restaura el colapsado')
+  // alternarSidebarDocente abre el drawer con aria-expanded
+  new Function('document', `
+    ${extraerFuncion('alternarSidebarDocente')}
+    alternarSidebarDocente()
+  `)(document)
+  assert.equal(nodos['btn-sidebar-doc']['aria-expanded'], 'true', 'hamburguesa aria-expanded=true')
+  assert.ok(nodos['doc-sidebar'].classList.clases.has('abierto'), 'drawer abierto')
+  assert.ok(nodos['doc-sidebar-overlay'].classList.clases.has('visible'), 'overlay visible')
+  // cerrarSidebarDocente limpia todo
+  new Function('document', `
+    ${extraerFuncion('cerrarSidebarDocente')}
+    cerrarSidebarDocente()
+  `)(document)
+  assert.equal(nodos['btn-sidebar-doc']['aria-expanded'], 'false', 'aria-expanded=false')
+  assert.ok(!nodos['doc-sidebar'].classList.clases.has('abierto'), 'drawer cerrado')
+  assert.ok(!nodos['doc-sidebar-overlay'].classList.clases.has('visible'), 'overlay oculto')
+  // Escape está cableado
+  assert.ok(HTML.includes("e.key === 'Escape'"), 'Escape cierra el panel docente')
+  // clicItemDocente ejecuta la acción del data-accion
+  let accionEjecutada = null
+  const fakeWindow = { doLogout: () => { accionEjecutada = 'doLogout' } }
+  new Function('document', 'window', `
+    ${bloqueMenuDocente()}
+    ${extraerFuncion('actualizarNavDocente')}
+    ${extraerFuncion('cerrarSidebarDocente')}
+    ${extraerFuncion('clicItemDocente')}
+    clicItemDocente({ target: { closest: () => ({ id: 'nav-doc-logout', dataset: { accion: 'doLogout' } }) } })
+  `)(document, fakeWindow)
+  assert.equal(accionEjecutada, 'doLogout', 'clicItemDocente ejecuta la acción del data-accion')
+})
+
+test('menú del docente: el panel no contiene ítems de admin ni de estudiante', () => {
+  const menu = extraerMenuDocente()
+  // Ningún ítem del docente es de otro rol
+  for (const m of menu) {
+    assert.ok(!m.nav.startsWith('nav-est-'), 'sin ítems del estudiante')
+    assert.ok(!m.nav.startsWith('nav-profesores') && !m.nav.startsWith('nav-admins'), 'sin ítems del admin')
+  }
+  // El panel del docente usa ids doc-*, nunca est-* ni admin-*
+  assert.ok(HTML.includes('id="doc-sidebar"'), 'el sidebar usa su propio id doc-sidebar')
+  assert.ok(!HTML.includes('id="doc-sidebar"').toString().includes('est-sidebar'), 'sin contaminación')
+  // localStorage con try/catch (funciona si falla)
+  const st = extraerFuncion('togglePlegadoDocente')
+  assert.match(st, /try\s*\{/, 'togglePlegadoDocente usa try')
+  assert.match(st, /catch\s*\(/, 'y catch')
+  assert.match(extraerFuncion('restaurarPlegadoDocente'), /try\s*\{/, 'restaurarPlegadoDocente usa try')
 })
