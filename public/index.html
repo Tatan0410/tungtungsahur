@@ -390,11 +390,19 @@ body::before {
 /* Acordeón por materia del portal del estudiante (Mi rendimiento): la
    gráfica solo se ve al desplegar; cabecera a ancho completo */
 .rend-acordeon-mat { margin-bottom: 10px; }
-.rend-acordeon-cab { display:flex; justify-content:space-between; align-items:center; gap:10px; width:100%; text-align:left; background:var(--paper); border:1px solid var(--line); border-radius:var(--r-md); padding:12px 16px; cursor:pointer; font-family:inherit; transition: background .15s var(--ease); }
+.rend-acordeon-cab { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; width:100%; text-align:left; background:var(--paper); border:1px solid var(--line); border-radius:var(--r-md); padding:12px 16px; cursor:pointer; font-family:inherit; transition: background .15s var(--ease); }
 .rend-acordeon-cab:hover { background:var(--cream-50); }
 .rend-acordeon-cab:focus-visible { outline: 2px solid var(--gold-600); outline-offset: 2px; }
-.rend-acordeon-flecha { display:inline-block; color:var(--burgundy-700); transition: transform .2s var(--ease); }
+.rend-acordeon-flecha { display:inline-block; color:var(--burgundy-700); transition: transform .2s var(--ease); flex-shrink:0; }
 .rend-acordeon-cuerpo { background:var(--paper); border:1px solid var(--line); border-top:none; border-radius:0 0 var(--r-md) var(--r-md); padding:14px 18px; }
+/* Layout propio de Mi rendimiento: UN solo contenedor que ocupa TODA la
+   fila de la grilla de materias (grid-column 1/-1) con sus propias
+   columnas — la grilla padre (celdas de 158px) ya no lo parte. */
+.rend-est-wrap { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr; gap: 14px; min-width: 0; }
+@media (min-width: 900px) {
+  .rend-est-wrap { grid-template-columns: 1.6fr 1fr; align-items: start; }
+}
+.rend-est-col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 
 /* ---------- Micro-interacciones: skeleton, spinner, shake, salida de modales ---------- */
 @keyframes skeletonPulse {
@@ -2995,6 +3003,17 @@ function pintarNotasEstudiante(data) {
     } else renderStudentGrid(_notasEstudianteCalificaciones)
     // Update promedio general
     document.getElementById('promedio').textContent = data.promedio ?? '--';
+    // Barra de progreso del promedio general (bug preexistente: nacía en
+    // "0% de 5.0" y NINGÚN código la actualizaba). % = promedio/5*100 con
+    // Number() y clamp 0-100; sirve para las tres vistas del submenú.
+    const promNum = Number(data.promedio)
+    if (isFinite(promNum)) {
+      const pct = Math.max(0, Math.min(100, Math.round(promNum / 5 * 100)))
+      const barra = document.getElementById('promedio-bar')
+      const porc = document.getElementById('promedio-porc')
+      if (barra) barra.style.width = pct + '%'
+      if (porc) porc.textContent = pct + '% de 5.0'
+    }
 }
 
 async function cargarNotasEstudiante(esReintento) {
@@ -7006,102 +7025,110 @@ function renderMiRendimiento(d) {
     }
     return false
   })
-  let html = ''
+  // UN solo contenedor (rend-est-wrap) con grid-column 1/-1: ocupa TODA la
+  // fila de la grilla de materias y usa su propio layout en columnas.
+  // Izquierda: tarjetas + línea grande. Derecha: leyenda + acordeones.
+  // En móvil (<900px) el mismo DOM cae en 1 columna en ese orden.
+  let izq = ''
+  let der = ''
   // Tarjetas: mi promedio del PERÍODO SELECCIONADO + materias por reforzar
   const riesgo = num(data.materiasEnRiesgo)
-  html += '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:stretch;margin-bottom:14px;">'
-  html += '<div style="background:var(--cream-50);border:1px solid var(--line);border-radius:var(--r-md);padding:10px 16px;">'
-  html += '<div style="font-size:10.5px;font-weight:700;color:var(--ink-400);text-transform:uppercase;letter-spacing:.05em;">Mi promedio P' + pSel + '</div>'
+  izq += '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:stretch;">'
+  izq += '<div style="background:var(--cream-50);border:1px solid var(--line);border-radius:var(--r-md);padding:10px 16px;">'
+  izq += '<div style="font-size:10.5px;font-weight:700;color:var(--ink-400);text-transform:uppercase;letter-spacing:.05em;">Mi promedio P' + pSel + '</div>'
   const vSel = prom[String(pSel)]
   if (vSel !== null && vSel !== undefined && vSel !== '') {
-    html += '<div style="font-size:22px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);margin-top:2px;">' + nf(vSel) + '</div>'
-    html += chipNivelRend(niveles[String(pSel)])
+    izq += '<div style="font-size:22px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);margin-top:2px;">' + nf(vSel) + '</div>'
+    izq += chipNivelRend(niveles[String(pSel)])
   } else {
-    html += '<div style="font-size:13px;color:var(--ink-400);margin-top:6px;">Sin notas en este período</div>'
+    izq += '<div style="font-size:13px;color:var(--ink-400);margin-top:6px;">Sin notas en este período</div>'
   }
-  html += '</div>'
-  html += '<div style="background:var(--cream-50);border:1px solid var(--line);border-radius:var(--r-md);padding:10px 16px;">'
-  html += '<div style="font-size:10.5px;font-weight:700;color:var(--ink-400);text-transform:uppercase;letter-spacing:.05em;">Materias por reforzar</div>'
-  html += '<div style="font-size:22px;font-weight:700;font-family:var(--font-d);margin-top:2px;color:' + (riesgo > 0 ? 'var(--red-700)' : 'var(--green-700)') + ';">' + riesgo + '</div>'
-  html += '<div style="font-size:10px;color:var(--ink-400);">Con nota vigente bajo 3.0</div>'
-  html += '</div>'
-  html += '</div>'
+  izq += '</div>'
+  izq += '<div style="background:var(--cream-50);border:1px solid var(--line);border-radius:var(--r-md);padding:10px 16px;">'
+  izq += '<div style="font-size:10.5px;font-weight:700;color:var(--ink-400);text-transform:uppercase;letter-spacing:.05em;">Materias por reforzar</div>'
+  izq += '<div style="font-size:22px;font-weight:700;font-family:var(--font-d);margin-top:2px;color:' + (riesgo > 0 ? 'var(--red-700)' : 'var(--green-700)') + ';">' + riesgo + '</div>'
+  izq += '<div style="font-size:10px;color:var(--ink-400);">Con nota vigente bajo 3.0</div>'
+  izq += '</div>'
+  izq += '</div>'
   if (!conNotas) {
-    html += '<div style="background:var(--cream-50);border:1px solid var(--line);border-radius:var(--r-md);padding:22px;text-align:center;color:var(--ink-400);font-size:13px;">Aún no hay notas registradas para este año. Tu rendimiento aparecerá a medida que los docentes publiquen las notas de cada período.</div>'
-    grid.innerHTML = html
+    izq += '<div style="background:var(--cream-50);border:1px solid var(--line);border-radius:var(--r-md);padding:22px;text-align:center;color:var(--ink-400);font-size:13px;">Aún no hay notas registradas para este año. Tu rendimiento aparecerá a medida que los docentes publiquen las notas de cada período.</div>'
+    grid.innerHTML = '<div class="rend-est-wrap"><div class="rend-est-col">' + izq + '</div></div>'
     return
   }
-  // Línea de evolución por período: ANCHA (ocupa todo el ancho disponible)
-  html += '<div style="background:var(--paper);border:1px solid var(--line);border-radius:var(--r-md);padding:16px 18px;margin-bottom:14px;">'
-  html += '<div style="font-size:12px;font-weight:700;color:var(--ink-600);margin-bottom:8px;">Mi promedio por período (0 a 5)</div>'
-  html += svgLineaRend(prom, '100%')
-  html += '<div style="font-size:11px;color:var(--ink-400);margin-top:6px;">' + esc(textoPromediosRend(prom)) + '. La línea punteada marca 3.0, la nota mínima para aprobar.</div>'
-  html += '</div>'
+  // Línea de evolución por período: ANCHA y de primeras en la columna izquierda
+  izq += '<div style="background:var(--paper);border:1px solid var(--line);border-radius:var(--r-md);padding:16px 18px;">'
+  izq += '<div style="font-size:12px;font-weight:700;color:var(--ink-600);margin-bottom:8px;">Mi promedio por período (0 a 5)</div>'
+  izq += svgLineaRend(prom, '100%')
+  izq += '<div style="font-size:11px;color:var(--ink-400);margin-top:6px;">' + esc(textoPromediosRend(prom)) + '. La línea punteada marca 3.0, la nota mínima para aprobar.</div>'
+  izq += '</div>'
   // Leyenda de comparación
   if (data.comparacionDisponible) {
-    html += '<div style="font-size:11px;color:var(--ink-600);margin-bottom:10px;display:flex;gap:16px;flex-wrap:wrap;align-items:center;"><span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:var(--gold-600);"></span> Mi nota</span><span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:var(--burgundy-600);"></span> Promedio del curso en cada período</span></div>'
+    der += '<div style="font-size:11px;color:var(--ink-600);display:flex;gap:16px;flex-wrap:wrap;align-items:center;"><span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:var(--gold-600);"></span> Mi nota</span><span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:var(--burgundy-600);"></span> Promedio del curso en cada período</span></div>'
   } else {
-    html += '<div style="font-size:11px;color:var(--ink-400);margin-bottom:10px;">Comparación con el promedio del curso no disponible</div>'
+    der += '<div style="font-size:11px;color:var(--ink-400);">Comparación con el promedio del curso no disponible</div>'
   }
-  // Acordeones por materia: la gráfica solo se ve al desplegar. El onclick
-  // es una CONSTANTE y el índice viaja en data-mat (regla del barrido).
-  html += '<div>'
+  // Acordeones por materia: TODAS las cabeceras visibles con el nombre
+  // completo (salto de línea, sin ellipsis). La gráfica solo al desplegar.
+  // El onclick es una CONSTANTE y el índice va en data-mat (barrido).
+  der += '<div>'
   for (let i = 0; i < mats.length; i++) {
     const m = mats[i]
     const defs = m.definitivas || {}
     const vMat = defs[String(pSel)]
     const hayNota = vMat !== null && vMat !== undefined && vMat !== ''
-    html += '<div class="rend-acordeon-mat">'
-    html += '<button type="button" class="rend-acordeon-cab" data-mat="' + i + '" onclick="toggleRendMateria(event)" aria-expanded="false">'
-    html += '<span style="display:flex;align-items:center;gap:10px;min-width:0;"><span class="rend-acordeon-flecha" aria-hidden="true">▸</span><span style="font-size:13px;font-weight:600;color:var(--ink-900);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(m.materiaNombre) + '</span></span>'
-    html += '<span style="font-size:11px;font-weight:700;flex-shrink:0;' + (hayNota && Number(vMat) < 3 ? 'color:var(--red-700);' : 'color:var(--ink-600);') + '">P' + pSel + ': ' + (hayNota ? nf(vMat) : '—') + '</span>'
-    html += '</button>'
-    html += '<div class="rend-acordeon-cuerpo" hidden>'
-    html += svgBarrasMateriaEstudiante(defs, data.comparacionDisponible ? (m.promedioCursoPorPeriodo || null) : null, pSel)
-    html += '</div>'
-    html += '</div>'
+    der += '<div class="rend-acordeon-mat">'
+    der += '<button type="button" class="rend-acordeon-cab" data-mat="' + i + '" onclick="toggleRendMateria(event)" aria-expanded="false">'
+    der += '<span style="display:flex;align-items:center;gap:10px;min-width:0;"><span class="rend-acordeon-flecha" aria-hidden="true">▸</span><span style="font-size:13px;font-weight:600;color:var(--ink-900);">' + esc(m.materiaNombre) + '</span></span>'
+    der += '<span style="font-size:11px;font-weight:700;flex-shrink:0;' + (hayNota && Number(vMat) < 3 ? 'color:var(--red-700);' : 'color:var(--ink-600);') + '">P' + pSel + ': ' + (hayNota ? nf(vMat) : '—') + '</span>'
+    der += '</button>'
+    der += '<div class="rend-acordeon-cuerpo" hidden>'
+    der += svgBarrasMateriaEstudiante(defs, data.comparacionDisponible ? (m.promedioCursoPorPeriodo || null) : null, pSel)
+    der += '</div>'
+    der += '</div>'
   }
-  html += '</div>'
-  grid.innerHTML = html
+  der += '</div>'
+  grid.innerHTML = '<div class="rend-est-wrap"><div class="rend-est-col">' + izq + '</div><div class="rend-est-col">' + der + '</div></div>'
 }
 
 // Gráfica por materia del portal del estudiante: barras de MI nota en
 // P1..P{período seleccionado} (NUNCA períodos futuros), coloreadas por
 // nivel, con el promedio del curso DE CADA PERÍODO como marcador burdeú.
-// A ancho completo del acordeón. Períodos sin nota no se dibujan (nunca 0).
+// viewBox 420x240 — del mismo orden que su ancho real dentro del acordeón:
+// NO se encoge, fuentes efectivas ≥11px. Períodos sin nota no se dibujan.
 function svgBarrasMateriaEstudiante(definitivas, promedioCursoPorPeriodo, hastaPeriodo) {
   const pSel = Math.max(1, Math.min(4, parseInt(hastaPeriodo) || 1))
-  const W = 680, H = 150, pt = 18, pb = 22
+  const W = 420, H = 240, pt = 26, pb = 30
   const fh = H - pt - pb
-  const colW = (W - 20) / pSel
-  const bw = Math.min(110, colW - 50)
+  const colW = (W - 16) / pSel
+  const bw = Math.min(84, colW - 36)
   const fy = v => pt + (1 - Math.max(0, Math.min(5, v)) / 5) * fh
   const colorNota = v => (v >= 4.6 ? 'var(--gold-600)' : v >= 4 ? 'var(--green-500)' : v >= 3 ? 'var(--amber-500)' : 'var(--red-500)')
   let s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" style="width:100%;height:auto;display:block;" aria-label="Mis notas por período y el promedio del curso en esta materia, hasta el período ' + pSel + '. ' + esc(textoNotasMateriaRend(definitivas)) + '.">'
   const y30 = fy(3)
-  s += '<line x1="0" y1="' + y30 + '" x2="' + W + '" y2="' + y30 + '" style="stroke:var(--red-500);stroke-width:1;stroke-dasharray:4 3;"></line>'
-  s += '<text x="' + W + '" y="' + (y30 - 4) + '" text-anchor="end" style="fill:var(--red-700);font-size:10px;font-weight:600;">3.0 Aprueba</text>'
+  s += '<line x1="0" y1="' + y30 + '" x2="' + W + '" y2="' + y30 + '" style="stroke:var(--red-500);stroke-width:1.5;stroke-dasharray:5 4;"></line>'
+  s += '<text x="' + W + '" y="' + (y30 - 5) + '" text-anchor="end" style="fill:var(--red-700);font-size:12px;font-weight:600;">3.0 Aprueba</text>'
   for (let p = 1; p <= pSel; p++) {
-    const cx = 10 + (p - 1) * colW + colW / 2
-    s += '<text x="' + cx + '" y="' + (H - 6) + '" text-anchor="middle" style="fill:' + (p === pSel ? 'var(--burgundy-700)' : 'var(--ink-400)') + ';font-size:12px;font-weight:' + (p === pSel ? '700' : '600') + ';">P' + p + '</text>'
-    // Marcador del promedio del curso DE ESTE período (línea burdeú corta)
+    const cx = 8 + (p - 1) * colW + colW / 2
+    s += '<text x="' + cx + '" y="' + (H - 8) + '" text-anchor="middle" style="fill:' + (p === pSel ? 'var(--burgundy-700)' : 'var(--ink-400)') + ';font-size:14px;font-weight:' + (p === pSel ? '700' : '600') + ';">P' + p + '</text>'
+    // Marcador del promedio del curso DE ESTE período (línea burdeú corta
+    // con su número al lado)
     const pcsRaw = promedioCursoPorPeriodo ? promedioCursoPorPeriodo[String(p)] : null
     const pcs = Number(pcsRaw)
     const hayCurso = pcsRaw !== null && pcsRaw !== undefined && isFinite(pcs)
     if (hayCurso) {
       const yc = fy(pcs)
-      const tick = Math.min(60, colW / 2 - 10)
-      s += '<line x1="' + (cx - tick) + '" y1="' + yc + '" x2="' + (cx + tick) + '" y2="' + yc + '" style="stroke:var(--burgundy-600);stroke-width:2.5;stroke-dasharray:5 3;"></line>'
-      s += '<text x="' + (cx + tick + 6) + '" y="' + (yc + 4) + '" style="fill:var(--burgundy-700);font-size:10px;font-weight:700;">' + String(parseFloat(pcs.toFixed(2))) + '</text>'
+      const tick = Math.min(55, colW / 2 - 8)
+      s += '<line x1="' + (cx - tick) + '" y1="' + yc + '" x2="' + (cx + tick) + '" y2="' + yc + '" style="stroke:var(--burgundy-600);stroke-width:3;stroke-dasharray:6 3;"></line>'
+      s += '<text x="' + (cx + tick + 7) + '" y="' + (yc + 5) + '" style="fill:var(--burgundy-700);font-size:12px;font-weight:700;">' + String(parseFloat(pcs.toFixed(2))) + '</text>'
     }
-    // Mi barra del período
+    // Mi barra del período, ancha, con el valor encima
     const v = (definitivas || {})[String(p)]
     if (v === null || v === undefined || v === '' || !isFinite(Number(v))) continue
     const val = Math.max(0, Math.min(5, Number(v)))
     const bh = val / 5 * fh
     const x = cx - bw / 2
-    s += '<rect class="rend-barra-est" x="' + x + '" y="' + (pt + fh - bh) + '" width="' + bw + '" height="' + Math.max(bh, 3) + '" rx="6" style="fill:' + colorNota(val) + ';' + (p === pSel ? 'stroke:var(--ink-900);stroke-width:1.5;' : '') + '"><title>P' + p + ': ' + String(parseFloat(val.toFixed(2))) + (hayCurso ? ' · Curso: ' + String(parseFloat(pcs.toFixed(2))) : '') + '</title></rect>'
-    s += '<text x="' + cx + '" y="' + (pt + fh - bh - 5) + '" text-anchor="middle" style="fill:var(--ink-900);font-size:12px;font-weight:700;">' + String(parseFloat(val.toFixed(2))) + '</text>'
+    s += '<rect class="rend-barra-est" x="' + x + '" y="' + (pt + fh - bh) + '" width="' + bw + '" height="' + Math.max(bh, 4) + '" rx="7" style="fill:' + colorNota(val) + ';' + (p === pSel ? 'stroke:var(--ink-900);stroke-width:2;' : '') + '"><title>P' + p + ': ' + String(parseFloat(val.toFixed(2))) + (hayCurso ? ' · Curso: ' + String(parseFloat(pcs.toFixed(2))) : '') + '</title></rect>'
+    s += '<text x="' + cx + '" y="' + (pt + fh - bh - 7) + '" text-anchor="middle" style="fill:var(--ink-900);font-size:13px;font-weight:700;">' + String(parseFloat(val.toFixed(2))) + '</text>'
   }
   s += '</svg>'
   return s

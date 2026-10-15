@@ -1334,6 +1334,7 @@ test('renderMiRendimiento: tarjeta del período SELECCIONADO, acordeones por mat
   assert.ok(grid.innerHTML.includes('data-mat="0"'), 'la materia es un ACORDEÓN con data-mat (delegación, sin ids interpolados)')
   assert.ok(grid.innerHTML.includes('class="rend-acordeon-cuerpo" hidden'), 'la gráfica de la materia viene OCULTA hasta desplegar')
   assert.ok(grid.innerHTML.includes('toggleRendMateria(event)'), 'el botón del acordeón usa el toggle con onclick constante')
+  assert.ok(grid.innerHTML.includes('class="rend-est-wrap"'), 'TODO el contenido va en UN solo contenedor (la grilla de materias no lo parte)')
   afirmarSinXSS(grid.innerHTML, 'Mi rendimiento del estudiante')
 })
 
@@ -1361,8 +1362,9 @@ test('renderMiRendimiento con comparación: acordeones, marcador del curso POR P
     })
     return svgBarrasMateriaEstudiante({ '1': '3.50', '2': '04.0', '3': null, '4': undefined }, { '1': 3.0, '2': 3.2, '3': null, '4': null }, 2)
   `)(document)
-  // La gráfica por materia: solo hasta el período seleccionado, con el
-  // promedio del curso de CADA período como marcador burdeú
+  // La gráfica por materia: viewBox del tamaño real (no se encoge), solo
+  // hasta el período seleccionado, con el promedio del curso de CADA período
+  assert.ok(svgMat.includes('viewBox="0 0 420 240"'), 'viewBox 420x240: coincide con el ancho real del acordeón (fuentes legibles)')
   assert.equal((svgMat.match(/class="rend-barra-est"/g) || []).length, 2, 'solo 2 barras: hasta el período seleccionado')
   assert.ok(svgMat.includes('>P1</text>') && svgMat.includes('>P2</text>'), 'ejes P1 y P2')
   assert.ok(!svgMat.includes('>P3</text>') && !svgMat.includes('>P4</text>'), 'SIN períodos futuros (P3/P4) en la gráfica por materia')
@@ -1374,4 +1376,19 @@ test('renderMiRendimiento con comparación: acordeones, marcador del curso POR P
   assert.ok(grid.innerHTML.includes('data-mat="0"'), 'acordeón por materia')
   assert.ok(grid.innerHTML.includes('Promedio del curso en cada período'), 'leyenda del marcador por período')
   afirmarSinXSS(grid.innerHTML + svgMat, 'Mi rendimiento con comparación')
+})
+
+test('Mi rendimiento: layout responsive en clases CSS (contenedor único + 2 columnas de escritorio)', () => {
+  // El contenedor único con grid-column 1/-1: la grilla de materias
+  // (celdas de 158px) ya no parte el panel en columnas diminutas
+  assert.ok(HTML.includes('.rend-est-wrap { grid-column: 1 / -1;'), 'el wrap ocupa TODA la fila de la grilla padre')
+  assert.ok(HTML.includes('@media (min-width: 900px)'), 'hay breakpoint responsive para escritorio')
+  assert.ok(HTML.includes('.rend-est-wrap { grid-template-columns: 1.6fr 1fr;'), 'escritorio: 2 columnas (izquierda más ancha: tarjetas+línea / derecha: leyenda+materias)')
+  assert.ok(HTML.includes('.rend-est-col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }'), 'columnas internas verticales')
+  // La barra del promedio general por fin se actualiza (bug preexistente
+  // del "0% de 5.0" eterno)
+  const pintar = extraerFuncion('pintarNotasEstudiante')
+  assert.match(pintar, /promedio-bar/, 'pintarNotasEstudiante actualiza la barra del promedio')
+  assert.match(pintar, /promNum \/ 5 \* 100/, 'el % es promedio/5*100 con Number()')
+  assert.match(pintar, /promedio-porc/, 'y el texto del porcentaje')
 })
