@@ -1809,3 +1809,49 @@ test('barra del estudiante: la hamburguesa sigue el mismo orden (antes del logo)
   const m899 = HTML.match(/@media \(max-width:899px\)\s*\{([\s\S]*?)\n\}/)
   assert.ok(m899 && /#sc-student \.brand-right \.period-pill \{ display:none; \}/.test(m899[1]), 'el pill del estudiante sigue oculto <900px')
 })
+
+test('plegado del docente: la flecha solo vive en escritorio y no toca el drawer móvil', () => {
+  // CSS: la flecha de plegar desaparece del drawer <900px
+  const bloques = [...HTML.matchAll(/@media \(max-width:899px\)\s*\{([\s\S]*?)\n\}/g)]
+  const bloqueDoc = bloques.map(m => m[1]).find(b => b.includes('.doc-sidebar'))
+  assert.ok(bloqueDoc, 'existe el bloque móvil del panel docente')
+  assert.match(bloqueDoc, /\.doc-sidebar \.sidebar-toggle \{ display:none; \}/, 'la flecha de plegar se oculta en el drawer')
+  // CSS: TODA regla .colapsado que afecta el ancho vive DENTRO de >=900px
+  // (así un plegado guardado en escritorio jamás encoge el drawer móvil)
+  const reglas = [...HTML.matchAll(/\.doc-sidebar\.colapsado[^{]*\{[^}]*\}/g)].filter(m => /width/.test(m[0]))
+  assert.ok(reglas.length > 0, 'hay reglas de ancho colapsadas (la de 64px)')
+  for (const m of reglas) {
+    const apertura = HTML.lastIndexOf('@media', m.index)
+    const cond = HTML.slice(apertura, HTML.indexOf('{', apertura))
+    assert.match(cond, /min-width:\s*900px/, 'el plegado de ancho SOLO aplica en escritorio')
+  }
+  // JS: en móvil ni el toggle ni la restauración tocan clase ni localStorage
+  const nodos = {
+    'doc-sidebar': {
+      classList: { clases: new Set(), toggle(c) { if (this.clases.has(c)) this.clases.delete(c); else this.clases.add(c); return this.clases.has(c) }, remove(c) { this.clases.delete(c) }, add(c) { this.clases.add(c) }, contains(c) { return this.clases.has(c) } },
+      style: {},
+    },
+  }
+  const document = { getElementById: id => nodos[id] }
+  const localStorage = { datos: new Map(), getItem(k) { return this.datos.get(k) || null }, setItem(k, v) { this.datos.set(k, v) } }
+  const windowMovil = { matchMedia: () => ({ matches: false }) }
+  new Function('document', 'window', 'localStorage', `
+    ${extraerFuncion('togglePlegadoDocente')}
+    ${extraerFuncion('restaurarPlegadoDocente')}
+    togglePlegadoDocente()
+    localStorage.setItem('doc-sidebar-plegado', '1')
+    restaurarPlegadoDocente()
+  `)(document, windowMovil, localStorage)
+  assert.ok(!nodos['doc-sidebar'].classList.contains('colapsado'), 'en móvil el toggle NO pliega')
+  assert.equal(localStorage.getItem('doc-sidebar-plegado'), '1', 'y no sobreescribe el estado guardado desde escritorio')
+  // JS: en escritorio el plegado sigue funcionando igual que siempre
+  const windowEscritorio = { matchMedia: () => ({ matches: true }) }
+  new Function('document', 'window', 'localStorage', `
+    ${extraerFuncion('togglePlegadoDocente')}
+    ${extraerFuncion('restaurarPlegadoDocente')}
+    togglePlegadoDocente()
+    restaurarPlegadoDocente()
+  `)(document, windowEscritorio, localStorage)
+  assert.ok(nodos['doc-sidebar'].classList.contains('colapsado'), 'en escritorio el toggle pliega como siempre')
+  assert.equal(localStorage.getItem('doc-sidebar-plegado'), '1', 'y persiste el estado')
+})
