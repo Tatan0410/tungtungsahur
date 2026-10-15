@@ -1731,3 +1731,81 @@ test('menú del docente: el panel no contiene ítems de admin ni de estudiante',
   assert.match(st, /catch\s*\(/, 'y catch')
   assert.match(extraerFuncion('restaurarPlegadoDocente'), /try\s*\{/, 'restaurarPlegadoDocente usa try')
 })
+
+// ═══════════════════════════════════════════════════════════════
+// BARRA SUPERIOR (brand-bar) del docente: la hamburguesa va PRIMERA
+// (fuera de brand-right), en escritorio (>=900px) no ocupa espacio y
+// el nombre/correo encoge con ellipsis para no recortar los controles.
+// ═══════════════════════════════════════════════════════════════
+
+function extraerBarra(screenId, hastaSubstr) {
+  const ini = HTML.indexOf('id="' + screenId + '"')
+  const fin = HTML.indexOf(hastaSubstr, ini)
+  assert.ok(ini > -1, 'existe la pantalla ' + screenId)
+  assert.ok(fin > ini, 'existe el corte ' + hastaSubstr)
+  return HTML.slice(ini, fin)
+}
+
+test('barra del docente: la hamburguesa va antes del logo y fuera de brand-right', () => {
+  const barra = extraerBarra('sc-teacher', 'portal-doc-layout')
+  const posHam = barra.indexOf('id="btn-sidebar-doc"')
+  const posLogo = barra.indexOf('class="brand-logo"')
+  const posNombre = barra.indexOf('id="doc-name"')
+  const posRight = barra.indexOf('class="brand-right"')
+  assert.ok(posHam > -1 && posLogo > -1 && posNombre > -1 && posRight > -1, 'la barra tiene todos los bloques')
+  assert.ok(posHam < posLogo, 'la hamburguesa va PRIMERA, antes del logo')
+  assert.ok(posHam < posNombre, 'la hamburguesa va antes del bloque del nombre')
+  assert.ok(posHam < posRight, 'la hamburguesa vive FUERA de brand-right')
+  assert.match(barra, /id="btn-sidebar-doc"[^>]*aria-expanded="false"/, 'mantiene aria-expanded')
+  assert.match(barra, /id="btn-sidebar-doc"[^>]*aria-label="Abrir menú del portal"/, 'mantiene aria-label')
+  assert.equal([...HTML.matchAll(/id="btn-sidebar-doc"/g)].length, 1, 'id btn-sidebar-doc único')
+  // brand-right: solo EN VIVO + pill + tema, en ese orden, sin logout
+  const right = barra.slice(posRight)
+  assert.ok(right.indexOf('live-ind') < right.indexOf('id="period-pill"'), 'EN VIVO va antes del pill')
+  assert.ok(right.indexOf('id="period-pill"') < right.indexOf('btn-tema'), 'el pill va antes del botón de tema')
+  assert.ok(!right.includes('btn-sidebar-doc'), 'brand-right NO contiene la hamburguesa')
+  assert.ok(!right.includes('btn-logout'), 'el logout sigue solo en el panel')
+  // Escape sigue cableado para el drawer
+  assert.ok(HTML.includes("e.key === 'Escape'"), 'Escape sigue cerrando el drawer')
+})
+
+test('barra del docente: en escritorio la hamburguesa no ocupa espacio', () => {
+  const base = HTML.match(/\.btn-sidebar-est\s*\{[^}]*\}/)
+  assert.ok(base, 'existe la regla base de la hamburguesa')
+  assert.match(base[0], /display:\s*none/, 'la regla base la oculta (incluido >=900px)')
+  const muestra = [...HTML.matchAll(/\.btn-sidebar-est\s*\{[^}]*display:\s*flex[^}]*\}/g)]
+  assert.ok(muestra.length > 0, 'hay reglas que la muestran en móvil')
+  for (const m of muestra) {
+    const apertura = HTML.lastIndexOf('@media', m.index)
+    assert.ok(apertura > -1, 'la regla que la muestra vive dentro de un media query')
+    const cond = HTML.slice(apertura, HTML.indexOf('{', apertura))
+    assert.match(cond, /max-width:\s*899px/, 'solo se muestra por debajo de 900px')
+  }
+})
+
+test('barra del docente: el correo encoge con ellipsis y a <480px se compacta', () => {
+  assert.match(HTML, /\.brand-id\s*\{[^}]*min-width:\s*0[^}]*\}/, 'el bloque de nombre puede encoger')
+  assert.match(HTML, /\.brand-id\s*\.brand-name[^{]*\{[^}]*text-overflow:\s*ellipsis/, 'el nombre corta con ellipsis')
+  assert.match(HTML, /\.brand-id\s*\.brand-sub[^{]*\{[^}]*text-overflow:\s*ellipsis/, 'el correo corta con ellipsis')
+  const barra = extraerBarra('sc-teacher', 'portal-doc-layout')
+  assert.match(barra, /<div class="brand-id"><div class="brand-name" id="doc-name"/, 'el bloque del docente es brand-id')
+  assert.match(barra, /<span class="live-txt">En vivo<\/span>/, 'el texto EN VIVO está marcado (live-txt)')
+  const m479 = HTML.match(/@media \(max-width:479px\)\s*\{([\s\S]*?)\n\}/)
+  assert.ok(m479, 'existe el bloque <480px')
+  assert.match(m479[1], /#sc-teacher \.brand-right \.period-pill \{ display:none; \}/, 'el pill se oculta a <480px')
+  assert.match(m479[1], /#sc-teacher \.live-ind \.live-txt \{ display:none; \}/, 'EN VIVO queda solo en el punto verde')
+})
+
+test('barra del estudiante: la hamburguesa sigue el mismo orden (antes del logo)', () => {
+  const barra = extraerBarra('sc-student', 'query-widget')
+  const posHam = barra.indexOf('id="btn-sidebar-est"')
+  const posLogo = barra.indexOf('class="brand-logo"')
+  const posRight = barra.indexOf('class="brand-right"')
+  assert.ok(posHam > -1 && posLogo > -1 && posRight > -1, 'la barra tiene todos los bloques')
+  assert.ok(posHam < posLogo, 'la hamburguesa va antes del logo')
+  assert.ok(posHam < posRight, 'la hamburguesa vive fuera de brand-right')
+  assert.match(barra, /<div class="brand-id"><div class="brand-name" id="stu-name"/, 'el nombre del estudiante también encoge (brand-id)')
+  // El pill del estudiante sigue oculto en móvil como ya estaba
+  const m899 = HTML.match(/@media \(max-width:899px\)\s*\{([\s\S]*?)\n\}/)
+  assert.ok(m899 && /#sc-student \.brand-right \.period-pill \{ display:none; \}/.test(m899[1]), 'el pill del estudiante sigue oculto <900px')
+})
