@@ -214,7 +214,15 @@ test('permisos: no-director 403; curso/estudiante ajeno 403; estudiante 403; adm
   }
 
   assert.equal((await getCurso(tokEst, 'curso=9999')).status, 403, 'rol ESTUDIANTE → /curso 403')
-  assert.equal((await getEstudiante(tokEst, 'estudianteId=' + estudiantesCreados[0].id)).status, 403, 'rol ESTUDIANTE → /estudiante 403')
+  assert.equal((await getEstudiante(tokEst, 'estudianteId=' + estudiantesCreados[0].id)).status, 403, 'estudiante pidiendo la ficha de OTRO → 403')
+  // Self-acceso: el estudiante ve SU propia ficha (portal "Mi rendimiento")
+  const propio = estudiantesCreados.find(e => e.doc === '88000870')
+  const rPropio = await getEstudiante(tokEst, 'estudianteId=' + propio.id)
+  assert.equal(rPropio.status, 200, 'estudiante pidiendo SU propia ficha → 200')
+  assert.ok(rPropio.data.estudiante && rPropio.data.estudiante.nombre === 'EST REND TOKEN', 'la ficha propia trae su nombre')
+  assert.ok(Array.isArray(rPropio.data.porMateria), 'con porMateria')
+  assert.equal(typeof rPropio.data.comparacionDisponible, 'boolean', 'comparacionDisponible booleano')
+  assert.ok(!JSON.stringify(rPropio.data).includes(estudiantesCreados[0].id), 'la ficha propia no expone ids de otros estudiantes')
 
   assert.equal((await getCurso(tokenAdmin, 'curso=9999')).status, 200, 'admin → /curso 200')
   assert.equal((await getEstudiante(tokenAdmin, 'estudianteId=' + estudiantesCreados[0].id)).status, 200, 'admin → /estudiante 200')
