@@ -1267,3 +1267,12 @@ test('mostrarSeccionAdmin: nav-asistencia queda resaltado y los demás sin resal
   }
   assert.equal(nodos['sidebar-indicador'].style.opacity, '1', 'el indicador dorado queda visible')
 })
+
+test('la asistencia del estudiante carga desde el flujo del estudiante (bug del "Cargando..." eterno)', () => {
+  const flujo = extraerFuncion('cargarDatosEstudiante')
+  assert.match(flujo, /cargarMiAsistencia\(\)/, 'cargarDatosEstudiante dispara cargarMiAsistencia (independiente del bootstrap y del período)')
+  // La llamada NO puede vivir en el flujo del docente: allí nunca corre para
+  // estudiantes (mis-cursos responde 403 y la función sale temprano).
+  const asig = extraerFuncion('cargarAsignaciones')
+  assert.ok(!asig.includes('cargarMiAsistencia'), 'la llamada NO vive en cargarAsignaciones (cableado muerto del bug)')
+})
