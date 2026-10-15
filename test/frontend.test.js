@@ -1292,14 +1292,18 @@ test('Mi rendimiento: la pestaña existe en el submenú y el cableado es correct
   assert.match(extraerFuncion('cargarMiRendimiento'), /api\/rendimiento\/estudiante/, 'carga desde el endpoint de la ficha individual')
   assert.match(extraerFuncion('cargarMiRendimiento'), /currentUser\.estudianteId/, 'usa el id del PROPIO token, nunca uno del cliente libre')
   const pintar = extraerFuncion('pintarNotasEstudiante')
-  assert.match(pintar, /vistaNotasActual === 'rendimiento'/, 'pintarNotasEstudiante respeta la vista Rendimiento al cambiar de período (no la manda al else)')
+  assert.match(pintar, /vistaNotasActual === 'rendimiento'/, 'pintarNotasEstudiante conoce la vista Rendimiento')
+  assert.match(pintar, /renderMiRendimiento\(_miRendimientoDatos\)/, 'al cambiar de período se re-renderiza Mi rendimiento con el cache (sin refetch)')
+  assert.match(extraerFuncion('renderMiRendimiento'), /currentPeriodo/, 'el render es por período: sigue al selector del encabezado')
+  assert.ok(HTML.includes('function toggleRendMateria('), 'existe el toggle del acordeón por materia')
 })
 
-test('renderMiRendimiento: nombres con payload inertes; sin comparación no hay valores del curso', () => {
+test('renderMiRendimiento: tarjeta del período SELECCIONADO, acordeones por materia y sin valores del curso sin comparación', () => {
   const grid = { innerHTML: '' }
   const nodos = { 'notas-grid': grid }
   const document = { getElementById: id => nodos[id] }
   new Function('document', `
+    let currentPeriodo = 2
     ${extraerFuncion('esc')}
     ${extraerFuncion('chipNivelRend')}
     ${extraerFuncion('vigenteRend')}
@@ -1317,21 +1321,28 @@ test('renderMiRendimiento: nombres con payload inertes; sin comparación no hay 
       porMateria: [{ materiaId: 'm1', materiaNombre: 'MAT ' + ${JSON.stringify(XSS_TAG)}, definitivas: { '1': '3.50', '2': '04.0', '3': null, '4': undefined }, definitivoPonderado: null, nivel: 'BÁSICO', promedioCurso: 3.91 }],
     })
   `)(document)
-  assert.ok(grid.innerHTML.includes('Mi promedio P4'), 'la tarjeta muestra el promedio del período más reciente con nota (P4)')
+  assert.ok(grid.innerHTML.includes('Mi promedio P2'), 'la tarjeta muestra el PERÍODO SELECCIONADO (P2), no el último con nota (P4)')
+  assert.ok(grid.innerHTML.includes('3.25'), 'con su promedio del P2')
+  assert.ok(grid.innerHTML.includes('BÁSICO'), 'con el nivel del P2')
   assert.ok(grid.innerHTML.includes('Materias por reforzar'), 'la tarjeta de materias por reforzar está')
   assert.ok(grid.innerHTML.includes('Comparación con el promedio del curso no disponible'), 'la nota discreta aparece sin comparación')
   assert.ok(!grid.innerHTML.includes('3.91'), 'SIN comparación no aparece ningún valor del curso')
-  assert.ok(grid.innerHTML.includes('P1: 2.75 · P2: 3.25 · P4: 4.6'), 'el texto equivalente de la línea solo menciona períodos con nota')
+  assert.ok(!grid.innerHTML.includes(' · Curso: '), 'sin marcadores del curso en los tooltips de las barras')
+  assert.ok(grid.innerHTML.includes('P1: 2.75 · P2: 3.25 · P4: 4.6'), 'el texto equivalente de la línea (anual) solo menciona períodos con nota')
   assert.ok(grid.innerHTML.includes('>3.5<'), '"3.50" → 3.5 en la barra de la materia')
   assert.ok(grid.innerHTML.includes('>4<'), '"04.0" → 4 en la barra de la materia')
+  assert.ok(grid.innerHTML.includes('data-mat="0"'), 'la materia es un ACORDEÓN con data-mat (delegación, sin ids interpolados)')
+  assert.ok(grid.innerHTML.includes('class="rend-acordeon-cuerpo" hidden'), 'la gráfica de la materia viene OCULTA hasta desplegar')
+  assert.ok(grid.innerHTML.includes('toggleRendMateria(event)'), 'el botón del acordeón usa el toggle con onclick constante')
   afirmarSinXSS(grid.innerHTML, 'Mi rendimiento del estudiante')
 })
 
-test('renderMiRendimiento con comparación: barras solo con nota, marcador del curso y leyenda', () => {
+test('renderMiRendimiento con comparación: acordeones, marcador del curso POR PERÍODO y sin períodos futuros', () => {
   const grid = { innerHTML: '' }
   const nodos = { 'notas-grid': grid }
   const document = { getElementById: id => nodos[id] }
-  new Function('document', `
+  const svgMat = new Function('document', `
+    let currentPeriodo = 2
     ${extraerFuncion('esc')}
     ${extraerFuncion('chipNivelRend')}
     ${extraerFuncion('vigenteRend')}
@@ -1346,13 +1357,21 @@ test('renderMiRendimiento con comparación: barras solo con nota, marcador del c
       promedioPorPeriodo: { '1': 3.5 },
       nivelPorPeriodo: { '1': 'ALTO' },
       comparacionDisponible: true, materiasEnRiesgo: 0,
-      porMateria: [{ materiaId: 'm1', materiaNombre: 'MAT', definitivas: { '1': '3.50', '2': '04.0', '3': null, '4': undefined }, definitivoPonderado: null, nivel: 'ALTO', promedioCurso: 3.2 }],
+      porMateria: [{ materiaId: 'm1', materiaNombre: 'MAT', definitivas: { '1': '3.50', '2': '04.0', '3': null, '4': undefined }, definitivoPonderado: null, nivel: 'ALTO', promedioCurso: 3.2, promedioCursoPorPeriodo: { '1': 3.0, '2': 3.2, '3': null, '4': null } }],
     })
+    return svgBarrasMateriaEstudiante({ '1': '3.50', '2': '04.0', '3': null, '4': undefined }, { '1': 3.0, '2': 3.2, '3': null, '4': null }, 2)
   `)(document)
-  assert.equal((grid.innerHTML.match(/class="rend-barra-est"/g) || []).length, 2, 'solo 2 barras: los períodos sin nota NO se dibujan (nunca como 0)')
-  assert.ok(grid.innerHTML.includes('Curso 3.2'), 'el marcador del promedio del curso lleva su valor en texto')
-  assert.ok(grid.innerHTML.includes('Mi nota</span>'), 'la leyenda distingue mi nota del curso')
-  assert.ok(grid.innerHTML.includes('aria-label="Mis notas por período'), 'la mini gráfica lleva aria-label')
-  assert.ok(!grid.innerHTML.includes('NaN'), 'nada de NaN')
-  afirmarSinXSS(grid.innerHTML, 'Mi rendimiento con comparación')
+  // La gráfica por materia: solo hasta el período seleccionado, con el
+  // promedio del curso de CADA período como marcador burdeú
+  assert.equal((svgMat.match(/class="rend-barra-est"/g) || []).length, 2, 'solo 2 barras: hasta el período seleccionado')
+  assert.ok(svgMat.includes('>P1</text>') && svgMat.includes('>P2</text>'), 'ejes P1 y P2')
+  assert.ok(!svgMat.includes('>P3</text>') && !svgMat.includes('>P4</text>'), 'SIN períodos futuros (P3/P4) en la gráfica por materia')
+  assert.ok(svgMat.includes('>3</text>'), 'marcador del curso del P1 (3.0 → 3)')
+  assert.ok(svgMat.includes('3.2'), 'marcador del curso del P2 con su valor')
+  assert.ok(svgMat.includes('hasta el período 2'), 'aria-label declara el alcance')
+  assert.ok(!svgMat.includes('NaN'), 'nada de NaN')
+  // El render completo: acordeón + leyenda por período
+  assert.ok(grid.innerHTML.includes('data-mat="0"'), 'acordeón por materia')
+  assert.ok(grid.innerHTML.includes('Promedio del curso en cada período'), 'leyenda del marcador por período')
+  afirmarSinXSS(grid.innerHTML + svgMat, 'Mi rendimiento con comparación')
 })
