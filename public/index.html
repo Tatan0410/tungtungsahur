@@ -283,6 +283,10 @@ body::before {
   .doc-sidebar.abierto { transform:translateX(0); }
   .doc-sidebar-overlay.visible { display:block; }
   .btn-sidebar-est { display:flex; }
+  /* En móvil el panel es un drawer: la flecha de plegar no aplica (el
+     estado colapsado es solo de escritorio) y el drawer ya se cierra
+     con overlay, Escape, ítem o hamburguesa */
+  .doc-sidebar .sidebar-toggle { display:none; }
 }
 
 /* Barra del docente a <480px: el pill sobra (el período vive en las
@@ -2486,6 +2490,11 @@ function toggleMiCurso(event) {
 function togglePlegadoDocente() {
   const sb = document.getElementById('doc-sidebar')
   if (!sb) return
+  // Solo escritorio: en móvil (<900px) el panel es un drawer y el
+  // plegado no aplica (tampoco el estado guardado desde escritorio).
+  // Sin window/matchMedia el guard se ignora (navegadores viejos).
+  const esEscritorio = typeof window === 'undefined' || !window.matchMedia || window.matchMedia('(min-width: 900px)').matches
+  if (!esEscritorio) return
   const colapsado = sb.classList.toggle('colapsado')
   try { localStorage.setItem('doc-sidebar-plegado', colapsado ? '1' : '0') } catch (e) {}
 }
@@ -2513,6 +2522,10 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrarSideba
 function restaurarPlegadoDocente() {
   const sb = document.getElementById('doc-sidebar')
   if (!sb) return
+  // El plegado guardado solo se restaura en escritorio: en móvil el
+  // drawer de 240px nunca arranca "colapsado"
+  const esEscritorio = typeof window === 'undefined' || !window.matchMedia || window.matchMedia('(min-width: 900px)').matches
+  if (!esEscritorio) return
   try {
     if (localStorage.getItem('doc-sidebar-plegado') === '1') sb.classList.add('colapsado')
   } catch (e) {}
