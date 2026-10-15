@@ -511,6 +511,32 @@ test('el portal usa el bootstrap de 2 requests y el login va con retry', () => {
   assert.match(login, /fetchConReintentoCheckpoint/, 'el login reintenta si Vercel lo challengea')
 })
 
+test('login: Enter envía el MISMO doLogin que el botón (form + submit)', () => {
+  // El form existe y envuelve campos, aviso, checkbox y botón
+  const ini = HTML.indexOf('<form id="login-form" onsubmit="enviarLogin(event)">')
+  assert.ok(ini > -1, 'el login tiene un <form> con onsubmit="enviarLogin(event)"')
+  const fin = HTML.indexOf('</form>', ini)
+  assert.ok(fin > ini, 'el form se cierra')
+  const form = HTML.slice(ini, fin)
+  for (const id of ['doc-input', 'password', 'login-error', 'acepta-terminos', 'login-btn']) {
+    assert.ok(form.includes(`id="${id}"`), `el form contiene #${id}`)
+  }
+  // El botón es submit y SIN onclick propio (un solo disparo, nunca doble)
+  assert.match(form, /<button[^>]*type="submit"[^>]*id="login-btn"/, 'el botón Ingresar es type="submit"')
+  assert.ok(!/id="login-btn"[^>]*onclick/.test(form), 'el botón no tiene onclick (el submit ya dispara doLogin)')
+  // El handler es una capa fina sobre doLogin: EXACTAMENTE el mismo flujo
+  const fn = extraerFuncion('enviarLogin')
+  assert.match(fn, /preventDefault/, 'cancela el submit nativo (sin recargar)')
+  assert.match(fn, /doLogin\(\)/, 'delega en el mismo doLogin del botón')
+  // autocomplete para gestores de contraseñas
+  assert.match(HTML, /id="doc-input"[^>]*autocomplete="username"/, 'documento con autocomplete="username"')
+  assert.match(HTML, /id="password"[^>]*autocomplete="current-password"/, 'contraseña con autocomplete="current-password"')
+  // Los ids siguen intactos y únicos
+  for (const id of ['login-form', 'doc-input', 'password', 'login-btn', 'acepta-terminos', 'login-error']) {
+    assert.equal([...HTML.matchAll(new RegExp(`id="${id}"`, 'g'))].length, 1, `id ${id} único`)
+  }
+})
+
 // ═══════════════════════════════════════════════════════════════
 // BOLETÍN (piloto): botón SOLO si hay publicaciones, columnas P°1..P°N
 // dinámicas (sin períodos futuros), membrete aislado, firma virtual del

@@ -993,8 +993,9 @@ body::before {
         <div class="role-opt sel" id="r-est" onclick="selRole('est')"><span class="role-icon"><span class="icon" data-icon="estudiante"></span></span>Estudiante</div>
         <div class="role-opt" id="r-doc" onclick="selRole('doc')"><span class="role-icon"><span class="icon" data-icon="docente"></span></span>Docente</div>
       </div>
-      <div class="inp-g"><label class="lbl">Número de documento</label><input class="inp" id="doc-input" type="text" inputmode="numeric" placeholder="Ej: 1046732606"/><div class="inp-hint">Tu contraseña también es tu número de documento</div></div>
-      <div class="inp-g"><label class="lbl">Contraseña</label><div class="inp-con-ojo"><input class="inp" id="password" type="password" placeholder="••••••••"/><button type="button" class="btn-ojo" onclick="alternarVisibilidadPassword(this, 'password')" tabindex="-1" aria-label="Mostrar u ocultar contraseña"><span class="icon" data-icon="ojo"></span></button></div></div>
+      <form id="login-form" onsubmit="enviarLogin(event)">
+      <div class="inp-g"><label class="lbl">Número de documento</label><input class="inp" id="doc-input" type="text" inputmode="numeric" autocomplete="username" placeholder="Ej: 88000999"/><div class="inp-hint">Tu contraseña también es tu número de documento</div></div>
+      <div class="inp-g"><label class="lbl">Contraseña</label><div class="inp-con-ojo"><input class="inp" id="password" type="password" autocomplete="current-password" placeholder="••••••••"/><button type="button" class="btn-ojo" onclick="alternarVisibilidadPassword(this, 'password')" tabindex="-1" aria-label="Mostrar u ocultar contraseña"><span class="icon" data-icon="ojo"></span></button></div></div>
       <div class="error-msg" id="login-error"></div>
       <div style="margin-top:10px;padding:10px 12px;background:var(--cream-100);border:1px solid var(--line);border-radius:var(--r-sm);font-size:11px;color:var(--ink-600);line-height:1.5;">
         Al ingresar a esta plataforma, usted confirma que:
@@ -1008,7 +1009,8 @@ body::before {
         <input type="checkbox" id="acepta-terminos" style="margin-top:3px;accent-color:var(--burgundy-700);width:16px;height:16px;cursor:pointer;" onchange="actualizarBotonLogin()">
         <label for="acepta-terminos" style="font-size:12px;color:var(--ink-600);cursor:pointer;line-height:1.4;">He leído y acepto lo anterior.</label>
       </div>
-      <button class="btn-primary" id="login-btn" style="margin-top:6px;" onclick="doLogin()" disabled>Ingresar</button>
+      <button class="btn-primary" type="submit" id="login-btn" style="margin-top:6px;" disabled>Ingresar</button>
+      </form>
       <div style="text-align:center;margin-top:12px;font-size:13px;display:none;" id="recuperar-link">
         <span style="color:var(--ink-400);">¿Olvidaste tu contraseña?</span>
         <a href="javascript:void(0)" onclick="abrirRecuperarPassword()" style="color:var(--burgundy-700);font-weight:600;">Recuperar</a>
@@ -2113,6 +2115,14 @@ function showScreen(id) {
 function actualizarBotonLogin() {
   const aceptado = document.getElementById('acepta-terminos').checked
   document.getElementById('login-btn').disabled = !aceptado
+}
+
+// Enter = clic en "Ingresar": el <form> del login dispara el MISMO
+// doLogin (misma validación, mismos términos, mismo bloqueo de intentos
+// y mismo manejo de errores — sin flujo paralelo)
+function enviarLogin(evento) {
+  evento.preventDefault()
+  doLogin()
 }
 
 function doLogin() {
