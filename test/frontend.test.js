@@ -517,11 +517,12 @@ test('el portal usa el bootstrap de 2 requests y el login va con retry', () => {
 // rector (imagen) y estética del documento original.
 // ═══════════════════════════════════════════════════════════════
 
-test('boletín: publicación condiciona el botón, columnas dinámicas y firma virtual', () => {
-  assert.match(HTML, /id="btn-boletin"/, 'el botón existe con id')
-  assert.match(HTML, /id="btn-boletin"[^>]*style="font-weight:600;display:none;"/, 'el botón nace OCULTO (sin publicaciones no se ve)')
+test('boletín: publicación condiciona el acceso, columnas dinámicas y firma virtual', () => {
+  assert.match(HTML, /id="nav-est-boletin"/, 'el ítem Boletín del panel existe con id')
+  assert.match(HTML, /id="est-boletin-badge" style="display:none;"/, 'el badge nace OCULTO (sin publicaciones no se ve)')
   const botón = extraerFuncion('actualizarBotonBoletin')
   assert.match(botón, /boletinesDisponibles\.length/, 'visible solo si hay publicados')
+  assert.match(botón, /refreshBoletinMenuEstudiante\(\)/, 'el badge del panel se refresca con la misma fuente de verdad')
   assert.match(HTML, /function membreteBoletin\(/, 'el membrete es un bloque aislado (fácil de cambiar)')
   const pintar = extraerFuncion('pintarBoletin')
   assert.match(pintar, /membreteBoletin\(d\)/, 'pintar usa el membrete aislado')
@@ -868,6 +869,8 @@ test('renderMiAsistencia: materia y fecha con payload quedan inertes', () => {
     const ASIST_UMBRAL_ROJO = 20
     ${extraerFuncion('esc')}
     ${extraerFuncion('colorAsistencia')}
+    ${extraerFuncion('chipAsistencia')}
+    ${extraerFuncion('granNumeroAsistencia')}
     ${extraerFuncion('renderMiAsistencia')}
     renderMiAsistencia({
       totales: { ausencias: 1, tardanzas: 1, excusas: 0 },
@@ -875,7 +878,9 @@ test('renderMiAsistencia: materia y fecha con payload quedan inertes', () => {
       ultimas: [{ fecha: '2026-10-10', materiaNombre: 'MAT ' + ${JSON.stringify(XSS_ONCLICK)}, estado: 'TARDANZA' }],
     })
   `)(document)
-  assert.ok(cont.innerHTML.includes('% de inasistencia'), 'la tarjeta se renderizó')
+  assert.ok(cont.innerHTML.includes('% · Crítica'), 'la barra por materia se renderizó con el chip')
+  assert.ok(cont.innerHTML.includes('Inasistencias'), 'los 3 números grandes están')
+  assert.ok(cont.innerHTML.includes('¿Qué significa?'), 'la leyenda didáctica está')
   afirmarSinXSS(cont.innerHTML, 'portal del estudiante: mi asistencia')
 })
 
@@ -894,6 +899,8 @@ test('renderResumenAsistencia y renderMiAsistencia: números entregados como TEX
     ${extraerFuncion('colorAsistencia')}
     ${extraerFuncion('chipAsistencia')}
     ${extraerFuncion('renderResumenAsistencia')}
+    ${extraerFuncion('chipAsistencia')}
+    ${extraerFuncion('granNumeroAsistencia')}
     ${extraerFuncion('renderMiAsistencia')}
     // El backend normaliza, pero si algo intermedio entrega strings
     // ("012", "25"), el render debe mostrar 12 y 25, sin comillas
@@ -918,11 +925,13 @@ test('renderResumenAsistencia y renderMiAsistencia: números entregados como TEX
   assert.ok(resumen.innerHTML.includes('25% · Crítica'), 'porcentaje del resumen: "25" → 25 (texto con etiqueta)')
   assert.ok(resumen.innerHTML.includes('width:25%'), 'ancho de barra del resumen: 25%')
   assert.ok(!resumen.innerHTML.includes('"012"') && !resumen.innerHTML.includes('>012<'), 'ningún "012" crudo en el resumen')
-  // /mia
-  assert.ok(mia.innerHTML.includes('3 inasistencia(s)'), 'totales de /mia: "003" → 3')
+  // /mia (asistencia compacta del panel: 3 números grandes + barra por materia)
+  assert.ok(mia.innerHTML.includes('>3<'), 'número grande de inasistencias: "003" → 3')
+  assert.ok(mia.innerHTML.includes('>1<'), 'número grande de tardanzas: "1" → 1')
   assert.ok(mia.innerHTML.includes('12 sesión(es)'), 'sesiones de /mia: "012" → 12')
-  assert.ok(mia.innerHTML.includes('>25% de inasistencia'), 'porcentaje de /mia: "25" → 25')
+  assert.ok(mia.innerHTML.includes('25% · Crítica'), 'porcentaje de /mia: "25" → 25 (texto con etiqueta)')
   assert.ok(mia.innerHTML.includes('width:25%'), 'ancho de barra de /mia: 25%')
+  assert.ok(mia.innerHTML.includes('¿Qué significa?'), 'la leyenda con los umbrales está presente')
   assert.ok(!mia.innerHTML.includes('>012<') && !mia.innerHTML.includes('>003'), 'ningún número-crudo en /mia')
 })
 
@@ -1194,9 +1203,11 @@ test('menú del admin: cada ítem del arreglo apunta a un botón y una sección 
 
 test('menú del admin: ni botones ni secciones quedan fuera del arreglo central', () => {
   const menu = extraerMenuAdmin()
-  const navsHtml = [...HTML.matchAll(/id="(nav-[a-z-]+)"/g)].map(x => x[1])
+  // Solo los botones del ADMIN: el portal del estudiante tiene su propio
+  // arreglo MENU_ESTUDIANTE con sus nav-est-*
+  const navsHtml = [...HTML.matchAll(/id="(nav-(?!est-)[a-z-]+)"/g)].map(x => x[1])
   const seccionesHtml = [...HTML.matchAll(/id="(admin-[a-z-]+-section)"/g)].map(x => x[1])
-  assert.equal(navsHtml.length, 11, 'hay exactamente 11 botones nav-* en el HTML')
+  assert.equal(navsHtml.length, 11, 'hay exactamente 11 botones nav-* del ADMIN en el HTML')
   assert.equal(seccionesHtml.length, 11, 'hay exactamente 11 secciones admin-*-section en el HTML')
   for (const n of navsHtml) assert.ok(menu.some(m => m.nav === n), `el botón ${n} NO está en MENU_ADMIN: nunca se resaltaría`)
   for (const s of seccionesHtml) assert.ok(menu.some(m => m.seccion === s), `la sección ${s} NO está en MENU_ADMIN: nunca se ocultaría al cambiar de menú`)
@@ -1405,4 +1416,152 @@ test('Mi rendimiento: layout responsive en clases CSS (contenedor único + 2 col
   assert.match(pintar, /promedio-bar/, 'pintarNotasEstudiante actualiza la barra del promedio')
   assert.match(pintar, /promNum \/ 5 \* 100/, 'el % es promedio/5*100 con Number()')
   assert.match(pintar, /promedio-porc/, 'y el texto del porcentaje')
+})
+
+// ═══════════════════════════════════════════════════════════════
+// PANEL LATERAL DEL ESTUDIANTE: MENU_ESTUDIANTE como fuente única,
+// mostrarSeccionEstudiante que nunca apila, drawer móvil con Escape
+// y el boletín del panel alimentado por _boletinesDisponibles.
+// ═══════════════════════════════════════════════════════════════
+
+function bloqueMenuEstudiante() {
+  const bloque = HTML.match(/const MENU_ESTUDIANTE = \[[\s\S]*?\n\]/)
+  assert.ok(bloque, 'debe existir el arreglo MENU_ESTUDIANTE en el HTML')
+  return bloque[0]
+}
+function extraerMenuEstudiante() {
+  return new Function(bloqueMenuEstudiante() + '\nreturn MENU_ESTUDIANTE')()
+}
+
+test('menú del estudiante: cada ítem con sección apunta a un botón y una sección que existen en el HTML', () => {
+  const menu = extraerMenuEstudiante()
+  for (const m of menu) {
+    assert.ok(HTML.includes(`id="${m.nav}"`), `falta el botón #${m.nav} en el panel del estudiante`)
+    if (m.seccion) {
+      assert.ok(HTML.includes(`id="${m.seccion}"`), `falta la sección #${m.seccion}`)
+    }
+  }
+  // Inversa: TODOS los botones nav-est-* del HTML están en el arreglo
+  const navsHtml = [...HTML.matchAll(/id="(nav-est-[\w-]+)"/g)].map(x => x[1])
+  assert.equal(new Set(navsHtml).size, navsHtml.length, 'sin botones duplicados')
+  for (const n of navsHtml) assert.ok(menu.some(m => m.nav === n), `el botón ${n} NO está en MENU_ESTUDIANTE`)
+  // Inversa 2: TODAS las secciones est-*-section del HTML están en el arreglo
+  const seccionesHtml = [...HTML.matchAll(/id="(est-[\w-]*-section)"/g)].map(x => x[1])
+  for (const s of seccionesHtml) assert.ok(menu.some(m => m.seccion === s), `la sección ${s} NO está en MENU_ESTUDIANTE`)
+  // El estudiante NUNCA ve ítems ni secciones de otros roles
+  for (const m of menu) {
+    assert.ok(m.nav.startsWith('nav-est-'), `${m.nav} es del portal del estudiante`)
+    assert.ok(m.seccion === null || m.seccion.startsWith('est-'), `${m.seccion} no es de docente/admin`)
+  }
+})
+
+test('mostrarSeccionEstudiante: muestra SOLO la sección pedida y nunca apila', () => {
+  const menu = extraerMenuEstudiante()
+  const nodos = {}
+  for (const m of menu) {
+    if (m.nav) nodos[m.nav] = { style: {}, offsetTop: 10, setAttribute() {} }
+    if (m.seccion) nodos[m.seccion] = { style: {} }
+  }
+  nodos['est-sidebar-indicador'] = { style: {} }
+  const document = { getElementById: id => nodos[id] }
+  const window = { scrollTo() {} }
+  new Function('document', 'window', `
+    ${bloqueMenuEstudiante()}
+    ${extraerFuncion('actualizarNavEstudiante')}
+    ${extraerFuncion('mostrarSeccionEstudiante')}
+    ${extraerFuncion('cerrarSidebarEstudiante')}
+    mostrarSeccionEstudiante('est-notas-section')
+    mostrarSeccionEstudiante('est-asistencia-section')
+  `)(document, window)
+  assert.equal(nodos['est-asistencia-section'].style.display, '', 'la sección pedida queda visible')
+  assert.equal(nodos['est-notas-section'].style.display, 'none', 'la sección anterior se oculta al cambiar')
+  for (const m of menu) {
+    if (!m.seccion) continue
+    const esperado = m.seccion === 'est-asistencia-section' ? '' : 'none'
+    assert.equal(nodos[m.seccion].style.display, esperado, `${m.seccion} debe quedar en ${esperado}`)
+  }
+  // El ítem activo queda resaltado y el indicador dorado visible
+  assert.equal(nodos['nav-est-asistencia'].style.fontWeight, '700', 'el ítem activo resaltado')
+  assert.equal(nodos['est-sidebar-indicador'].style.opacity, '1', 'el indicador dorado está visible')
+})
+
+test('drawer del estudiante: hamburguesa con aria-expanded, Escape lo cierra', () => {
+  const nodos = {
+    'est-sidebar': { classList: { toggled: false, toggle() { this.toggled = !this.toggled; return this.toggled }, remove() { this.toggled = false } }, style: {} },
+    'btn-sidebar-est': { setAttribute(k, v) { this[k] = v } },
+    'est-sidebar-overlay': { classList: { visible: false, toggle(_c, on) { this.visible = !!on }, remove() { this.visible = false } } },
+  }
+  const document = { getElementById: id => nodos[id] }
+  new Function('document', `
+    ${extraerFuncion('alternarSidebarEstudiante')}
+    ${extraerFuncion('cerrarSidebarEstudiante')}
+    alternarSidebarEstudiante()
+  `)(document)
+  assert.equal(nodos['btn-sidebar-est'].getAttribute, undefined, 'sanity')
+  assert.equal(nodos['btn-sidebar-est']['aria-expanded'], 'true', 'la hamburguesa queda aria-expanded=true al abrir')
+  assert.ok(nodos['est-sidebar'].classList.toggled, 'el panel tiene la clase abierto')
+  assert.ok(nodos['est-sidebar-overlay'].classList.visible, 'el overlay aparece')
+  new Function('document', `
+    ${extraerFuncion('alternarSidebarEstudiante')}
+    ${extraerFuncion('cerrarSidebarEstudiante')}
+    cerrarSidebarEstudiante()
+  `)(document)
+  assert.equal(nodos['btn-sidebar-est']['aria-expanded'], 'false', 'cerrar devuelve aria-expanded=false')
+  assert.ok(!nodos['est-sidebar'].classList.toggled, 'la clase abierto se retira')
+  assert.ok(!nodos['est-sidebar-overlay'].classList.visible, 'el overlay desaparece')
+  // Escape está cableado
+  assert.ok(HTML.includes("e.key === 'Escape'"), 'Escape cierra el panel (listener global)')
+  assert.ok(HTML.includes('aria-label="Abrir menú del portal"'), 'la hamburguesa tiene aria-label')
+  assert.ok(HTML.includes('aria-label="Menú del estudiante"'), 'el nav del panel tiene aria-label')
+})
+
+test('boletín del panel: lista solo los publicados del año en curso o el mensaje amable', () => {
+  const lista = { innerHTML: '', style: { display: 'none' } }
+  const badge = { textContent: '', style: { display: 'none' }, innerHTML: '' }
+  const nodos = {
+    'est-boletin-lista': lista,
+    'est-boletin-badge': badge,
+    'nav-est-boletin': { setAttribute(k, v) { this[k] = v } },
+  }
+  const document = { getElementById: id => nodos[id] }
+  // Con publicados: un botón por período
+  new Function('document', `
+    let _boletinesDisponibles = [1, 3]
+    ${extraerFuncion('renderBoletinMenuEstudiante')}
+    ${extraerFuncion('toggleBoletinMenuEstudiante')}
+    renderBoletinMenuEstudiante()
+  `)(document)
+  assert.ok(lista.innerHTML.includes('Boletín período 1'), 'lista el período 1 publicado')
+  assert.ok(lista.innerHTML.includes('Boletín período 3'), 'lista el período 3 publicado')
+  assert.ok(!lista.innerHTML.includes('Boletín período 2'), 'NO lista períodos no publicados')
+  assert.ok(!lista.innerHTML.includes('Aún no hay'), 'con publicados no sale el mensaje de vacío')
+  // Sin publicados: mensaje amable
+  new Function('document', `
+    let _boletinesDisponibles = []
+    ${extraerFuncion('renderBoletinMenuEstudiante')}
+    renderBoletinMenuEstudiante()
+  `)(document)
+  assert.ok(lista.innerHTML.includes('Aún no hay boletines publicados'), 'sin publicados sale el mensaje amable')
+  // El badge se refresca con la fuente de verdad
+  new Function('document', `
+    let _boletinesDisponibles = []
+    ${extraerFuncion('refreshBoletinMenuEstudiante')}
+    _boletinesDisponibles = [2, 4]
+    refreshBoletinMenuEstudiante()
+  `)(document)
+  assert.equal(badge.textContent, 2, 'el badge cuenta los publicados')
+  assert.equal(badge.style.display, '', 'y se hace visible')
+  // clicBoletinItem: delegación con data-periodo → verBoletin(p)
+  let llamado = null
+  const verBoletin = p => { llamado = p }
+  new Function('document', 'verBoletin', `
+    ${extraerFuncion('cerrarSidebarEstudiante')}
+    ${extraerFuncion('clicBoletinItem')}
+    clicBoletinItem({ target: { closest: () => ({ dataset: { periodo: '3' } }) } })
+  `)(document, verBoletin)
+  assert.equal(llamado, '3', 'el ítem del boletín abre verBoletin con el período del data-attribute')
+  // verBoletin acepta el período pedido y respeta el candado server-side
+  const vb = extraerFuncion('verBoletin')
+  assert.match(vb, /periodoPedido/, 'verBoletin acepta un período opcional')
+  assert.match(vb, /includes\(pedido\)/, 'solo lo abre si está en la lista de publicados')
 })
