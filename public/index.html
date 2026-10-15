@@ -2016,6 +2016,11 @@ function showStudentPortal(user) {
 
 // ─── Carga de datos del estudiante (período activo + notas) ───
 async function cargarDatosEstudiante() {
+  // La asistencia es una carga independiente del bootstrap y del período:
+  // arranca en paralelo con su propio manejo de error. (Bug del "Cargando..."
+  // eterno: antes la llamada vivía en el flujo del docente y nunca corría
+  // en el portal del estudiante.)
+  cargarMiAsistencia()
   // ── BOOTSTRAP: todo el portal en UNA llamada (login+bootstrap = 2 requests
   // por estudiante; antes eran 5). En la ráfaga de resultados, el contador
   // anti-DDoS de Vercel crece al 40% — la mitad de bloqueados.
@@ -2260,11 +2265,6 @@ async function cargarAsignaciones() {
 
         if (selectedCurso && selectedMateria) {
       cargarGrupo();
-      if (currentUser && currentUser.rol === 'ESTUDIANTE') {
-        cargarNotasEstudiante();
-        cargarEstadoCorte();
-        cargarMiAsistencia();
-      }
       // Check if teacher is a director
       try {
         const dirRes = await fetch(API + '/api/notas/soy-director', { headers: { 'Authorization': 'Bearer ' + currentToken } })
