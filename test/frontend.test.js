@@ -1327,7 +1327,9 @@ test('renderMiRendimiento: tarjeta del período SELECCIONADO, acordeones por mat
   assert.ok(grid.innerHTML.includes('Materias por reforzar'), 'la tarjeta de materias por reforzar está')
   assert.ok(grid.innerHTML.includes('Comparación con el promedio del curso no disponible'), 'la nota discreta aparece sin comparación')
   assert.ok(!grid.innerHTML.includes('3.91'), 'SIN comparación no aparece ningún valor del curso')
-  assert.ok(!grid.innerHTML.includes(' · Curso: '), 'sin marcadores del curso en los tooltips de las barras')
+  assert.ok(!grid.innerHTML.includes('class="rend-barra-curso"'), 'SIN comparación no hay barras del curso')
+  assert.ok(grid.innerHTML.includes('>Yo</text>'), 'mini-rótulo Yo bajo mi barra')
+  assert.ok(!grid.innerHTML.includes('>Curso</text>'), 'SIN comparación no hay mini-rótulo Curso')
   assert.ok(grid.innerHTML.includes('P1: 2.75 · P2: 3.25 · P4: 4.6'), 'el texto equivalente de la línea (anual) solo menciona períodos con nota')
   assert.ok(grid.innerHTML.includes('>3.5<'), '"3.50" → 3.5 en la barra de la materia')
   assert.ok(grid.innerHTML.includes('>4<'), '"04.0" → 4 en la barra de la materia')
@@ -1362,19 +1364,31 @@ test('renderMiRendimiento con comparación: acordeones, marcador del curso POR P
     })
     return svgBarrasMateriaEstudiante({ '1': '3.50', '2': '04.0', '3': null, '4': undefined }, { '1': 3.0, '2': 3.2, '3': null, '4': null }, 2)
   `)(document)
-  // La gráfica por materia: viewBox del tamaño real (no se encoge), solo
-  // hasta el período seleccionado, con el promedio del curso de CADA período
+  // La gráfica por materia: DOS barras por período (Yo + Curso), viewBox
+  // del tamaño real, guía 3.0 detrás con rótulo a la izquierda, sin líneas
+  // punteadas del curso, textos dentro del viewBox
   assert.ok(svgMat.includes('viewBox="0 0 420 240"'), 'viewBox 420x240: coincide con el ancho real del acordeón (fuentes legibles)')
-  assert.equal((svgMat.match(/class="rend-barra-est"/g) || []).length, 2, 'solo 2 barras: hasta el período seleccionado')
+  assert.equal((svgMat.match(/class="rend-barra-est"/g) || []).length, 2, '2 barras MÍAS: una por período hasta el seleccionado')
+  assert.equal((svgMat.match(/class="rend-barra-curso"/g) || []).length, 2, '2 barras DEL CURSO: una por período (gris, comparativa)')
   assert.ok(svgMat.includes('>P1</text>') && svgMat.includes('>P2</text>'), 'ejes P1 y P2')
   assert.ok(!svgMat.includes('>P3</text>') && !svgMat.includes('>P4</text>'), 'SIN períodos futuros (P3/P4) en la gráfica por materia')
-  assert.ok(svgMat.includes('>3</text>'), 'marcador del curso del P1 (3.0 → 3)')
-  assert.ok(svgMat.includes('3.2'), 'marcador del curso del P2 con su valor')
+  assert.ok(svgMat.includes('>Yo</text>') && svgMat.includes('>Curso</text>'), 'mini-rótulos Yo y Curso bajo cada par (identificación por texto)')
+  assert.ok(svgMat.includes('>3.0</text>'), 'rótulo de la guía 3.0 a la izquierda')
+  assert.ok(!svgMat.includes('3.0 Aprueba'), 'sin "Aprueba" dentro del gráfico (va en la leyenda/aria)')
+  assert.ok(!svgMat.includes('stroke-dasharray:6 3'), 'SIN línea punteada burdeú del curso (ahora es barra)')
+  assert.ok(svgMat.includes('>3.5</text>') && svgMat.includes('>4</text>'), 'mis notas encima de mis barras (3.50→3.5, 04.0→4)')
+  assert.ok(svgMat.includes('>3</text>') && svgMat.includes('>3.2</text>'), 'promedios del curso encima de sus barras (3.0→3, 3.2)')
   assert.ok(svgMat.includes('hasta el período 2'), 'aria-label declara el alcance')
   assert.ok(!svgMat.includes('NaN'), 'nada de NaN')
-  // El render completo: acordeón + leyenda por período
+  // Ningún texto cortado: todos los x dentro de 0..420
+  const xs = [...svgMat.matchAll(/<text x="(\d+(?:\.\d+)?)"/g)].map(m => Number(m[1]))
+  assert.ok(xs.length > 0, 'hay textos con x medible')
+  for (const x of xs) {
+    assert.ok(x >= 0 && x <= 420, 'todo <text> dentro del viewBox (x=' + x + ')')
+  }
+  // El render completo: acordeón + leyenda nueva
   assert.ok(grid.innerHTML.includes('data-mat="0"'), 'acordeón por materia')
-  assert.ok(grid.innerHTML.includes('Promedio del curso en cada período'), 'leyenda del marcador por período')
+  assert.ok(grid.innerHTML.includes('Mi nota (el color indica el nivel)'), 'leyenda con los 4 colores de nivel')
   afirmarSinXSS(grid.innerHTML + svgMat, 'Mi rendimiento con comparación')
 })
 
