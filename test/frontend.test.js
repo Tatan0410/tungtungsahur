@@ -1167,3 +1167,103 @@ test('htmlEncabezadoImpresionRend: membrete institucional sin datos inventados',
   assert.ok(html.includes('Año 2026'), 'el año del encabezado es el consultado')
   afirmarSinXSS(html, 'encabezado de impresión de la ficha')
 })
+
+// ═══════════════════════════════════════════════════════════════
+// MENÚ DEL ADMIN: pestañas de una sola sección visible (fix/menu-admin)
+// MENU_ADMIN es la fuente única; mostrarSeccionAdmin oculta todo lo
+// demás y muestra solo la elegida.
+// ═══════════════════════════════════════════════════════════════
+
+function bloqueMenuAdmin() {
+  const bloque = HTML.match(/const MENU_ADMIN = \[[\s\S]*?\n\]/)
+  assert.ok(bloque, 'debe existir el arreglo MENU_ADMIN en el HTML')
+  return bloque[0]
+}
+function extraerMenuAdmin() {
+  return new Function(bloqueMenuAdmin() + '\nreturn MENU_ADMIN')()
+}
+
+test('menú del admin: cada ítem del arreglo apunta a un botón y una sección que existen en el HTML', () => {
+  const menu = extraerMenuAdmin()
+  assert.equal(menu.length, 11, 'son 11 ítems en el menú')
+  for (const m of menu) {
+    assert.ok(HTML.includes(`id="${m.nav}"`), `falta el botón #${m.nav} en el sidebar`)
+    assert.ok(HTML.includes(`id="${m.seccion}"`), `falta la sección #${m.seccion} en el HTML`)
+  }
+})
+
+test('menú del admin: ni botones ni secciones quedan fuera del arreglo central', () => {
+  const menu = extraerMenuAdmin()
+  const navsHtml = [...HTML.matchAll(/id="(nav-[a-z-]+)"/g)].map(x => x[1])
+  const seccionesHtml = [...HTML.matchAll(/id="(admin-[a-z-]+-section)"/g)].map(x => x[1])
+  assert.equal(navsHtml.length, 11, 'hay exactamente 11 botones nav-* en el HTML')
+  assert.equal(seccionesHtml.length, 11, 'hay exactamente 11 secciones admin-*-section en el HTML')
+  for (const n of navsHtml) assert.ok(menu.some(m => m.nav === n), `el botón ${n} NO está en MENU_ADMIN: nunca se resaltaría`)
+  for (const s of seccionesHtml) assert.ok(menu.some(m => m.seccion === s), `la sección ${s} NO está en MENU_ADMIN: nunca se ocultaría al cambiar de menú`)
+})
+
+test('menú del admin: pares nav↔sección únicos en el arreglo (sin duplicados)', () => {
+  const menu = extraerMenuAdmin()
+  assert.equal(new Set(menu.map(m => m.nav)).size, menu.length, 'ningún nav repetido')
+  assert.equal(new Set(menu.map(m => m.seccion)).size, menu.length, 'ninguna sección repetida')
+  const navs = new Set(menu.map(m => m.nav))
+  const secciones = new Set(menu.map(m => m.seccion))
+  assert.equal(navs.size + secciones.size, 22, '11 navs + 11 secciones, todos distintos entre sí')
+})
+
+test('mostrarSeccionAdmin: muestra SOLO la sección pedida y oculta todas las demás', () => {
+  const menu = extraerMenuAdmin()
+  const nodos = {}
+  for (const m of menu) {
+    nodos[m.nav] = { style: {}, offsetTop: 10 }
+    nodos[m.seccion] = { style: {}, classList: { remove() {}, add() {} }, offsetWidth: 0 }
+  }
+  nodos['sidebar-indicador'] = { style: {} }
+  const document = { getElementById: id => nodos[id] }
+  const window = { scrollTo() {} }
+  new Function('document', 'window', `
+    let _navActivoId = null
+    ${bloqueMenuAdmin()}
+    ${extraerFuncion('mostrarSeccion')}
+    ${extraerFuncion('actualizarNavActivo')}
+    ${extraerFuncion('mostrarSeccionAdmin')}
+    mostrarSeccionAdmin('admin-profesores-section')
+    mostrarSeccionAdmin('admin-asistencia-section')
+  `)(document, window)
+  // Tras cambiar dos veces: SOLO asistencia queda visible; profesores
+  // (la anterior) vuelve a none — el menú se comporta como pestañas.
+  assert.equal(nodos['admin-asistencia-section'].style.display, 'block', 'la sección pedida queda visible')
+  assert.equal(nodos['admin-profesores-section'].style.display, 'none', 'la sección anterior se oculta al cambiar')
+  for (const m of menu) {
+    const esperado = m.seccion === 'admin-asistencia-section' ? 'block' : 'none'
+    assert.equal(nodos[m.seccion].style.display, esperado, `${m.seccion} debe quedar en ${esperado}`)
+  }
+})
+
+test('mostrarSeccionAdmin: nav-asistencia queda resaltado y los demás sin resaltado', () => {
+  const menu = extraerMenuAdmin()
+  const nodos = {}
+  for (const m of menu) {
+    nodos[m.nav] = { style: {}, offsetTop: 10 }
+    nodos[m.seccion] = { style: {}, classList: { remove() {}, add() {} }, offsetWidth: 0 }
+  }
+  nodos['sidebar-indicador'] = { style: {} }
+  const document = { getElementById: id => nodos[id] }
+  const window = { scrollTo() {} }
+  new Function('document', 'window', `
+    let _navActivoId = null
+    ${bloqueMenuAdmin()}
+    ${extraerFuncion('mostrarSeccion')}
+    ${extraerFuncion('actualizarNavActivo')}
+    ${extraerFuncion('mostrarSeccionAdmin')}
+    mostrarSeccionAdmin('admin-asistencia-section')
+  `)(document, window)
+  assert.equal(nodos['nav-asistencia'].style.fontWeight, '700', 'nav-asistencia resaltado (antes nunca lo estaba)')
+  assert.equal(nodos['nav-asistencia'].style.background, 'var(--cream-100)', 'nav-asistencia con fondo activo')
+  for (const m of menu) {
+    if (m.nav === 'nav-asistencia') continue
+    assert.equal(nodos[m.nav].style.fontWeight, '400', `${m.nav} sin resaltado`)
+    assert.equal(nodos[m.nav].style.background, 'transparent', `${m.nav} con fondo normal`)
+  }
+  assert.equal(nodos['sidebar-indicador'].style.opacity, '1', 'el indicador dorado queda visible')
+})

@@ -3357,9 +3357,42 @@ function mostrarToast(tipo, msg) {
 
 // ---- ADMIN PANEL ----
 
+// Fuente única de verdad del menú lateral del admin: nav ↔ sección.
+// Agregar una sección nueva es agregar UNA línea aquí (más su botón en el
+// sidebar y su contenedor en el HTML). mostrarSeccionAdmin oculta TODAS las
+// demás y muestra solo la elegida: el menú se comporta como pestañas.
+const MENU_ADMIN = [
+  { nav: 'nav-profesores', seccion: 'admin-profesores-section' },
+  { nav: 'nav-admins', seccion: 'admin-admins-section' },
+  { nav: 'nav-materias', seccion: 'admin-materias-section' },
+  { nav: 'nav-areas', seccion: 'admin-areas-section' },
+  { nav: 'nav-asignaciones', seccion: 'admin-asignaciones-section' },
+  { nav: 'nav-periodos', seccion: 'admin-periodos-section' },
+  { nav: 'nav-reporte', seccion: 'admin-reporte-corte-section' },
+  { nav: 'nav-estudiantes', seccion: 'admin-estudiantes-section' },
+  { nav: 'nav-directores', seccion: 'admin-directores-section' },
+  { nav: 'nav-obs', seccion: 'admin-obs-section' },
+  { nav: 'nav-asistencia', seccion: 'admin-asistencia-section' },
+]
+
+// Muestra SOLO la sección pedida (pestañas): oculta todas las demás del
+// menú, reusa el cross-fade de mostrarSeccion, marca el ítem activo del
+// sidebar y sube el scroll al inicio. Idempotente: los loaders paginados
+// (Obs/Estudiantes) pueden re-llamarla sin romper nada.
+function mostrarSeccionAdmin(idSeccion) {
+  for (const m of MENU_ADMIN) {
+    const el = document.getElementById(m.seccion)
+    if (el && m.seccion !== idSeccion) el.style.display = 'none'
+  }
+  mostrarSeccion(idSeccion)
+  const item = MENU_ADMIN.find(m => m.seccion === idSeccion)
+  if (item) actualizarNavActivo(item.nav)
+  window.scrollTo(0, 0)
+}
+
 function actualizarNavActivo(idActivo) {
   _navActivoId = idActivo
-  const botones = ['nav-profesores','nav-admins','nav-materias','nav-areas','nav-asignaciones','nav-periodos','nav-reporte','nav-estudiantes','nav-directores','nav-obs']
+  const botones = MENU_ADMIN.map(m => m.nav)
   botones.forEach(id => {
     const b = document.getElementById(id)
     if (b) {
@@ -3428,17 +3461,7 @@ let _areasData = []
 let _materiasLista = []
 
 async function cargarAdminAreas() {
-  document.getElementById('admin-profesores-section').style.display = 'none'
-  document.getElementById('admin-asignaciones-section').style.display = 'none'
-  document.getElementById('admin-materias-section').style.display = 'none'
-  document.getElementById('admin-admins-section').style.display = 'none'
-  document.getElementById('admin-periodos-section').style.display = 'none'
-  document.getElementById('admin-obs-section').style.display = 'none'
-  document.getElementById('admin-directores-section').style.display = 'none'
-  document.getElementById('admin-reporte-corte-section').style.display = 'none'
-  document.getElementById('admin-estudiantes-section').style.display = 'none'
-  mostrarSeccion('admin-areas-section')
-  actualizarNavActivo('nav-areas')
+  mostrarSeccionAdmin('admin-areas-section')
   await poblarFiltroAreasCurso()
   await cargarAreasLista()
 }
@@ -3917,17 +3940,7 @@ function showAdminPortal(user) {
 }
 
 async function cargarAdminProfesores() {
-  mostrarSeccion('admin-profesores-section')
-  document.getElementById('admin-asignaciones-section').style.display = 'none'
-  document.getElementById('admin-materias-section').style.display = 'none'
-  document.getElementById('admin-admins-section').style.display = 'none'
-  document.getElementById('admin-periodos-section').style.display = 'none'
-  document.getElementById('admin-obs-section').style.display = 'none'
-  document.getElementById('admin-estudiantes-section').style.display = 'none'
-  document.getElementById('admin-directores-section').style.display = 'none'
-  document.getElementById('admin-reporte-corte-section').style.display = 'none'
-  document.getElementById('admin-areas-section').style.display = 'none'
-  actualizarNavActivo('nav-profesores')
+  mostrarSeccionAdmin('admin-profesores-section')
   const tb = document.getElementById('admin-tb-profesores')
   tb.innerHTML = skeletonFilas(5)
   try {
@@ -3957,16 +3970,7 @@ async function cargarAdminProfesores() {
 }
 
 async function cargarAdminAsignaciones() {
-  document.getElementById('admin-profesores-section').style.display = 'none'
-  document.getElementById('admin-areas-section').style.display = 'none'
-  mostrarSeccion('admin-asignaciones-section')
-  document.getElementById('admin-periodos-section').style.display = 'none'
-  document.getElementById('admin-obs-section').style.display = 'none'
-  document.getElementById('admin-reporte-corte-section').style.display = 'none'
-  document.getElementById('admin-estudiantes-section').style.display = 'none'
-  document.getElementById('admin-directores-section').style.display = 'none'
-  document.getElementById('admin-areas-section').style.display = 'none'
-  actualizarNavActivo('nav-asignaciones')
+  mostrarSeccionAdmin('admin-asignaciones-section')
   try {
     const [profRes, matRes, curRes] = await Promise.all([
       fetch(API + '/api/admin/profesores', { headers: { 'Authorization': 'Bearer ' + currentToken } }),
@@ -4089,17 +4093,7 @@ async function adminCrearAsignacion() {
 }
 
 async function cargarAdminMaterias() {
-  document.getElementById('admin-profesores-section').style.display = 'none'
-  document.getElementById('admin-areas-section').style.display = 'none'
-  mostrarSeccion('admin-materias-section')
-  document.getElementById('admin-asignaciones-section').style.display = 'none'
-  document.getElementById('admin-periodos-section').style.display = 'none'
-  document.getElementById('admin-obs-section').style.display = 'none'
-  document.getElementById('admin-reporte-corte-section').style.display = 'none'
-  document.getElementById('admin-estudiantes-section').style.display = 'none'
-  document.getElementById('admin-directores-section').style.display = 'none'
-  document.getElementById('admin-areas-section').style.display = 'none'
-  actualizarNavActivo('nav-materias')
+  mostrarSeccionAdmin('admin-materias-section')
   const tb = document.getElementById('admin-tb-materias')
   tb.innerHTML = skeletonFilas(1)
   try {
@@ -4359,18 +4353,7 @@ function cerrarModalProfesor() {
 // ─── ADMINISTRADORES (sección Admins) ───
 
 async function cargarAdminAdmins() {
-  document.getElementById('admin-profesores-section').style.display = 'none'
-  document.getElementById('admin-materias-section').style.display = 'none'
-  document.getElementById('admin-areas-section').style.display = 'none'
-  mostrarSeccion('admin-admins-section')
-  document.getElementById('admin-asignaciones-section').style.display = 'none'
-  document.getElementById('admin-periodos-section').style.display = 'none'
-  document.getElementById('admin-obs-section').style.display = 'none'
-  document.getElementById('admin-reporte-corte-section').style.display = 'none'
-  document.getElementById('admin-estudiantes-section').style.display = 'none'
-  document.getElementById('admin-directores-section').style.display = 'none'
-  document.getElementById('admin-areas-section').style.display = 'none'
-  actualizarNavActivo('nav-admins')
+  mostrarSeccionAdmin('admin-admins-section')
   const tb = document.getElementById('admin-tb-admins')
   tb.innerHTML = skeletonFilas(4)
   try {
@@ -4475,18 +4458,7 @@ async function adminGuardarProfesor() {
 
 // ---- ADMIN: PERIODOS ----
 async function cargarAdminPeriodos() {
-  document.getElementById('admin-profesores-section').style.display = 'none'
-  document.getElementById('admin-asignaciones-section').style.display = 'none'
-  document.getElementById('admin-materias-section').style.display = 'none'
-  document.getElementById('admin-admins-section').style.display = 'none'
-  document.getElementById('admin-areas-section').style.display = 'none'
-  mostrarSeccion('admin-periodos-section')
-  document.getElementById('admin-reporte-corte-section').style.display = 'none'
-  document.getElementById('admin-estudiantes-section').style.display = 'none'
-  document.getElementById('admin-directores-section').style.display = 'none'
-  document.getElementById('admin-obs-section').style.display = 'none'
-  document.getElementById('admin-areas-section').style.display = 'none'
-  actualizarNavActivo('nav-periodos')
+  mostrarSeccionAdmin('admin-periodos-section')
   cargarAdminBoletines() // misma sección: boletines publicados + firma del rector
   cargarCursosMasiva() // selector de impresión masiva
   try {
@@ -5149,16 +5121,7 @@ async function reabrirPeriodo(periodo, anio) {
 }
 
 async function cargarAdminReporteCorte() {
-  document.getElementById('admin-periodos-section').style.display = 'none'
-  document.getElementById('admin-obs-section').style.display = 'none'
-  document.getElementById('admin-asignaciones-section').style.display = 'none'
-  document.getElementById('admin-materias-section').style.display = 'none'
-  document.getElementById('admin-admins-section').style.display = 'none'
-  document.getElementById('admin-estudiantes-section').style.display = 'none'
-  document.getElementById('admin-directores-section').style.display = 'none'
-  document.getElementById('admin-areas-section').style.display = 'none'
-  mostrarSeccion('admin-reporte-corte-section')
-  actualizarNavActivo('nav-reporte')
+  mostrarSeccionAdmin('admin-reporte-corte-section')
 }
 
 async function ejecutarAdminReporteCorte() {
@@ -5467,17 +5430,7 @@ function alternarVisibilidadPassword(btn, idInput) {
 }
 
 async function cargarAdminEstudiantes() {
-  document.getElementById('admin-profesores-section').style.display = 'none'
-  document.getElementById('admin-asignaciones-section').style.display = 'none'
-  document.getElementById('admin-materias-section').style.display = 'none'
-  document.getElementById('admin-admins-section').style.display = 'none'
-  document.getElementById('admin-periodos-section').style.display = 'none'
-  document.getElementById('admin-obs-section').style.display = 'none'
-  document.getElementById('admin-directores-section').style.display = 'none'
-  document.getElementById('admin-reporte-corte-section').style.display = 'none'
-  document.getElementById('admin-areas-section').style.display = 'none'
-  mostrarSeccion('admin-estudiantes-section')
-  actualizarNavActivo('nav-estudiantes')
+  mostrarSeccionAdmin('admin-estudiantes-section')
 
   // Populate grado filter
   const selGrado = document.getElementById('admin-est-grado')
@@ -5688,17 +5641,7 @@ async function adminGuardarCambioCurso() {
 
 // ─── ADMIN: DIRECTORES DE GRUPO ───
 async function cargarAdminDirectores() {
-  document.getElementById('admin-profesores-section').style.display = 'none'
-  document.getElementById('admin-asignaciones-section').style.display = 'none'
-  document.getElementById('admin-materias-section').style.display = 'none'
-  document.getElementById('admin-admins-section').style.display = 'none'
-  document.getElementById('admin-periodos-section').style.display = 'none'
-  document.getElementById('admin-obs-section').style.display = 'none'
-  document.getElementById('admin-estudiantes-section').style.display = 'none'
-  document.getElementById('admin-reporte-corte-section').style.display = 'none'
-  document.getElementById('admin-areas-section').style.display = 'none'
-  mostrarSeccion('admin-directores-section')
-  actualizarNavActivo('nav-directores')
+  mostrarSeccionAdmin('admin-directores-section')
 
   // Load profesores for the select
   try {
@@ -5781,17 +5724,7 @@ async function adminEliminarDirector(id) {
 
 // ─── ADMIN: OBSERVACIONES GLOBALES ───
 async function cargarAdminObservaciones(pagina) {
-  document.getElementById('admin-profesores-section').style.display = 'none'
-  document.getElementById('admin-asignaciones-section').style.display = 'none'
-  document.getElementById('admin-materias-section').style.display = 'none'
-  document.getElementById('admin-admins-section').style.display = 'none'
-  document.getElementById('admin-periodos-section').style.display = 'none'
-  document.getElementById('admin-estudiantes-section').style.display = 'none'
-  document.getElementById('admin-directores-section').style.display = 'none'
-  document.getElementById('admin-reporte-corte-section').style.display = 'none'
-  document.getElementById('admin-areas-section').style.display = 'none'
-  mostrarSeccion('admin-obs-section')
-  actualizarNavActivo('nav-obs')
+  mostrarSeccionAdmin('admin-obs-section')
 
   // Load materias into filters
   try {
@@ -6746,14 +6679,7 @@ function toggleDesgloseAsistencia(ev) {
 // ─── ADMIN: asistencia de cualquier curso ───
 
 async function cargarAdminAsistencia() {
-  document.getElementById('admin-periodos-section').style.display = 'none'
-  document.getElementById('admin-reporte-corte-section').style.display = 'none'
-  document.getElementById('admin-estudiantes-section').style.display = 'none'
-  document.getElementById('admin-directores-section').style.display = 'none'
-  document.getElementById('admin-obs-section').style.display = 'none'
-  document.getElementById('admin-areas-section').style.display = 'none'
-  mostrarSeccion('admin-asistencia-section')
-  actualizarNavActivo('nav-asistencia')
+  mostrarSeccionAdmin('admin-asistencia-section')
   const hoy = hoyBogotaUI()
   const inpDesde = document.getElementById('admin-asist-desde')
   if (!inpDesde.value) inpDesde.value = restarDiasUI(hoy, 30)
