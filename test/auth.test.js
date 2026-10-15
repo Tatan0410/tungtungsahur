@@ -29,6 +29,30 @@ test('login de docente devuelve token y rol DOCENTE', async () => {
   assert.ok(r.data.usuario.docenteId, 'payload debe incluir docenteId')
 })
 
+test('GET /api/auth/yo devuelve los datos frescos incluido estudianteId (Mi rendimiento tras recargar)', async () => {
+  // Estudiante ficticio: restaurarSesion() reconstruye currentUser desde
+  // /yo; sin estudianteId el portal no puede cargar "Mi rendimiento"
+  // después de un F5.
+  const usuId = crypto.randomUUID()
+  db.prepare("INSERT INTO usuarios (id, correo, password, rol, nombre, documento, activo) VALUES (?, NULL, ?, 'ESTUDIANTE', 'EST YO TEST', '88000760', 1)").run(usuId, bcrypt.hashSync('88000760', 4))
+  const estId = crypto.randomUUID()
+  db.prepare('INSERT INTO estudiantes (id, usuarioId, documento, codigo, sede, jornada, grado, curso) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(estId, usuId, '88000760', '88000760', 'PPAL - TRIUNFO', 'MAÑANA', 9, '9999')
+  try {
+    const rLogin = await api.post('/api/auth/login', { body: { documento: '88000760', password: '88000760', aceptaTerminos: true } })
+    assert.equal(rLogin.status, 200)
+    assert.equal(rLogin.data.usuario.estudianteId, estId, 'el LOGIN también debe devolver estudianteId en usuario (solo estaba en el token)')
+    const r = await api.get('/api/auth/yo', { token: rLogin.data.token })
+    assert.equal(r.status, 200)
+    assert.equal(r.data.usuario.rol, 'ESTUDIANTE')
+    assert.equal(r.data.usuario.estudianteId, estId, '/yo debe devolver estudianteId (restaurarSesion reconstruye currentUser desde aquí)')
+    assert.equal(r.data.usuario.curso, '9999', 'datos frescos del perfil')
+    assert.equal(r.data.usuario.sede, 'PPAL - TRIUNFO')
+  } finally {
+    db.prepare('DELETE FROM estudiantes WHERE id = ?').run(estId)
+    db.prepare('DELETE FROM usuarios WHERE id = ?').run(usuId)
+  }
+})
+
 test('contraseña incorrecta → 401', async () => {
   const r = await api.post('/api/auth/login', { body: { documento: ADMIN.documento, password: 'clave-mala', aceptaTerminos: true } })
   assert.equal(r.status, 401)

@@ -2979,7 +2979,11 @@ function pintarNotasEstudiante(data) {
     // Render grades grid
     _notasEstudianteCalificaciones = data.calificaciones || []
     if (vistaNotasActual === 'areas') cargarNotasAreas()
-    else renderStudentGrid(_notasEstudianteCalificaciones)
+    else if (vistaNotasActual === 'rendimiento') {
+      // La ficha de rendimiento es ANUAL (usa el año, no el período): al
+      // cambiar de período NO se toca ese grid — la pestaña y su contenido
+      // siguen alineados; los widgets de arriba ya se actualizaron.
+    } else renderStudentGrid(_notasEstudianteCalificaciones)
     // Update promedio general
     document.getElementById('promedio').textContent = data.promedio ?? '--';
 }

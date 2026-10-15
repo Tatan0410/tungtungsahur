@@ -1291,6 +1291,8 @@ test('Mi rendimiento: la pestaña existe en el submenú y el cableado es correct
   assert.ok(HTML.includes('#vista-notas-row { grid-template-columns:1fr 1fr 1fr;'), 'el submenú del estudiante es de 3 columnas (los switches del docente siguen en 2)')
   assert.match(extraerFuncion('cargarMiRendimiento'), /api\/rendimiento\/estudiante/, 'carga desde el endpoint de la ficha individual')
   assert.match(extraerFuncion('cargarMiRendimiento'), /currentUser\.estudianteId/, 'usa el id del PROPIO token, nunca uno del cliente libre')
+  const pintar = extraerFuncion('pintarNotasEstudiante')
+  assert.match(pintar, /vistaNotasActual === 'rendimiento'/, 'pintarNotasEstudiante respeta la vista Rendimiento al cambiar de período (no la manda al else)')
 })
 
 test('renderMiRendimiento: nombres con payload inertes; sin comparación no hay valores del curso', () => {

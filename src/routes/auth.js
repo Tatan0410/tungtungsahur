@@ -186,6 +186,9 @@ router.post('/login', async (req, res) => {
         documento: usuario.documento,
         rol:    usuario.rol,
         docenteId: usuario.docente?.id || null,
+        // Igual que en el token: el portal del estudiante necesita su id
+        // para cargar "Mi rendimiento" (currentUser sale de aquí).
+        estudianteId: usuario.estudiante?.id || null,
         ...(usuario.estudiante && {
           grado:  usuario.estudiante.grado,
           curso:  usuario.estudiante.curso,
@@ -224,6 +227,10 @@ router.get('/yo', async (req, res) => {
         documento: usuario.documento,
         rol:    usuario.rol,
         docenteId: usuario.docente?.id || null,
+        // Igual que el login: sin esto, tras recargar la página el portal
+        // del estudiante no puede cargar "Mi rendimiento" (restaurarSesion
+        // reconstruye currentUser desde /yo).
+        estudianteId: usuario.estudiante?.id || null,
         ...(usuario.estudiante && {
           grado:  usuario.estudiante.grado,
           curso:  usuario.estudiante.curso,
