@@ -241,6 +241,12 @@ router.get('/estudiante', async (req, res) => {
       if (!cursos.includes(est.curso)) {
         return res.status(403).json({ error: 'No eres el director de grupo de este estudiante' })
       }
+    } else if (req.usuario.rol === 'ESTUDIANTE') {
+      // El estudiante solo puede ver SU propia ficha: el id del token manda.
+      // Pedir el de otro → 403 sin revelar ni su existencia.
+      if (req.usuario.estudianteId !== estudianteId) {
+        return res.status(403).json({ error: 'Solo puedes ver tu propio rendimiento' })
+      }
     } else if (req.usuario.rol !== 'ADMIN') {
       return res.status(403).json({ error: 'Solo el director de grupo puede ver el rendimiento' })
     }

@@ -371,6 +371,14 @@ body::before {
 .rend-tab:hover { background: var(--cream-100); }
 .rend-tab[aria-selected="true"] { background: var(--burgundy-600); border-color: var(--burgundy-600); color: #fff; }
 .rend-tab:focus-visible { outline: 2px solid var(--gold-600); outline-offset: 2px; }
+/* Interactividad de las gráficas compartidas (ficha del director + Mi
+   rendimiento del estudiante): tooltips nativos con <title> + hover
+   suave. Sin librerías; si el navegador no soporta algo, simplemente no
+   hay efecto. */
+.rend-barra-est { transition: opacity .15s var(--ease), transform .15s var(--ease); transform-origin: center bottom; }
+.rend-barra-est:hover { opacity: .78; transform: scaleY(1.04); }
+.rend-punto { transition: r .12s var(--ease); cursor: pointer; }
+.rend-punto:hover { r: 6.5px; }
 
 /* ---------- Micro-interacciones: skeleton, spinner, shake, salida de modales ---------- */
 @keyframes skeletonPulse {
@@ -909,6 +917,7 @@ body::before {
   <div class="vista-row" id="vista-notas-row">
     <div class="vista-opt sel" id="vista-materias" onclick="selVistaNotas('materias')">Materias</div>
     <div class="vista-opt" id="vista-areas" onclick="selVistaNotas('areas')">Áreas</div>
+    <div class="vista-opt" id="vista-rendimiento" onclick="selVistaNotas('rendimiento')">Mi rendimiento</div>
   </div>
 </div>
   <div class="notas-grid" id="notas-grid">
@@ -3272,10 +3281,14 @@ function selVistaNotas(v) {
   vistaNotasActual = v
   document.getElementById('vista-materias').classList.toggle('sel', v === 'materias')
   document.getElementById('vista-areas').classList.toggle('sel', v === 'areas')
+  const vistaRend = document.getElementById('vista-rendimiento')
+  if (vistaRend) vistaRend.classList.toggle('sel', v === 'rendimiento')
   const fila = document.getElementById('vista-notas-row')
   if (fila) fila.classList.toggle('en-areas', v === 'areas')
   if (v === 'materias') {
     renderStudentGrid(_notasEstudianteCalificaciones || [])
+  } else if (v === 'rendimiento') {
+    cargarMiRendimiento()
   } else {
     cargarNotasAreas()
   }
@@ -6878,7 +6891,7 @@ function svgLineaRend(prom) {
     s += '<polyline points="' + puntos.map(q => fx(q.p) + ',' + fy(q.v).toFixed(1)).join(' ') + '" style="fill:none;stroke:var(--gold-600);stroke-width:2.5;stroke-linejoin:round;"></polyline>'
   }
   for (const q of puntos) {
-    s += '<circle class="rend-punto" cx="' + fx(q.p) + '" cy="' + fy(q.v).toFixed(1) + '" r="4.5" style="fill:var(--gold-600);stroke:var(--paper);stroke-width:2;"></circle>'
+    s += '<circle class="rend-punto" cx="' + fx(q.p) + '" cy="' + fy(q.v).toFixed(1) + '" r="4.5" style="fill:var(--gold-600);stroke:var(--paper);stroke-width:2;"><title>P' + q.p + ': ' + String(parseFloat(q.v.toFixed(2))) + '</title></circle>'
     s += '<text x="' + fx(q.p) + '" y="' + (fy(q.v) - 9) + '" text-anchor="middle" style="fill:var(--ink-900);font-size:10px;font-weight:700;">' + String(parseFloat(q.v.toFixed(2))) + '</text>'
   }
   if (!puntos.length) {
@@ -6900,14 +6913,163 @@ function comparativaMateriaRend(est, curso) {
   let s = '<div style="min-width:140px;">'
   s += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">'
   s += '<span style="font-size:9.5px;color:var(--gold-700);font-weight:700;white-space:nowrap;width:54px;">Estudiante</span>'
-  s += '<div class="asist-barra" style="flex:1;min-width:50px;"><div style="width:' + (ve === null ? 0 : Math.round(ve / 5 * 100)) + '%;background:var(--gold-600);"></div></div>'
+  s += '<div class="asist-barra" style="flex:1;min-width:50px;"><div title="Mi nota: ' + fmt(ve) + '" style="width:' + (ve === null ? 0 : Math.round(ve / 5 * 100)) + '%;background:var(--gold-600);"></div></div>'
   s += '<span style="font-size:10.5px;font-weight:700;color:var(--ink-900);min-width:26px;text-align:right;">' + fmt(ve) + '</span></div>'
   s += '<div style="display:flex;align-items:center;gap:6px;">'
   s += '<span style="font-size:9.5px;color:var(--ink-400);font-weight:700;white-space:nowrap;width:54px;">Curso</span>'
-  s += '<div class="asist-barra" style="flex:1;min-width:50px;"><div style="width:' + (vc === null ? 0 : Math.round(vc / 5 * 100)) + '%;background:var(--ink-400);"></div></div>'
+  s += '<div class="asist-barra" style="flex:1;min-width:50px;"><div title="Promedio del curso: ' + fmt(vc) + '" style="width:' + (vc === null ? 0 : Math.round(vc / 5 * 100)) + '%;background:var(--burgundy-600);"></div></div>'
   s += '<span style="font-size:10.5px;font-weight:600;color:var(--ink-600);min-width:26px;text-align:right;">' + fmt(vc) + '</span></div>'
   s += '</div>'
   return s
+}
+
+// ─── Portal del estudiante: "Mi rendimiento" (tercera pestaña del submenú) ───
+// Reusa los helpers de la ficha del director (svgLineaRend, chipNivelRend,
+// comparativaMateriaRend, vigenteRend, textoPromediosRend) sobre
+// GET /api/rendimiento/estudiante, que para ESTUDIANTE solo acepta el id
+// del propio token (pedir el de otro → 403).
+
+async function cargarMiRendimiento() {
+  const grid = document.getElementById('notas-grid')
+  if (!grid) return
+  if (!currentUser || !currentUser.estudianteId) {
+    grid.innerHTML = '<div style="color:var(--ink-400);font-size:13px;padding:20px;text-align:center;">Tu rendimiento no está disponible por ahora.</div>'
+    return
+  }
+  grid.innerHTML = '<div class="skeleton" style="width:60%;height:16px;margin:10px 0;"></div><div class="skeleton" style="width:40%;height:16px;margin:10px 0;"></div>'
+  try {
+    const res = await fetch(API + '/api/rendimiento/estudiante?estudianteId=' + encodeURIComponent(currentUser.estudianteId) + '&anio=' + new Date().getFullYear(), {
+      headers: { 'Authorization': 'Bearer ' + currentToken }
+    })
+    if (!res.ok) {
+      grid.innerHTML = '<div style="color:var(--red-700);font-size:13px;padding:20px;text-align:center;">Error al cargar tu rendimiento <button class="btn-sm" onclick="cargarMiRendimiento()" style="margin-left:8px;">Reintentar</button></div>'
+      return
+    }
+    renderMiRendimiento(await res.json())
+  } catch (e) {
+    grid.innerHTML = '<div style="color:var(--red-700);font-size:13px;padding:20px;text-align:center;">Error de conexión <button class="btn-sm" onclick="cargarMiRendimiento()" style="margin-left:8px;">Reintentar</button></div>'
+  }
+}
+
+function renderMiRendimiento(d) {
+  const grid = document.getElementById('notas-grid')
+  if (!grid) return
+  const num = x => Number(x) || 0
+  const nf = v => {
+    if (v === null || v === undefined || v === '') return '—'
+    const n = Number(v)
+    return isFinite(n) ? String(parseFloat(n.toFixed(2))) : '—'
+  }
+  const data = d || {}
+  const mats = data.porMateria || []
+  const prom = data.promedioPorPeriodo || {}
+  const niveles = data.nivelPorPeriodo || {}
+  const conNotas = mats.some(m => {
+    const defs = m.definitivas || {}
+    for (let p = 1; p <= 4; p++) {
+      const v = defs[String(p)]
+      if (v !== null && v !== undefined && v !== '') return true
+    }
+    return false
+  })
+  let html = ''
+  // Tarjetas: promedio del período más reciente con nota + materias por reforzar
+  let ultP = null
+  for (let p = 4; p >= 1; p--) {
+    const v = prom[String(p)]
+    if (v !== null && v !== undefined && v !== '') { ultP = p; break }
+  }
+  const riesgo = num(data.materiasEnRiesgo)
+  html += '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:stretch;margin-bottom:14px;">'
+  html += '<div style="background:var(--cream-50);border:1px solid var(--line);border-radius:var(--r-md);padding:10px 16px;">'
+  html += '<div style="font-size:10.5px;font-weight:700;color:var(--ink-400);text-transform:uppercase;letter-spacing:.05em;">Mi promedio ' + (ultP !== null ? 'P' + ultP : 'por período') + '</div>'
+  if (ultP !== null) {
+    html += '<div style="font-size:22px;font-weight:700;color:var(--ink-900);font-family:var(--font-d);margin-top:2px;">' + nf(prom[String(ultP)]) + '</div>'
+    html += chipNivelRend(niveles[String(ultP)])
+  } else {
+    html += '<div style="font-size:13px;color:var(--ink-400);margin-top:6px;">Sin notas todavía</div>'
+  }
+  html += '</div>'
+  html += '<div style="background:var(--cream-50);border:1px solid var(--line);border-radius:var(--r-md);padding:10px 16px;">'
+  html += '<div style="font-size:10.5px;font-weight:700;color:var(--ink-400);text-transform:uppercase;letter-spacing:.05em;">Materias por reforzar</div>'
+  html += '<div style="font-size:22px;font-weight:700;font-family:var(--font-d);margin-top:2px;color:' + (riesgo > 0 ? 'var(--red-700)' : 'var(--green-700)') + ';">' + riesgo + '</div>'
+  html += '<div style="font-size:10px;color:var(--ink-400);">Con nota vigente bajo 3.0</div>'
+  html += '</div>'
+  html += '</div>'
+  if (!conNotas) {
+    html += '<div style="background:var(--cream-50);border:1px solid var(--line);border-radius:var(--r-md);padding:22px;text-align:center;color:var(--ink-400);font-size:13px;">Aún no hay notas registradas para este año. Tu rendimiento aparecerá a medida que los docentes publiquen las notas de cada período.</div>'
+    grid.innerHTML = html
+    return
+  }
+  // Línea de evolución por período (la misma gráfica de la ficha del director)
+  html += '<div style="background:var(--paper);border:1px solid var(--line);border-radius:var(--r-md);padding:14px 16px;margin-bottom:14px;">'
+  html += '<div style="font-size:12px;font-weight:700;color:var(--ink-600);margin-bottom:8px;">Mi promedio por período (0 a 5)</div>'
+  html += svgLineaRend(prom)
+  html += '<div style="font-size:11px;color:var(--ink-400);margin-top:6px;">' + esc(textoPromediosRend(prom)) + '. La línea punteada marca 3.0, la nota mínima para aprobar.</div>'
+  html += '</div>'
+  // Por materia: barras P1-P4 coloreadas por nivel + comparativa con el curso
+  if (data.comparacionDisponible) {
+    html += '<div style="font-size:11px;color:var(--ink-600);margin-bottom:10px;display:flex;gap:14px;flex-wrap:wrap;align-items:center;"><span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:var(--gold-600);"></span> Mi nota</span><span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:var(--burgundy-600);"></span> Promedio del curso</span></div>'
+  } else {
+    html += '<div style="font-size:11px;color:var(--ink-400);margin-bottom:10px;">Comparación con el promedio del curso no disponible</div>'
+  }
+  html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;">'
+  for (const m of mats) {
+    const defs = m.definitivas || {}
+    html += '<div style="background:var(--paper);border:1px solid var(--line);border-radius:var(--r-md);padding:14px 16px;">'
+    html += '<div style="font-size:12.5px;font-weight:700;color:var(--ink-900);margin-bottom:8px;">' + esc(m.materiaNombre) + '</div>'
+    html += svgBarrasMateriaEstudiante(defs, data.comparacionDisponible ? m.promedioCurso : null)
+    if (data.comparacionDisponible) {
+      html += comparativaMateriaRend(vigenteRend(defs), m.promedioCurso)
+    }
+    html += '</div>'
+  }
+  html += '</div>'
+  grid.innerHTML = html
+}
+
+// Mini gráfica de barras P1-P4 del estudiante, COLOREADAS POR NIVEL
+// (rojo/ámbar/verde/dorado) con tooltip por barra y, si hay comparación,
+// el promedio del curso como línea burdeú punteada. Los períodos sin
+// nota NO se dibujan (nunca como 0).
+function svgBarrasMateriaEstudiante(definitivas, promedioCurso) {
+  const W = 234, H = 100, pt = 12, pb = 16
+  const fh = H - pt - pb
+  const fy = v => pt + (1 - Math.max(0, Math.min(5, v)) / 5) * fh
+  const colorNota = v => (v >= 4.6 ? 'var(--gold-600)' : v >= 4 ? 'var(--green-500)' : v >= 3 ? 'var(--amber-500)' : 'var(--red-500)')
+  let s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" style="width:100%;height:auto;display:block;" aria-label="Mis notas por período en la materia. ' + esc(textoNotasMateriaRend(definitivas)) + '.">'
+  const y30 = fy(3)
+  s += '<line x1="0" y1="' + y30 + '" x2="' + W + '" y2="' + y30 + '" style="stroke:var(--red-500);stroke-width:1;stroke-dasharray:4 3;"></line>'
+  s += '<text x="' + W + '" y="' + (y30 - 3) + '" text-anchor="end" style="fill:var(--red-700);font-size:8px;font-weight:600;">3.0 Aprueba</text>'
+  const pc = Number(promedioCurso)
+  if (promedioCurso !== null && promedioCurso !== undefined && isFinite(pc)) {
+    const yc = fy(pc)
+    s += '<line x1="0" y1="' + yc + '" x2="' + W + '" y2="' + yc + '" style="stroke:var(--burgundy-600);stroke-width:1.5;stroke-dasharray:6 3;"></line>'
+    s += '<text x="2" y="' + (yc - 3) + '" style="fill:var(--burgundy-700);font-size:8px;font-weight:700;">Curso ' + String(parseFloat(pc.toFixed(2))) + '</text>'
+  }
+  for (let p = 1; p <= 4; p++) {
+    const x = 14 + (p - 1) * 55
+    s += '<text x="' + (x + 17) + '" y="' + (H - 3) + '" text-anchor="middle" style="fill:var(--ink-400);font-size:9px;font-weight:600;">P' + p + '</text>'
+    const v = (definitivas || {})[String(p)]
+    if (v === null || v === undefined || v === '' || !isFinite(Number(v))) continue
+    const val = Math.max(0, Math.min(5, Number(v)))
+    const bh = val / 5 * fh
+    s += '<rect class="rend-barra-est" x="' + x + '" y="' + (pt + fh - bh) + '" width="34" height="' + Math.max(bh, 2) + '" rx="4" style="fill:' + colorNota(val) + ';"><title>P' + p + ': ' + String(parseFloat(val.toFixed(2))) + '</title></rect>'
+    s += '<text x="' + (x + 17) + '" y="' + (pt + fh - bh - 3) + '" text-anchor="middle" style="fill:var(--ink-900);font-size:9px;font-weight:700;">' + String(parseFloat(val.toFixed(2))) + '</text>'
+  }
+  s += '</svg>'
+  return s
+}
+
+// Texto equivalente de las notas por período (solo los que existen)
+function textoNotasMateriaRend(definitivas) {
+  const partes = []
+  for (let p = 1; p <= 4; p++) {
+    const v = (definitivas || {})[String(p)]
+    if (v === null || v === undefined || v === '' || !isFinite(Number(v))) continue
+    partes.push('P' + p + ': ' + String(parseFloat(Number(v).toFixed(2))))
+  }
+  return partes.length ? partes.join(', ') : 'sin notas registradas'
 }
 
 // ─── Ficha individual (reunión de padres) ───

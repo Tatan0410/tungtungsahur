@@ -1276,3 +1276,78 @@ test('la asistencia del estudiante carga desde el flujo del estudiante (bug del 
   const asig = extraerFuncion('cargarAsignaciones')
   assert.ok(!asig.includes('cargarMiAsistencia'), 'la llamada NO vive en cargarAsignaciones (cableado muerto del bug)')
 })
+
+// ═══════════════════════════════════════════════════════════════
+// PORTAL DEL ESTUDIANTE: "Mi rendimiento" (tercera pestaña del submenú)
+// ═══════════════════════════════════════════════════════════════
+
+test('Mi rendimiento: la pestaña existe en el submenú y el cableado es correcto', () => {
+  assert.ok(HTML.includes('id="vista-rendimiento"'), 'existe la pestaña vista-rendimiento junto a Materias/Áreas')
+  assert.ok(HTML.includes("selVistaNotas('rendimiento')"), 'la pestaña invoca selVistaNotas(\'rendimiento\')')
+  const sel = extraerFuncion('selVistaNotas')
+  assert.match(sel, /cargarMiRendimiento\(\)/, 'selVistaNotas carga Mi rendimiento')
+  assert.match(extraerFuncion('cargarMiRendimiento'), /api\/rendimiento\/estudiante/, 'carga desde el endpoint de la ficha individual')
+  assert.match(extraerFuncion('cargarMiRendimiento'), /currentUser\.estudianteId/, 'usa el id del PROPIO token, nunca uno del cliente libre')
+})
+
+test('renderMiRendimiento: nombres con payload inertes; sin comparación no hay valores del curso', () => {
+  const grid = { innerHTML: '' }
+  const nodos = { 'notas-grid': grid }
+  const document = { getElementById: id => nodos[id] }
+  new Function('document', `
+    ${extraerFuncion('esc')}
+    ${extraerFuncion('chipNivelRend')}
+    ${extraerFuncion('vigenteRend')}
+    ${extraerFuncion('textoPromediosRend')}
+    ${extraerFuncion('svgLineaRend')}
+    ${extraerFuncion('comparativaMateriaRend')}
+    ${extraerFuncion('svgBarrasMateriaEstudiante')}
+    ${extraerFuncion('textoNotasMateriaRend')}
+    ${extraerFuncion('renderMiRendimiento')}
+    renderMiRendimiento({
+      estudiante: { nombre: 'EST A', curso: '9999' },
+      promedioPorPeriodo: { '1': 2.75, '2': 3.25, '3': null, '4': 4.6 },
+      nivelPorPeriodo: { '1': 'BAJO', '2': 'BÁSICO', '3': null, '4': 'SUPERIOR' },
+      comparacionDisponible: false, materiasEnRiesgo: 1,
+      porMateria: [{ materiaId: 'm1', materiaNombre: 'MAT ' + ${JSON.stringify(XSS_TAG)}, definitivas: { '1': '3.50', '2': '04.0', '3': null, '4': undefined }, definitivoPonderado: null, nivel: 'BÁSICO', promedioCurso: 3.91 }],
+    })
+  `)(document)
+  assert.ok(grid.innerHTML.includes('Mi promedio P4'), 'la tarjeta muestra el promedio del período más reciente con nota (P4)')
+  assert.ok(grid.innerHTML.includes('Materias por reforzar'), 'la tarjeta de materias por reforzar está')
+  assert.ok(grid.innerHTML.includes('Comparación con el promedio del curso no disponible'), 'la nota discreta aparece sin comparación')
+  assert.ok(!grid.innerHTML.includes('3.91'), 'SIN comparación no aparece ningún valor del curso')
+  assert.ok(grid.innerHTML.includes('P1: 2.75 · P2: 3.25 · P4: 4.6'), 'el texto equivalente de la línea solo menciona períodos con nota')
+  assert.ok(grid.innerHTML.includes('>3.5<'), '"3.50" → 3.5 en la barra de la materia')
+  assert.ok(grid.innerHTML.includes('>4<'), '"04.0" → 4 en la barra de la materia')
+  afirmarSinXSS(grid.innerHTML, 'Mi rendimiento del estudiante')
+})
+
+test('renderMiRendimiento con comparación: barras solo con nota, marcador del curso y leyenda', () => {
+  const grid = { innerHTML: '' }
+  const nodos = { 'notas-grid': grid }
+  const document = { getElementById: id => nodos[id] }
+  new Function('document', `
+    ${extraerFuncion('esc')}
+    ${extraerFuncion('chipNivelRend')}
+    ${extraerFuncion('vigenteRend')}
+    ${extraerFuncion('textoPromediosRend')}
+    ${extraerFuncion('svgLineaRend')}
+    ${extraerFuncion('comparativaMateriaRend')}
+    ${extraerFuncion('svgBarrasMateriaEstudiante')}
+    ${extraerFuncion('textoNotasMateriaRend')}
+    ${extraerFuncion('renderMiRendimiento')}
+    renderMiRendimiento({
+      estudiante: { nombre: 'EST A', curso: '9999' },
+      promedioPorPeriodo: { '1': 3.5 },
+      nivelPorPeriodo: { '1': 'ALTO' },
+      comparacionDisponible: true, materiasEnRiesgo: 0,
+      porMateria: [{ materiaId: 'm1', materiaNombre: 'MAT', definitivas: { '1': '3.50', '2': '04.0', '3': null, '4': undefined }, definitivoPonderado: null, nivel: 'ALTO', promedioCurso: 3.2 }],
+    })
+  `)(document)
+  assert.equal((grid.innerHTML.match(/class="rend-barra-est"/g) || []).length, 2, 'solo 2 barras: los períodos sin nota NO se dibujan (nunca como 0)')
+  assert.ok(grid.innerHTML.includes('Curso 3.2'), 'el marcador del promedio del curso lleva su valor en texto')
+  assert.ok(grid.innerHTML.includes('Mi nota</span>'), 'la leyenda distingue mi nota del curso')
+  assert.ok(grid.innerHTML.includes('aria-label="Mis notas por período'), 'la mini gráfica lleva aria-label')
+  assert.ok(!grid.innerHTML.includes('NaN'), 'nada de NaN')
+  afirmarSinXSS(grid.innerHTML, 'Mi rendimiento con comparación')
+})
