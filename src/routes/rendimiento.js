@@ -276,6 +276,16 @@ router.get('/estudiante', async (req, res) => {
       const promedioCurso = comparacionDisponible
         ? promedio(c.filas.map(f => ultimaVigente(f.definitivas)))
         : null
+      // Promedio del curso POR PERÍODO en esta materia (las gráficas por
+      // materia del portal del estudiante son por período). Misma regla
+      // de anonimato que promedioCurso (≥5 activos); agregado del curso,
+      // sin datos individuales.
+      const promedioCursoPorPeriodo = {}
+      for (let p = 1; p <= 4; p++) {
+        promedioCursoPorPeriodo[String(p)] = comparacionDisponible
+          ? promedio(c.filas.map(f => f.definitivas[p - 1]))
+          : null
+      }
       return {
         materiaId: c.materiaId,
         materiaNombre: c.materiaNombre,
@@ -283,6 +293,7 @@ router.get('/estudiante', async (req, res) => {
         definitivoPonderado: mia ? mia.promedioFinal : null,
         nivel: vigente !== null ? nivelDeDesempeno(vigente) : null,
         promedioCurso,
+        promedioCursoPorPeriodo,
       }
     })
 

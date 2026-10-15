@@ -186,6 +186,14 @@ test('los valores del panel coinciden con calcularConsolidado ejecutado directo'
   assert.deepEqual(im1.definitivas, { '1': fila1.definitivas[0], '2': fila1.definitivas[1], '3': fila1.definitivas[2], '4': fila1.definitivas[3] })
   assert.deepEqual(im2.definitivas, { '1': fila2.definitivas[0], '2': fila2.definitivas[1], '3': fila2.definitivas[2], '4': fila2.definitivas[3] })
   assert.equal(im1.definitivoPonderado, fila1.promedioFinal, 'definitivoPonderado individual = consolidado')
+  // promedioCursoPorPeriodo: el promedio del curso POR PERÍODO en la
+  // materia 1 — la misma aritmética sobre las filas del consolidado directo
+  assert.deepEqual(Object.keys(im1.promedioCursoPorPeriodo), ['1', '2', '3', '4'], 'claves de los 4 períodos')
+  for (let p = 1; p <= 4; p++) {
+    const filasP = directoMat1.map(f => f.definitivas[p - 1]).filter(v => v !== null)
+    const esperadoP = filasP.length ? parseFloat((filasP.reduce((a, b) => a + b, 0) / filasP.length).toFixed(2)) : null
+    assert.equal(im1.promedioCursoPorPeriodo[String(p)], esperadoP, 'promedio del curso P' + p + ' de la materia 1 = consolidado directo')
+  }
 })
 
 test('permisos: no-director 403; curso/estudiante ajeno 403; estudiante 403; admin 200; director de 2 cursos ve ambos', async () => {
@@ -222,6 +230,7 @@ test('permisos: no-director 403; curso/estudiante ajeno 403; estudiante 403; adm
   assert.ok(rPropio.data.estudiante && rPropio.data.estudiante.nombre === 'EST REND TOKEN', 'la ficha propia trae su nombre')
   assert.ok(Array.isArray(rPropio.data.porMateria), 'con porMateria')
   assert.equal(typeof rPropio.data.comparacionDisponible, 'boolean', 'comparacionDisponible booleano')
+  assert.ok(rPropio.data.porMateria.every(m => m.promedioCursoPorPeriodo && Object.keys(m.promedioCursoPorPeriodo).length === 4), 'cada materia trae promedioCursoPorPeriodo con los 4 períodos')
   assert.ok(!JSON.stringify(rPropio.data).includes(estudiantesCreados[0].id), 'la ficha propia no expone ids de otros estudiantes')
 
   assert.equal((await getCurso(tokenAdmin, 'curso=9999')).status, 200, 'admin → /curso 200')
@@ -278,6 +287,7 @@ test('vista individual: SIN datos de terceros; comparación null con < 5 activos
   assert.equal(rAjeno.data.comparacionDisponible, false, '9998 tiene < 5 activos')
   for (const m of rAjeno.data.porMateria) {
     assert.equal(m.promedioCurso, null, 'sin comparación en curso pequeño (anonimato)')
+    assert.deepEqual(m.promedioCursoPorPeriodo, { '1': null, '2': null, '3': null, '4': null }, 'sin comparación → promedioCursoPorPeriodo todo null (anonimato)')
   }
   // 9998 no tiene calificaciones: promedioPorPeriodo todo null (documentado)
   for (const k of ['1', '2', '3', '4']) {
