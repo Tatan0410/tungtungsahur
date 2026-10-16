@@ -106,42 +106,6 @@ const prisma = {
       }))
     },
   },
-  consultaEstudiante: {
-    findUnique: async ({ where }) => {
-      const key = Object.keys(where)[0]
-      if (key === 'estudianteId_periodo_anio') {
-        const { estudianteId, periodo, anio } = where[key]
-        return db.prepare('SELECT * FROM consultas_estudiantes WHERE estudianteId = ? AND periodo = ? AND anio = ?').get(estudianteId, periodo, anio)
-      }
-      return db.prepare('SELECT * FROM consultas_estudiantes WHERE ' + col(key) + ' = ?').get(where[key])
-    },
-    create: async ({ data }) => {
-      const id = uuid()
-      await db.prepare('INSERT INTO consultas_estudiantes (id, estudianteId, periodo, anio, cantidad) VALUES (?, ?, ?, ?, ?)').run(id, data.estudianteId, data.periodo, data.anio, data.cantidad || 0)
-      return db.prepare('SELECT * FROM consultas_estudiantes WHERE id = ?').get(id)
-    },
-    update: async ({ where, data }) => {
-      const { estudianteId, periodo, anio } = where.estudianteId_periodo_anio
-      await db.prepare('UPDATE consultas_estudiantes SET cantidad = cantidad + ? WHERE estudianteId = ? AND periodo = ? AND anio = ?').run(data.cantidad.increment, estudianteId, periodo, anio)
-      return db.prepare('SELECT * FROM consultas_estudiantes WHERE estudianteId = ? AND periodo = ? AND anio = ?').get(estudianteId, periodo, anio)
-    },
-    upsert: async ({ where, update, create }) => {
-      // Atómico en la práctica: intenta el INSERT y en caso de carrera
-      // (UNIQUE) incrementa sobre la fila que la otra conexión creó.
-      const { estudianteId, periodo, anio } = where.estudianteId_periodo_anio
-      const incremento = (update.cantidad && update.cantidad.increment) || 1
-      try {
-        const id = uuid()
-        await db.prepare('INSERT INTO consultas_estudiantes (id, estudianteId, periodo, anio, cantidad) VALUES (?, ?, ?, ?, ?)').run(id, estudianteId, periodo, anio, create.cantidad || incremento)
-        return db.prepare('SELECT * FROM consultas_estudiantes WHERE id = ?').get(id)
-      } catch (e) {
-        const existente = await db.prepare('SELECT * FROM consultas_estudiantes WHERE estudianteId = ? AND periodo = ? AND anio = ?').get(estudianteId, periodo, anio)
-        if (!existente) throw e
-        await db.prepare('UPDATE consultas_estudiantes SET cantidad = cantidad + ? WHERE id = ?').run(incremento, existente.id)
-        return db.prepare('SELECT * FROM consultas_estudiantes WHERE id = ?').get(existente.id)
-      }
-    },
-  },
   calificacion: {
     findMany: async ({ where, include, orderBy }) => {
       const conditions = []

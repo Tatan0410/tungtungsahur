@@ -13,7 +13,7 @@
 // (solo se mantienen los que existan en la BD).
 // Por cada curso podado se borran: estudiantes + sus usuarios (login),
 // calificaciones, notas_items (vía calificacionId), observaciones, columnas,
-// docente_materias, directores_grupo, consultas_estudiantes. Las MATERIAS
+// docente_materias, directores_grupo. Las MATERIAS
 // se quedan. Los DOCENTES se quedan (solo se eliminan sus asignaciones a
 // cursos podados).
 // Aplicación POR PASOS (una sentencia por transacción): el pooler de
@@ -118,8 +118,6 @@ async function main() {
       `DELETE FROM notas_items WHERE calificacionId IN (SELECT ca.id FROM calificaciones ca JOIN estudiantes e ON e.id = ca.estudianteId WHERE e.curso IN (${insCursos}))`],
     ['calificaciones',
       `DELETE FROM calificaciones WHERE estudianteId IN (SELECT id FROM estudiantes WHERE curso IN (${insCursos}))`],
-    ['consultas_estudiantes',
-      `DELETE FROM consultas_estudiantes WHERE estudianteId IN (SELECT id FROM estudiantes WHERE curso IN (${insCursos}))`],
     ['observaciones',
       `DELETE FROM observaciones WHERE estudianteId IN (SELECT id FROM estudiantes WHERE curso IN (${insCursos}))`],
     ['columnas',

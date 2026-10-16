@@ -151,7 +151,6 @@ test('borrar profesor conserva notas y observaciones, limpia la dirección y lib
     db.prepare('DELETE FROM notas_items WHERE calificacionid = ?').run(calificacionId)
     db.prepare('DELETE FROM calificaciones WHERE id = ?').run(calificacionId)
     db.prepare('DELETE FROM observaciones WHERE id = ?').run(obsId)
-    db.prepare('DELETE FROM consultas_estudiantes WHERE estudianteId = ?').run(estudianteId)
     db.prepare("DELETE FROM boletines_publicados WHERE curso = '9999'").run()
     db.prepare("DELETE FROM area_cursos WHERE curso = '9999'").run()
     if (areaMateriaCreadoId) db.prepare('DELETE FROM area_materias WHERE id = ?').run(areaMateriaCreadoId)

@@ -38,7 +38,6 @@ const TABLAS = [
   'calificaciones',
   'notas_items',
   'columnas',
-  'consultas_estudiantes',
   'informes',
   'observaciones',
   'periodos_config',
