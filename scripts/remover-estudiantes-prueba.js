@@ -38,7 +38,6 @@ const { crearCliente } = require('../src/db/cliente')
       // hijos primero (FKs); notas_items cae solo por FK cascade de calificaciones
       await db.prepare(`DELETE FROM observaciones WHERE estudianteId IN (${marcas})`).run(...idsEst)
       await db.prepare(`DELETE FROM informes WHERE estudianteId IN (${marcas})`).run(...idsEst)
-      await db.prepare(`DELETE FROM consultas_estudiantes WHERE estudianteId IN (${marcas})`).run(...idsEst)
       await db.prepare(`DELETE FROM calificaciones WHERE estudianteId IN (${marcas})`).run(...idsEst)
       await db.prepare(`DELETE FROM estudiantes WHERE id IN (${marcas})`).run(...idsEst)
     })()

@@ -88,15 +88,6 @@ CREATE TABLE IF NOT EXISTS notas_items (
     CONSTRAINT notas_items_calificacionId_fkey FOREIGN KEY (calificacionId) REFERENCES calificaciones (id) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS consultas_estudiantes (
-    id TEXT PRIMARY KEY,
-    estudianteId TEXT NOT NULL,
-    periodo INTEGER NOT NULL,
-    anio INTEGER NOT NULL,
-    cantidad INTEGER NOT NULL DEFAULT 0,
-    CONSTRAINT consultas_estudiantes_estudianteId_fkey FOREIGN KEY (estudianteId) REFERENCES estudiantes (id) ON DELETE RESTRICT ON UPDATE CASCADE
-);
-
 CREATE TABLE IF NOT EXISTS informes (
     id TEXT PRIMARY KEY,
     estudianteId TEXT NOT NULL,
@@ -189,7 +180,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS estudiantes_codigo_key ON estudiantes (codigo)
 CREATE UNIQUE INDEX IF NOT EXISTS docentes_usuarioId_key ON docentes (usuarioId);
 CREATE UNIQUE INDEX IF NOT EXISTS docente_materias_materiaId_curso_key ON docente_materias (materiaId, curso);
 CREATE UNIQUE INDEX IF NOT EXISTS calificaciones_estudianteId_materiaId_periodo_anio_key ON calificaciones (estudianteId, materiaId, periodo, anio);
-CREATE UNIQUE INDEX IF NOT EXISTS consultas_estudiantes_estudianteId_periodo_anio_key ON consultas_estudiantes (estudianteId, periodo, anio);
 CREATE UNIQUE INDEX IF NOT EXISTS informes_estudianteId_periodo_anio_key ON informes (estudianteId, periodo, anio);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_nota_item_unique ON notas_items (calificacionId, tipo, descripcion);
 CREATE UNIQUE INDEX IF NOT EXISTS periodos_config_sede_periodo_anio_key ON periodos_config (sede, periodo, anio);

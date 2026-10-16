@@ -37,7 +37,6 @@ test('mi-bootstrap: 200 y el período activo es uno configurado', async () => {
 })
 
 test('mi-bootstrap: sus secciones son IDÉNTICAS a los 4 endpoints individuales', async () => {
-  // Bootstrap PRIMERO: mis-notas individual suma +1 a consultas después
   const boot = await api.get('/api/notas/mi-bootstrap?anio=' + anio, { token: tokenEstudiante })
   assert.equal(boot.status, 200)
 
@@ -55,8 +54,13 @@ test('mi-bootstrap: sus secciones son IDÉNTICAS a los 4 endpoints individuales'
   // Calificaciones: mismo array campo a campo
   assert.deepEqual(boot.data.calificaciones, notas.data.calificaciones, 'calificaciones idénticas a mis-notas')
   assert.equal(boot.data.promedio, notas.data.promedio)
-  // consultasUsadas: bootstrap fue la primera consulta; mis-notas la siguiente
-  assert.equal(notas.data.consultasUsadas, (boot.data.consultasUsadas || 0) + 1, 'el contador sigue sumando 1 por carga')
+  // Consultas: retiradas de raíz — la migración dejó caer la tabla y ya
+  // ninguna respuesta trae el contador. Si el upsert siguiera vivo, el 200
+  // de arriba sería un 500 (tabla inexistente).
+  const tabla = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='consultas_estudiantes'").get()
+  assert.equal(tabla, undefined, 'la tabla de consultas ya no existe en la BD')
+  assert.equal(boot.data.consultasUsadas, undefined, 'bootstrap ya no trae consultasUsadas')
+  assert.equal(notas.data.consultasUsadas, undefined, 'mis-notas ya no trae consultasUsadas')
 
   // Áreas
   assert.deepEqual(boot.data.areas, areas.data.areas, 'áreas idénticas a mis-areas')
@@ -74,4 +78,9 @@ test('mi-bootstrap: solo estudiantes (docente/anon 403/401)', async () => {
   const r = await api.get('/api/notas/mi-bootstrap?anio=' + anio, { token: tokenAdmin })
   assert.equal(r.status, 403)
   assert.match(r.data.error, /Solo para estudiantes/)
+})
+
+test('mis-consultas: el endpoint del contador fue retirado (404)', async () => {
+  const r = await api.get('/api/notas/mis-consultas?periodo=1&anio=' + anio, { token: tokenEstudiante })
+  assert.equal(r.status, 404, 'la ruta ya no existe')
 })

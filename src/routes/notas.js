@@ -112,15 +112,6 @@ async function determinarPeriodoActivoServidor(db, sede, anio) {
 
 // Núcleo de GET /mis-notas (sin el role-check): compartido con el bootstrap
 async function obtenerMisNotas(estudianteId, periodo, anio) {
-  // Upsert ATOMICO: findUnique->create->update tenia carrera con refrescos
-  // rapidos (dos peticiones concurrentes creaban la consulta y una reventaba
-  // con UNIQUE -> 500 intermitente). El upsert es una sola operacion.
-  const consulta = await prisma.consultaEstudiante.upsert({
-    where: { estudianteId_periodo_anio: { estudianteId, periodo, anio } },
-    update: { cantidad: { increment: 1 } },
-    create: { estudianteId, periodo, anio, cantidad: 1 },
-  })
-
   const calificaciones = await prisma.calificacion.findMany({
     where: { estudianteId, periodo, anio },
     include: {
@@ -143,7 +134,6 @@ async function obtenerMisNotas(estudianteId, periodo, anio) {
   return {
     periodo,
     anio,
-    consultasUsadas: consulta.cantidad,
     promedio,
     calificaciones: calificaciones.map(c => {
       const grupos = agruparItems(c.notasItems)
@@ -403,26 +393,6 @@ router.get('/mis-notas', async (req, res) => {
     console.error('Error al obtener notas:', error)
     res.status(500).json({ error: 'Error interno del servidor' })
   }
-})
-
-router.get('/mis-consultas', async (req, res) => {
-  if (req.usuario.rol !== 'ESTUDIANTE') {
-    return res.status(403).json({ error: 'Solo para estudiantes' })
-  }
-
-  const estudianteId = req.usuario.estudianteId
-  const periodo      = parseInt(req.query.periodo) || 1
-  const anio         = parseInt(req.query.anio)    || new Date().getFullYear()
-
-  const consulta = await prisma.consultaEstudiante.findUnique({
-    where: { estudianteId_periodo_anio: { estudianteId, periodo, anio } }
-  })
-
-  res.json({
-    consultasUsadas:    consulta?.cantidad || 0,
-    consultasRestantes: 3 - (consulta?.cantidad || 0),
-    consultasMaximas:   3,
-  })
 })
 
 router.get('/grupo', async (req, res) => {

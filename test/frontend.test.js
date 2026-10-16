@@ -1823,7 +1823,7 @@ test('barra del docente: el correo encoge con ellipsis y a <480px se compacta', 
 })
 
 test('barra del estudiante: la hamburguesa sigue el mismo orden (antes del logo)', () => {
-  const barra = extraerBarra('sc-student', 'query-widget')
+  const barra = extraerBarra('sc-student', 'prom-card')
   const posHam = barra.indexOf('id="btn-sidebar-est"')
   const posLogo = barra.indexOf('class="brand-logo"')
   const posRight = barra.indexOf('class="brand-right"')
@@ -1834,6 +1834,22 @@ test('barra del estudiante: la hamburguesa sigue el mismo orden (antes del logo)
   // El pill del estudiante sigue oculto en móvil como ya estaba
   const m899 = HTML.match(/@media \(max-width:899px\)\s*\{([\s\S]*?)\n\}/)
   assert.ok(m899 && /#sc-student \.brand-right \.period-pill \{ display:none; \}/.test(m899[1]), 'el pill del estudiante sigue oculto <900px')
+})
+
+test('portal del estudiante: el contador de consultas fue retirado', () => {
+  // Ni el widget ni sus nodos ni su CSS
+  assert.ok(!HTML.includes('class="query-widget"'), 'sin la tarjeta de consultas')
+  assert.ok(!HTML.includes('id="consultas-restantes"'), 'sin el número de consultas')
+  assert.ok(!HTML.includes('id="dots-container"'), 'sin los puntitos de accesos')
+  assert.ok(!HTML.includes('Consultas este período'), 'sin la etiqueta Consultas este período')
+  assert.ok(!HTML.includes('.query-widget {'), 'sin el CSS del widget')
+  assert.ok(!HTML.includes('.dot.avail'), 'sin el CSS de los puntitos')
+  // El render de notas ya no consume consultasUsadas ni toca el widget
+  const fn = extraerFuncion('pintarNotasEstudiante')
+  assert.ok(!/consultasUsadas/.test(fn), 'pintarNotasEstudiante no consume consultasUsadas')
+  assert.ok(!/dots-container|consultas-restantes/.test(fn), 'ni toca los nodos del widget')
+  // El promedio general queda como única tarjeta resumen
+  assert.match(HTML, /<div class="prom-card">/, 'la tarjeta de promedio sigue presente')
 })
 
 test('plegado del docente: la flecha solo vive en escritorio y no toca el drawer móvil', () => {

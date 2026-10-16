@@ -15,7 +15,7 @@ const MIGRACION_4 = '20260930120000_materias_unicas'
 
 const TABLAS_ESPERADAS = [
   'usuarios', 'estudiantes', 'docentes', 'materias', 'docente_materias',
-  'notas_items', 'calificaciones', 'consultas_estudiantes', 'informes',
+  'notas_items', 'calificaciones', 'informes',
   'observaciones', 'periodos_config', 'password_resets', 'directores_grupo',
   'columnas', 'intentos_login', 'areas', 'area_materias', 'area_cursos',
   '_prisma_migrations',
@@ -51,7 +51,7 @@ function indices(db) {
   return db.prepare('SELECT name FROM sqlite_master').all().then(r => r.map(x => x.name))
 }
 
-test('una BD vacía queda con las 19 tablas y los índices nuevos', async () => {
+test('una BD vacía queda con las 18 tablas y los índices nuevos', async () => {
   dbNueva = new ClienteSQLite(rutaNueva)
   const esperadas = listarMigraciones().map(m => m.nombre)
   const aplicadas = await aplicarMigraciones(dbNueva)
@@ -61,6 +61,7 @@ test('una BD vacía queda con las 19 tablas y los índices nuevos', async () => 
   const faltantes = TABLAS_ESPERADAS.filter(t => !creadas.includes(t))
   assert.deepEqual(faltantes, [], 'tablas que no se crearon: ' + faltantes.join(', '))
   assert.equal(creadas.filter(t => TABLAS_ESPERADAS.includes(t)).length, TABLAS_ESPERADAS.length)
+  assert.ok(!creadas.includes('consultas_estudiantes'), 'la tabla de consultas fue retirada por la migración')
 
   const creados = await indices(dbNueva)
   for (const [tabla, nombre] of INDICES_ESPERADOS) {

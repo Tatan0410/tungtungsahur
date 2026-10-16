@@ -31,7 +31,6 @@ const TABLAS = [
   { nombre: 'estudiantes', columnas: ['id', 'usuarioId', 'documento', 'codigo', 'sede', 'jornada', 'grado', 'curso', 'mesa'] },
   { nombre: 'calificaciones', columnas: ['id', 'estudianteId', 'materiaId', 'docenteId', 'periodo', 'anio', 'definitiva', 'creadoEn', 'actualizadoEn'] },
   { nombre: 'notas_items', columnas: ['id', 'calificacionId', 'tipo', 'valor', 'descripcion', 'creadoEn'] },
-  { nombre: 'consultas_estudiantes', columnas: ['id', 'estudianteId', 'periodo', 'anio', 'cantidad'] },
   { nombre: 'informes', columnas: ['id', 'estudianteId', 'periodo', 'anio', 'rutaPdf', 'generadoEn', 'disponible'] },
   { nombre: 'observaciones', columnas: ['id', 'estudianteId', 'docenteId', 'materiaId', 'texto', 'tipo', 'creadoEn', 'fecha'] },
   { nombre: 'periodos_config', columnas: ['id', 'sede', 'periodo', 'nombre', 'peso', 'fecha_inicio', 'fecha_fin', 'abierto', 'anio', 'fecha_corte', 'reapertura_manual'] },
